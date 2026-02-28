@@ -8,6 +8,7 @@ import asyncio
 import json
 import logging
 import random
+import re
 
 from mistralai import Mistral, SDKError
 
@@ -23,9 +24,36 @@ from .world import BATTERY_COST_ANALYZE, BATTERY_COST_SCAN, BATTERY_COST_NOTIFY
 from .world import MAX_INVENTORY_ROVER
 from .world import check_ground, direction_hint
 from .world import set_agent_model
+from .events import event_engine, apply_seismic_event
 from .world import execute_action, get_snapshot, charge_agent, next_tick
 
 logger = logging.getLogger(__name__)
+
+STRUCTURED_REASONING_PROMPT = (
+    "\n\nRESPONSE FORMAT — before choosing an action, output a reasoning block:\n"
+    "SITUATION: <one-line summary of current state>\n"
+    "OPTIONS: <comma-separated list of 2-4 candidate actions>\n"
+    "DECISION: <chosen action and why>\n"
+    "RISK: low | medium | high\n"
+)
+
+
+def _parse_structured_thinking(raw_thinking: str) -> dict:
+    """Extract structured reasoning fields from LLM output."""
+    result = {"situation": "", "options": [], "decision": "", "risk": "low"}
+    if not raw_thinking:
+        return result
+    for field in ("situation", "decision", "risk"):
+        m = re.search(rf"(?i)^{field}:\s*(.+)$", raw_thinking, re.MULTILINE)
+        if m:
+            result[field] = m.group(1).strip()
+    m = re.search(r"(?i)^OPTIONS:\s*(.+)$", raw_thinking, re.MULTILINE)
+    if m:
+        result["options"] = [o.strip() for o in m.group(1).split(",") if o.strip()]
+    if result["risk"] not in ("low", "medium", "high"):
+        result["risk"] = "low"
+    return result
+
 
 MOVE_TOOL = {
     "type": "function",
@@ -305,6 +333,13 @@ class MistralRoverReasoner:
             for vs in visible_stones:
                 parts.append(f"  - {vs}")
 
+        # --- active world events ---
+        event_descs = event_engine.get_active_descriptions()
+        if event_descs:
+            parts.append("\nACTIVE WORLD EVENTS:")
+            for ed in event_descs:
+                parts.append(f"  ⚠ {ed}")
+
         if memory:
             recent = memory[-5:]
             parts.append("\n== Recent actions ==")
@@ -324,6 +359,8 @@ class MistralRoverReasoner:
                     parts.append(f"NEW MISSION: {objective}")
                 else:
                     parts.append(f"{cmd['name'].upper()}: {cmd.get('payload', {})}")
+
+        parts.append(STRUCTURED_REASONING_PROMPT)
 
         return "\n".join(parts)
 
@@ -570,11 +607,20 @@ class DroneAgent:
             parts.append("Recent hotspots found:")
             parts.extend(hot_scans)
 
+        # --- active world events ---
+        event_descs = event_engine.get_active_descriptions()
+        if event_descs:
+            parts.append("\nACTIVE WORLD EVENTS:")
+            for ed in event_descs:
+                parts.append(f"  ⚠ {ed}")
+
         if memory:
             recent = memory[-5:]
             parts.append("\n== Recent actions ==")
             for entry in recent:
                 parts.append(f"- {entry}")
+
+        parts.append(STRUCTURED_REASONING_PROMPT)
 
         return "\n".join(parts)
 
@@ -804,14 +850,29 @@ class RoverLoop(BaseAgent):
 
         turn = await asyncio.to_thread(self._reasoner.run_turn)
         next_tick()
+
+        # Tick the event engine (only rover ticks to avoid double-fire)
+        from .world import WORLD
+        current_tick = WORLD.get("tick", 0)
+        new_world_events = event_engine.tick(current_tick, WORLD)
+        for wev in new_world_events:
+            if wev.name == "seismic_reading":
+                apply_seismic_event(wev.effects)
+            await host.broadcast({
+                "type": "world_event",
+                "name": wev.name,
+                "payload": {"description": wev.description, "effects": wev.effects},
+            })
+
         messages = []
 
         if turn["thinking"]:
+            thinking_data = _parse_structured_thinking(turn["thinking"])
             msg = make_message(
                 source=self.agent_id,
                 type="event",
                 name="thinking",
-                payload={"text": turn["thinking"]},
+                payload={"text": turn["thinking"], "structured": thinking_data},
             )
             messages.append(msg)
 
@@ -936,11 +997,12 @@ class DroneLoop(BaseAgent):
         messages = []
 
         if turn["thinking"]:
+            thinking_data = _parse_structured_thinking(turn["thinking"])
             msg = make_message(
                 source=self.agent_id,
                 type="event",
                 name="thinking",
-                payload={"text": turn["thinking"]},
+                payload={"text": turn["thinking"], "structured": thinking_data},
             )
             messages.append(msg)
 

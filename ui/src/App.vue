@@ -86,6 +86,12 @@ function onSimEvent(event) {
       if (event.payload?.stone)
         addToast(`${event.source}: found ${event.payload.stone.grade} vein`, { type: 'info' })
       break
+    case 'dust_storm':
+    case 'solar_flare':
+    case 'seismic_reading':
+    case 'comm_interference':
+      addToast(`⚠ ${event.payload?.description || event.name}`, { type: 'warning', duration: 5000 })
+      break
     default:
       break
   }

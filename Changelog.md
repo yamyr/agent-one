@@ -4,6 +4,16 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [Unreleased]
+
+### Added
+- **Dynamic World Events Engine** (server/app/events.py): New EventEngine class generates environmental events (dust storms, solar flares, seismic readings, comm interference) on a randomized schedule during simulation ticks.
+- Event effects modify world physics: move costs increase during solar flares, notify costs double during comm interference, seismic readings place hidden high-grade veins.
+- Active events injected into rover and drone LLM context so agents can reason about environmental conditions.
+- Event data included in world snapshots and reset on world reset.
+- UI: world_event toast notifications, EventLog formatting, dust storm map overlay with pulsing animation.
+- 16 new unit tests in server/tests/test_events.py.
+
 ## [0.2.0](https://github.com/mhack-agent-one/agent-one/compare/v0.1.0...v0.2.0) (2026-02-28)
 
 

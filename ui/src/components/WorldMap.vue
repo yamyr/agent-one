@@ -218,6 +218,11 @@ const stations = computed(() => {
   })
 })
 
+const hasDustStorm = computed(() => {
+  const events = props.worldState?.world_events || []
+  return events.some(e => e.name === 'dust_storm')
+})
+
 const revealedSet = computed(() => {
   const set = new Set()
   if (!props.worldState) return set
@@ -959,6 +964,15 @@ defineExpose({ camX, camY, visibleW, visibleH, panCamera, navigateTo })
           class="rover-label"
         >{{ id }}</text>
       </g>
+
+      <!-- Dust storm overlay -->
+      <rect
+        v-if="hasDustStorm"
+        x="0" y="0"
+        :width="dynamicMapW"
+        :height="dynamicMapH"
+        class="dust-storm-overlay"
+      />
     </svg>
     <div
       v-else
@@ -1120,5 +1134,15 @@ defineExpose({ camX, camY, visibleW, visibleH, panCamera, navigateTo })
 @keyframes pulse-text {
   from { opacity: 0.7; }
   to { opacity: 1; }
+}
+
+.dust-storm-overlay {
+  fill: rgba(194, 120, 50, 0.25);
+  pointer-events: none;
+  animation: dust-pulse 3s ease-in-out infinite;
+}
+@keyframes dust-pulse {
+  0%, 100% { opacity: 0.15; }
+  50% { opacity: 0.35; }
 }
 </style>

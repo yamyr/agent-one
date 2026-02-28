@@ -334,4 +334,9 @@ function formatPayload(event) {
     transform: translateX(0);
   }
 }
-</style>
+</style>    case 'dust_storm':
+    case 'solar_flare':
+    case 'seismic_reading':
+    case 'comm_interference':
+      return `⚠ ${p.description || event.name}`
+

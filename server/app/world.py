@@ -6,6 +6,7 @@ import logging
 import random
 
 from .config import settings
+from .events import event_engine
 from .models import RoverAgentState, RoverWorldView, RoverComputed, RoverContext
 from .models import AgentMission, InventoryItem, StoneInfo
 from .models import RoverSummary, StationContext
@@ -407,6 +408,7 @@ def reset_world():
     fresh = _build_initial_world()
     WORLD.clear()
     WORLD.update(fresh)
+    event_engine.reset()
     _init_world_chunks()
     logger.info("World reset")
 
@@ -415,6 +417,37 @@ def next_tick():
     """Increment and return the current tick number."""
     WORLD["tick"] += 1
     return WORLD["tick"]
+
+
+def _get_modified_cost(base_cost: float, modifier_key: str) -> float:
+    """Apply active event modifiers to a cost."""
+    effects = event_engine.get_active_effects()
+    modifier = effects.get(modifier_key, 1.0)
+    return base_cost * modifier
+
+
+def apply_seismic_event(effects: dict):
+    """Place a high-grade vein from a seismic_reading event."""
+    vein_pos = effects.get("reveal_vein")
+    grade = effects.get("vein_grade", "high")
+    if not vein_pos:
+        return
+    for s in WORLD.get("stones", []):
+        if s["position"] == vein_pos:
+            return
+    grade_idx = VEIN_GRADES.index(grade) if grade in VEIN_GRADES else 2
+    true_quantity = (grade_idx + 1) * random.randint(8, 15)
+    WORLD.setdefault("stones", []).append({
+        "position": list(vein_pos),
+        "type": "unknown",
+        "_true_type": "basalt_vein",
+        "grade": "unknown",
+        "_true_grade": grade,
+        "quantity": 0,
+        "_true_quantity": true_quantity,
+        "analyzed": False,
+    })
+    logger.info("Seismic event placed %s vein at (%d,%d)", grade, vein_pos[0], vein_pos[1])
 
 
 def check_ground(agent_id):
@@ -476,7 +509,8 @@ def execute_action(agent_id, action_name, params):
         if delta is None:
             return {"ok": False, "error": f"Invalid direction: {direction}"}
         max_dist = MAX_MOVE_DISTANCE_DRONE if is_drone else MAX_MOVE_DISTANCE
-        move_cost = BATTERY_COST_MOVE_DRONE if is_drone else BATTERY_COST_MOVE
+        base_move_cost = BATTERY_COST_MOVE_DRONE if is_drone else BATTERY_COST_MOVE
+        move_cost = _get_modified_cost(base_move_cost, "move_cost_modifier")
         distance = max(1, min(max_dist, int(params.get("distance", 1))))
 
         cost = move_cost * distance
@@ -683,13 +717,14 @@ def _execute_dig(agent_id, agent):
 
 
 def _execute_notify(agent_id, agent, params):
-    """Send a radio notification to station. Costs 2 fuel."""
-    if agent["battery"] < BATTERY_COST_NOTIFY:
+    """Send a radio notification to station. Costs 2 fuel (modified by events)."""
+    notify_cost = _get_modified_cost(BATTERY_COST_NOTIFY, "notify_cost_modifier")
+    if agent["battery"] < notify_cost:
         return {"ok": False, "error": "Not enough battery to notify"}
     message = params.get("message", "")
     if not message:
         return {"ok": False, "error": "Empty message"}
-    agent["battery"] = max(0.0, agent["battery"] - BATTERY_COST_NOTIFY)
+    agent["battery"] = max(0.0, agent["battery"] - notify_cost)
     return {
         "ok": True,
         "position": list(agent["position"]),
@@ -1252,6 +1287,8 @@ def get_snapshot():
             s.pop("_true_quantity", None)
             visible.append(s)
     snap["stones"] = visible
+    # Include active world events
+    snap["world_events"] = event_engine.get_active_events_data()
     # Ensure bounds are present
     if "bounds" not in snap:
         snap["bounds"] = {"min_x": 0, "max_x": GRID_W - 1, "min_y": 0, "max_y": GRID_H - 1}
