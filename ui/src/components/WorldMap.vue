@@ -284,6 +284,20 @@ function onWheel(e) {
   else zoomOut()
 }
 
+// Re-center camera when zoom changes so the viewport expands/contracts around center
+watch(zoom, (newZ, oldZ) => {
+  const oldW = Math.ceil(VIEWPORT_W / oldZ)
+  const oldH = Math.ceil(VIEWPORT_H / oldZ)
+  const newW = Math.ceil(VIEWPORT_W / newZ)
+  const newH = Math.ceil(VIEWPORT_H / newZ)
+  const dx = Math.floor((oldW - newW) / 2)
+  const dy = Math.floor((oldH - newH) / 2)
+  targetCamX.value += dx
+  targetCamY.value += dy
+  camX.value = targetCamX.value
+  camY.value = targetCamY.value
+})
+
 const mapViewBox = computed(() => {
   return `0 0 ${dynamicMapW.value} ${dynamicMapH.value}`
 })
@@ -389,7 +403,14 @@ function panCamera(dx, dy) {
 }
 
 // Expose camera and dynamic viewport for minimap & keyboard shortcuts
-defineExpose({ camX, camY, visibleW, visibleH, panCamera })
+function navigateTo(x, y) {
+  targetCamX.value = x
+  targetCamY.value = y
+  camX.value = x
+  camY.value = y
+}
+
+defineExpose({ camX, camY, visibleW, visibleH, panCamera, navigateTo })
 </script>
 
 <template>

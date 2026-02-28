@@ -3,7 +3,7 @@ import { ref, computed } from 'vue'
 import { useWebSocket } from './composables/useWebSocket.js'
 import { useKeyboard } from './composables/useKeyboard.js'
 import { useToasts } from './composables/useToasts.js'
-import { agentColor } from './constants.js'
+import { VIEWPORT_W, VIEWPORT_H, agentColor } from './constants.js'
 import AppHeader from './components/AppHeader.vue'
 import WorldMap from './components/WorldMap.vue'
 import MiniMap from './components/MiniMap.vue'
@@ -22,8 +22,8 @@ const worldMapRef = ref(null)
 const followAgent = ref(null)  // which agent the camera follows (null = free camera)
 const camXVal = computed(() => worldMapRef.value?.camX ?? -10)
 const camYVal = computed(() => worldMapRef.value?.camY ?? -10)
-const visibleWVal = computed(() => worldMapRef.value?.visibleW ?? 20)
-const visibleHVal = computed(() => worldMapRef.value?.visibleH ?? 20)
+const visibleWVal = computed(() => worldMapRef.value?.visibleW ?? VIEWPORT_W)
+const visibleHVal = computed(() => worldMapRef.value?.visibleH ?? VIEWPORT_H)
 
 const mobileAgents = computed(() => {
   if (!agentIds.value) return []
@@ -113,8 +113,7 @@ function agentData(id) {
 
 function onMinimapNavigate(x, y) {
   if (worldMapRef.value) {
-    worldMapRef.value.camX = x
-    worldMapRef.value.camY = y
+    worldMapRef.value.navigateTo(x, y)
     followAgent.value = null
   }
 }

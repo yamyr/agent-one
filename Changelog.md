@@ -6,6 +6,23 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Fixed (Zoom Scaling)
+
+- **Dynamic viewport tile count**: WorldMap zoom now scales tile count proportionally — zooming out (0.7x) renders ~29×29 tiles, zooming in (2.2x) renders ~10×10 tiles, instead of fixed 20×20
+- **Zoom re-centering**: Camera position adjusts on zoom change to keep the center tile stable, preventing viewport shift
+- **MiniMap viewport accuracy**: MiniMap viewport box now reflects actual visible tile count via dynamic `viewportW`/`viewportH` props
+- **MiniMap navigation**: Fixed rubber-band camera effect when clicking minimap by using `navigateTo()` method that sets both camera position and interpolation target
+- **Dead code cleanup**: Removed unused `MAP_W`/`MAP_H` constants from `constants.js`
+
+### Added (EventLog Virtual Scrolling — Round 3 Phase 2)
+
+- **Virtual scrolling**: EventLog now renders only visible events (~20-25 DOM nodes) instead of all 200, using spacer-based windowing with 5-item buffer
+- **Scroll-pinning**: Auto-scrolls to top for new events when already at top; preserves scroll position when browsing history
+- **Enter animation**: New events slide in with 0.3s animation using CSS keyframes, triggered by UID tracking (works even at 200-event cap)
+- **ResizeObserver**: Container height tracked dynamically for accurate visible window calculation
+- **CSS containment**: Added `contain: content` to scroll container for browser paint optimization
+- **Fixed-height rows**: 32px rows with `overflow: hidden` and `nowrap` prevent layout shifts during virtual scrolling
+
 ### Changed (Basalt Vein System)
 
 - **Vein-based mineral system**: Replaced binary stone types (core/basalt) with a vein grade system. Every vein is basalt with a grade (low/medium/high/rich/pristine) determining quantity, following exponential rarity decay (`weight = 200 * e^(-1.3 * index)`)

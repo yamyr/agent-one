@@ -1,26 +1,25 @@
-# Task: Simplify Rover Actions
+# Round 3 — Phase 2 & Zoom Fix
 
-## Changes
+## Task A: Fix Zoom-Out Tile Scaling
+- [x] Make visible tile count dynamic based on zoom level
+- [x] When zoomed out, render more tiles proportionally (`ceil(VIEWPORT_W / zoom)`)
+- [x] Update camera centering, follow, pan, fog, and visibility checks for dynamic tile count
+- [x] Update MiniMap viewport box to reflect actual visible tile count
+- [x] Zoom re-centering on zoom change (center stays stable)
+- [x] MiniMap navigation uses navigateTo() to prevent rubber-banding
+- [x] Removed dead MAP_W/MAP_H constants
 
-### 1. Remove `check_ground` as an explicit action
-- [x] Remove from rover tools list in `world.py` WORLD init
-- [x] Remove from `execute_action` dispatcher (if present)
-- [x] Keep `check_ground()` function — it's used internally for auto-scan after moves
-- [x] Update tests: remove tests that call check_ground as an action
-- [x] Update agent context to clarify ground is auto-scanned
+## Task B: EventLog Virtualization (Round 3 Phase 2)
+- [x] Implement virtual scrolling for EventLog — only render visible events
+- [x] Calculate visible window from scroll offset + container height
+- [x] Use spacer elements (top/bottom) to maintain correct scrollbar behavior
+- [x] Preserve enter transition for new events at top (UID-based, works at 200 cap)
+- [x] Maintain auto-scroll to top behavior
+- [x] Ensure accessibility (ARIA live region still works)
+- [x] CSS containment for paint optimization
 
-### 2. Make `charge` a station-only action
-- [x] Remove `charge` from rover tools list in `world.py` WORLD init
-- [x] Add `charge_rover` tool to station's Mistral tools in `station.py`
-- [x] Station calls charge when rover is co-located
-- [x] Keep `_execute_charge` in world.py (station invokes it)
-- [x] Update `execute_action` to accept charge from station context
-- [x] Update tests for new charge flow
-- [x] Update rover agent context to say "return to station for charging"
-
-### 3. Carry over .kiro files
-- [x] Commit .kiro steering files
-
-### 4. Verify
-- [x] All tests pass
+## Verification
+- [x] Build passes (vite build)
+- [x] Code review: all critical/warning issues fixed
 - [x] Update Changelog.md
+- [ ] Create PR and merge to main
