@@ -49,12 +49,22 @@ MAX_MOVE_DISTANCE = 3
 MAX_MOVE_DISTANCE_DRONE = 6
 
 AGENT_STARTS = {(0, 0)}
-STONE_TYPES = ["core", "basalt"]
+
+# --- Vein grades (exponential rarity: weight = 200 * e^(-1.3 * index)) ---
+VEIN_GRADES = ["low", "medium", "high", "rich", "pristine"]
+VEIN_WEIGHTS = [200, 60, 16, 4, 1]  # approximate: 200*e^(-1.3*i)
+VEIN_QUANTITY_RANGES = {
+    "low": (10, 50),
+    "medium": (51, 150),
+    "high": (151, 350),
+    "rich": (351, 700),
+    "pristine": (701, 1000),
+}
+TARGET_QUANTITY = 100  # mission success threshold (total basalt delivered)
+
 ROVER_REVEAL_RADIUS = 3
 DRONE_REVEAL_RADIUS = 6
 REVEAL_RADIUS = ROVER_REVEAL_RADIUS  # legacy alias
-TARGET_STONE_TYPE = "core"
-TARGET_STONE_COUNT = 1
 MEMORY_MAX = 8
 
 # --- Return-to-base policy ---
@@ -139,21 +149,27 @@ def _ensure_chunk(cx, cy):
             wx, wy = x0 + dx, y0 + dy
             conc[(wx, wy)] = _noise_concentration(wx, wy)
 
-    # Stones: origin chunk guaranteed ≥1 core, others 0-2 stones
+    # Veins: origin chunk guaranteed ≥1 vein, others 0-2 veins
     stones = []
     is_origin = cx == 0 and cy == 0
     occupied = set(AGENT_STARTS) if is_origin else set()
     num_stones = rng.randint(1, 3) if is_origin else rng.randint(0, 2)
 
-    for i in range(num_stones):
-        is_core = (i == 0 and is_origin) or rng.random() < 0.3
+    for _i in range(num_stones):
+        grade = rng.choices(VEIN_GRADES, weights=VEIN_WEIGHTS, k=1)[0]
+        qty_lo, qty_hi = VEIN_QUANTITY_RANGES[grade]
+        true_quantity = rng.randint(qty_lo, qty_hi)
         sx, sy = _random_free_pos(occupied, rng, cx, cy)
         occupied.add((sx, sy))
         stones.append(
             {
                 "position": [sx, sy],
                 "type": "unknown",
-                "_true_type": "core" if is_core else "basalt",
+                "_true_type": "basalt_vein",
+                "grade": "unknown",
+                "_true_grade": grade,
+                "quantity": 0,
+                "_true_quantity": true_quantity,
                 "extracted": False,
                 "analyzed": False,
             }
@@ -193,17 +209,25 @@ def _noise_concentration(x, y):
 
 
 def _boost_concentration_near_cores():
-    """After stones are placed, boost concentration near core positions."""
+    """After veins are placed, boost concentration near high-grade veins.
+
+    Higher-grade veins produce a stronger concentration boost, scaling
+    linearly with their grade index (low=0 gives base 0.3, pristine=4
+    gives full 0.6).
+    """
     sigma = 4.0
-    core_positions = []
+    vein_positions = []
     for s in WORLD.get("stones", []):
-        if s.get("_true_type") == "core":
-            core_positions.append(tuple(s["position"]))
-    if not core_positions:
+        grade = s.get("_true_grade", "low")
+        grade_idx = VEIN_GRADES.index(grade) if grade in VEIN_GRADES else 0
+        vein_positions.append((tuple(s["position"]), grade_idx))
+    if not vein_positions:
         return
     conc = WORLD.setdefault("concentration_map", {})
     boosted = set()
-    for px, py in core_positions:
+    for (px, py), grade_idx in vein_positions:
+        # Scale boost strength: 0.3 base + 0.075 per grade level (0.3 .. 0.6)
+        strength = 0.3 + grade_idx * 0.075
         for dx in range(-8, 9):
             for dy in range(-8, 9):
                 cell = (px + dx, py + dy)
@@ -212,9 +236,9 @@ def _boost_concentration_near_cores():
                 d = abs(dx) + abs(dy)
                 boost = math.exp(-(d**2) / (sigma**2))
                 if cell in conc:
-                    conc[cell] = min(1.0, conc[cell] + boost * 0.6)
+                    conc[cell] = min(1.0, conc[cell] + boost * strength)
                 else:
-                    conc[cell] = round(boost * 0.6, 4)
+                    conc[cell] = round(boost * strength, 4)
                 boosted.add(cell)
 
 
@@ -277,19 +301,19 @@ _ROVER_TOOL_DEFS = [
     },
     {
         "name": "analyze",
-        "description": "Analyze an unknown stone at current tile to reveal its true type. Costs 3 fuel units (~0.86% battery).",
+        "description": "Analyze an unknown vein at current tile to reveal its grade (low/medium/high/rich/pristine) and basalt quantity. Costs 3 fuel units (~0.86% battery).",
     },
     {
         "name": "dig",
-        "description": "Dig at current tile to extract a stone. Costs 6 fuel units (~1.71% battery). Stone must be analyzed first.",
+        "description": "Dig at current tile to extract a vein. Costs 6 fuel units (~1.71% battery). Vein must be analyzed first.",
     },
     {
         "name": "pickup",
-        "description": "Pick up an extracted stone at current tile into inventory. Costs 2 fuel units (~0.57% battery).",
+        "description": "Pick up an extracted vein at current tile into inventory (with its basalt quantity). Costs 2 fuel units (~0.57% battery).",
     },
     {
         "name": "analyze_ground",
-        "description": "Analyze ground concentration at current tile to detect nearby core deposits. Costs 3 fuel units (~0.86% battery). Returns a 0.0-1.0 reading.",
+        "description": "Analyze ground concentration at current tile to detect nearby basalt vein deposits. Costs 3 fuel units (~0.86% battery). Returns a 0.0-1.0 reading.",
     },
 ]
 
@@ -363,9 +387,9 @@ def _build_initial_world():
         "bounds": {"min_x": -3, "max_x": 3, "min_y": -3, "max_y": 3},
         "mission": {
             "status": "running",
-            "target_type": TARGET_STONE_TYPE,
-            "target_count": TARGET_STONE_COUNT,
-            "collected_count": 0,
+            "target_type": "basalt_vein",
+            "target_quantity": TARGET_QUANTITY,
+            "collected_quantity": 0,
         },
     }
     return world
@@ -400,14 +424,19 @@ def next_tick():
 
 
 def check_ground(agent_id):
-    """Check if a stone is present at the agent's current position."""
+    """Check if a vein is present at the agent's current position."""
     agent = WORLD["agents"].get(agent_id)
     if agent is None:
         return {"stone": None}
     x, y = agent["position"]
     for stone in WORLD.get("stones", []):
         if stone["position"] == [x, y]:
-            return {"stone": {"type": stone["type"], "extracted": stone.get("extracted", False)}}
+            return {"stone": {
+                "type": stone["type"],
+                "grade": stone.get("grade", "unknown"),
+                "quantity": stone.get("quantity", 0),
+                "extracted": stone.get("extracted", False),
+            }}
     return {"stone": None}
 
 
@@ -490,12 +519,12 @@ def execute_action(agent_id, action_name, params):
                 )
     elif action_name == "analyze":
         if is_drone:
-            return {"ok": False, "error": "Drones cannot analyze stones"}
+            return {"ok": False, "error": "Drones cannot analyze veins"}
         result = _execute_analyze(agent_id, agent)
         if result["ok"]:
             record_memory(
                 agent_id,
-                f"Analyzed stone at ({result['position'][0]},{result['position'][1]}), type={result['stone']['type']}",
+                f"Analyzed vein at ({result['position'][0]},{result['position'][1]}), grade={result['stone']['grade']}, qty={result['stone']['quantity']}",
             )
     elif action_name == "analyze_ground":
         result = _execute_analyze_ground(agent_id, agent)
@@ -511,16 +540,16 @@ def execute_action(agent_id, action_name, params):
         if result["ok"]:
             record_memory(
                 agent_id,
-                f"Dug out {result['stone']['type']} stone at ({result['position'][0]},{result['position'][1]})",
+                f"Dug out {result['stone']['grade']} vein at ({result['position'][0]},{result['position'][1]}), qty={result['stone']['quantity']}",
             )
     elif action_name == "pickup":
         if is_drone:
-            return {"ok": False, "error": "Drones cannot pick up stones"}
+            return {"ok": False, "error": "Drones cannot pick up veins"}
         result = _execute_pickup(agent_id, agent)
         if result["ok"]:
             record_memory(
                 agent_id,
-                f"Picked up {result['stone']['type']} stone at ({result['position'][0]},{result['position'][1]}), inventory={result['inventory_count']}",
+                f"Picked up {result['stone']['grade']} vein (qty={result['stone']['quantity']}) at ({result['position'][0]},{result['position'][1]}), inventory={result['inventory_count']}",
             )
     elif action_name == "scan":
         result = _execute_scan(agent_id, agent)
@@ -553,22 +582,35 @@ def _find_stone_at(x, y):
 
 
 def _execute_analyze(agent_id, agent):
-    """Analyze an unknown stone at the current tile to reveal its true type."""
+    """Analyze an unknown vein at the current tile to reveal its type, grade, and quantity."""
     if agent["battery"] < BATTERY_COST_ANALYZE:
         return {"ok": False, "error": "Not enough battery to analyze"}
 
     x, y = agent["position"]
     stone = _find_stone_at(x, y)
     if stone is None:
-        return {"ok": False, "error": f"No stone at ({x}, {y})"}
+        return {"ok": False, "error": f"No vein at ({x}, {y})"}
     if stone.get("analyzed"):
-        return {"ok": False, "error": f"Stone at ({x}, {y}) already analyzed"}
+        return {"ok": False, "error": f"Vein at ({x}, {y}) already analyzed"}
 
     agent["battery"] = max(0.0, agent["battery"] - BATTERY_COST_ANALYZE)
     stone["analyzed"] = True
     stone["type"] = stone["_true_type"]
-    logger.info("Agent %s analyzed stone at (%d,%d), type=%s", agent_id, x, y, stone["type"])
-    return {"ok": True, "position": [x, y], "stone": {"type": stone["type"]}}
+    stone["grade"] = stone["_true_grade"]
+    stone["quantity"] = stone["_true_quantity"]
+    logger.info(
+        "Agent %s analyzed vein at (%d,%d), type=%s grade=%s qty=%d",
+        agent_id, x, y, stone["type"], stone["grade"], stone["quantity"],
+    )
+    return {
+        "ok": True,
+        "position": [x, y],
+        "stone": {
+            "type": stone["type"],
+            "grade": stone["grade"],
+            "quantity": stone["quantity"],
+        },
+    }
 
 
 def _execute_analyze_ground(agent_id, agent):
@@ -615,47 +657,69 @@ def _execute_scan(agent_id, agent):
 
 
 def _execute_dig(agent_id, agent):
-    """Dig at current tile to extract a buried stone."""
+    """Dig at current tile to extract a buried vein."""
     if agent["battery"] < BATTERY_COST_DIG:
         return {"ok": False, "error": "Not enough battery to dig"}
 
     x, y = agent["position"]
     stone = _find_stone_at(x, y)
     if stone is None:
-        return {"ok": False, "error": f"No stone at ({x}, {y})"}
+        return {"ok": False, "error": f"No vein at ({x}, {y})"}
     if not stone.get("analyzed"):
-        return {"ok": False, "error": "Stone not yet analyzed (analyze first)"}
+        return {"ok": False, "error": "Vein not yet analyzed (analyze first)"}
     if stone.get("extracted"):
-        return {"ok": False, "error": f"Stone at ({x}, {y}) already extracted"}
+        return {"ok": False, "error": f"Vein at ({x}, {y}) already extracted"}
 
     agent["battery"] = max(0.0, agent["battery"] - BATTERY_COST_DIG)
     stone["extracted"] = True
-    logger.info("Agent %s dug at (%d,%d), extracted %s", agent_id, x, y, stone["type"])
-    return {"ok": True, "position": [x, y], "stone": {"type": stone["type"]}}
+    logger.info(
+        "Agent %s dug at (%d,%d), extracted %s grade=%s qty=%d",
+        agent_id, x, y, stone["type"], stone["grade"], stone["quantity"],
+    )
+    return {
+        "ok": True,
+        "position": [x, y],
+        "stone": {
+            "type": stone["type"],
+            "grade": stone["grade"],
+            "quantity": stone["quantity"],
+        },
+    }
 
 
 def _execute_pickup(agent_id, agent):
-    """Pick up an extracted stone into the agent's inventory."""
+    """Pick up an extracted vein into the agent's inventory."""
     if agent["battery"] < BATTERY_COST_PICKUP:
         return {"ok": False, "error": "Not enough battery to pick up"}
 
     x, y = agent["position"]
     stone = _find_stone_at(x, y)
     if stone is None:
-        return {"ok": False, "error": f"No stone at ({x}, {y})"}
+        return {"ok": False, "error": f"No vein at ({x}, {y})"}
     if not stone.get("analyzed"):
-        return {"ok": False, "error": "Stone not yet analyzed (analyze first)"}
+        return {"ok": False, "error": "Vein not yet analyzed (analyze first)"}
     if not stone.get("extracted"):
-        return {"ok": False, "error": f"Stone at ({x}, {y}) not yet extracted (dig first)"}
+        return {"ok": False, "error": f"Vein at ({x}, {y}) not yet extracted (dig first)"}
 
     agent["battery"] = max(0.0, agent["battery"] - BATTERY_COST_PICKUP)
-    agent.setdefault("inventory", []).append({"type": stone["type"]})
+    agent.setdefault("inventory", []).append({
+        "type": stone["type"],
+        "grade": stone["grade"],
+        "quantity": stone["quantity"],
+    })
     WORLD["stones"].remove(stone)
-    logger.info("Agent %s picked up %s at (%d,%d)", agent_id, stone["type"], x, y)
+    logger.info(
+        "Agent %s picked up %s grade=%s qty=%d at (%d,%d)",
+        agent_id, stone["type"], stone["grade"], stone["quantity"], x, y,
+    )
     return {
         "ok": True,
         "position": [x, y],
-        "stone": {"type": stone["type"]},
+        "stone": {
+            "type": stone["type"],
+            "grade": stone["grade"],
+            "quantity": stone["quantity"],
+        },
         "inventory_count": len(agent["inventory"]),
     }
 
@@ -697,7 +761,7 @@ def charge_rover(rover_id):
 
 
 def check_mission_status():
-    """Update mission collected_count and detect success/failure.
+    """Update mission collected_quantity and detect success/failure.
 
     Returns a mission event dict if the status changed, or None.
     """
@@ -705,31 +769,31 @@ def check_mission_status():
     if mission["status"] in ("success", "failed"):
         return None
 
-    # Count target stones across all rover inventories
+    # Sum quantities across all rover inventories
     station = WORLD["agents"].get("station")
     station_pos = station["position"] if station else [0, 0]
-    collected = 0
-    delivered = 0
+    collected_qty = 0
+    delivered_qty = 0
     for agent in WORLD["agents"].values():
         if agent.get("type") != "rover":
             continue
         for stone in agent.get("inventory", []):
             if stone["type"] == mission["target_type"]:
-                collected += 1
+                qty = stone.get("quantity", 0)
+                collected_qty += qty
                 if agent["position"] == station_pos:
-                    delivered += 1
-    mission["collected_count"] = collected
+                    delivered_qty += qty
+    mission["collected_quantity"] = collected_qty
 
-    # Success: enough target stones delivered to station
-    if delivered >= mission["target_count"]:
+    # Success: enough total basalt quantity delivered to station
+    if delivered_qty >= mission["target_quantity"]:
         mission["status"] = "success"
         logger.info(
-            "Mission SUCCESS: delivered %d/%d %s stones to station",
-            delivered,
-            mission["target_count"],
-            mission["target_type"],
+            "Mission SUCCESS: delivered %d/%d basalt to station",
+            delivered_qty,
+            mission["target_quantity"],
         )
-        return {"status": "success", "collected": collected, "delivered": delivered}
+        return {"status": "success", "collected_quantity": collected_qty, "delivered_quantity": delivered_qty}
 
     # Failure: all rovers have zero battery and none are at the station
     all_dead = True
@@ -866,43 +930,47 @@ def _update_rover_tasks(agent_id, agent):
             agent["tasks"] = tasks
             return
 
-    # Already collected target stone → return to station
-    has_target = any(s["type"] == target_type for s in inventory)
-    if has_target:
+    # Already collected basalt → return to station to deliver
+    has_basalt = any(s["type"] == target_type for s in inventory)
+    if has_basalt:
         station = WORLD["agents"].get("station")
         sp = station["position"] if station else [0, 0]
+        inv_qty = sum(s.get("quantity", 0) for s in inventory if s["type"] == target_type)
         if [x, y] == sp:
-            tasks.append("Deliver stone at station (mission complete)")
+            tasks.append(f"Deliver basalt at station ({inv_qty} units, mission needs {mission['target_quantity']})")
         else:
-            tasks.append(f"Return to station at ({sp[0]},{sp[1]}) to complete mission")
+            tasks.append(f"Return to station at ({sp[0]},{sp[1]}) to deliver {inv_qty} units of basalt")
         agent["tasks"] = tasks
         return
 
-    # Stone at current tile → analyze, dig, or pickup (priority order)
+    # Vein at current tile → analyze, dig, or pickup (priority order)
     stone_here = _find_stone_at(x, y)
     if stone_here:
         if not stone_here.get("analyzed"):
-            tasks.append(f"Analyze unknown stone at current tile ({x},{y})")
+            tasks.append(f"Analyze unknown vein at current tile ({x},{y})")
         elif not stone_here.get("extracted"):
-            tasks.append(f"Dig {stone_here['type']} stone at current tile ({x},{y})")
+            tasks.append(f"Dig {stone_here['grade']} vein (qty={stone_here['quantity']}) at current tile ({x},{y})")
         else:
-            tasks.append(f"Pick up {stone_here['type']} stone at current tile ({x},{y})")
+            tasks.append(f"Pick up {stone_here['grade']} vein (qty={stone_here['quantity']}) at current tile ({x},{y})")
         agent["tasks"] = tasks
         return
 
-    # Known stones on revealed tiles → navigate to nearest
-    # Prefer: unknown stones (potential cores) > known target type > known basalt
+    # Known veins on revealed tiles → navigate to best one
+    # Prefer: unknown veins (might be high-grade) first, then by grade (higher = better), then distance
     known_stones = []
     for stone in WORLD.get("stones", []):
         sp = tuple(stone["position"])
         if sp in revealed_set:
             dist = abs(sp[0] - x) + abs(sp[1] - y)
             if stone["type"] == "unknown":
+                # Unknown veins get top priority (might be high-grade)
                 priority = 0
-            elif stone["type"] == target_type:
-                priority = 1
             else:
-                priority = 2
+                # Analyzed veins: prioritize higher grades (lower priority number = better)
+                grade = stone.get("grade", "low")
+                grade_idx = VEIN_GRADES.index(grade) if grade in VEIN_GRADES else 0
+                # Invert: pristine(4) → priority 1, low(0) → priority 5
+                priority = len(VEIN_GRADES) - grade_idx
             known_stones.append((priority, dist, stone))
     known_stones.sort(key=lambda t: (t[0], t[1]))
 
@@ -910,8 +978,11 @@ def _update_rover_tasks(agent_id, agent):
         _priority, dist, stone = known_stones[0]
         sx, sy = stone["position"]
         hint = _direction_hint(sx - x, sy - y)
-        label = stone["type"] if stone["type"] != "unknown" else "unknown"
-        tasks.append(f"Navigate to {label} stone at ({sx},{sy}) — {hint}, {dist} tiles")
+        if stone["type"] == "unknown":
+            label = "unknown vein"
+        else:
+            label = f"{stone.get('grade', '?')} vein (qty={stone.get('quantity', 0)})"
+        tasks.append(f"Navigate to {label} at ({sx},{sy}) — {hint}, {dist} tiles")
 
     # Check drone scan hotspots — navigate toward high-concentration areas
     if not tasks:
@@ -925,7 +996,7 @@ def _update_rover_tasks(agent_id, agent):
             )
 
     if not tasks:
-        tasks.append("Explore unvisited tiles to find stones")
+        tasks.append("Explore unvisited tiles to find veins")
 
     agent["tasks"] = tasks
 
@@ -972,24 +1043,34 @@ def observe_rover(agent_id):
         if 0 <= nx < GRID_W and 0 <= ny < GRID_H and (nx, ny) not in visited_set:
             unvisited_dirs.append(name)
 
-    # Stone at current tile
+    # Vein at current tile
     ground = check_ground(agent_id)
     stone_info = ground["stone"]
     if stone_info:
         if stone_info["type"] == "unknown":
-            stone_line = "unknown (needs analyze to reveal type)"
+            stone_line = "unknown vein (needs analyze to reveal grade and quantity)"
         elif stone_info["extracted"]:
-            stone_line = f"{stone_info['type']} (extracted — ready for pickup)"
+            stone_line = f"{stone_info['grade']} vein, qty={stone_info['quantity']} (extracted — ready for pickup)"
         else:
-            stone_line = f"{stone_info['type']} (analyzed, buried — needs dig)"
+            stone_line = f"{stone_info['grade']} vein, qty={stone_info['quantity']} (analyzed, buried — needs dig)"
     else:
         stone_line = "none"
 
-    # Raw stone object — convert to StoneInfo or None
+    # Raw stone object — convert to StoneInfo or None (strip hidden fields)
     raw_stone = _find_stone_at(x, y)
-    stone_here = StoneInfo(**raw_stone) if raw_stone else None
+    if raw_stone:
+        stone_here = StoneInfo(
+            position=raw_stone["position"],
+            type=raw_stone["type"],
+            grade=raw_stone.get("grade", "unknown"),
+            quantity=raw_stone.get("quantity", 0),
+            extracted=raw_stone.get("extracted", False),
+            analyzed=raw_stone.get("analyzed", False),
+        )
+    else:
+        stone_here = None
 
-    # Visible stones on revealed tiles (not at current position)
+    # Visible veins on revealed tiles (not at current position)
     revealed_set = {tuple(c) for c in agent.get("revealed", [])}
     visible_stones = []
     for stone in WORLD.get("stones", []):
@@ -998,8 +1079,13 @@ def observe_rover(agent_id):
             dist = abs(sp[0] - x) + abs(sp[1] - y)
             status = "extracted" if stone.get("extracted") else "buried"
             hint = _direction_hint(sp[0] - x, sp[1] - y)
+            grade_info = stone.get("grade", "unknown")
+            qty_info = stone.get("quantity", 0)
+            label = f"{stone['type']} {grade_info}" if stone["type"] != "unknown" else "unknown vein"
+            if qty_info > 0:
+                label += f" qty={qty_info}"
             visible_stones.append(
-                f"{stone['type']} ({status}) at ({sp[0]},{sp[1]}) — {hint}, {dist} tiles"
+                f"{label} ({status}) at ({sp[0]},{sp[1]}) — {hint}, {dist} tiles"
             )
 
     # Mission info
@@ -1021,9 +1107,9 @@ def observe_rover(agent_id):
             grid_w=GRID_W,
             grid_h=GRID_H,
             station_position=list(station_pos),
-            target_type=world_mission.get("target_type", "core"),
-            target_count=world_mission.get("target_count", 2),
-            collected_count=world_mission.get("collected_count", 0),
+            target_type=world_mission.get("target_type", "basalt_vein"),
+            target_quantity=world_mission.get("target_quantity", TARGET_QUANTITY),
+            collected_quantity=world_mission.get("collected_quantity", 0),
         ),
         computed=RoverComputed(
             unvisited_dirs=unvisited_dirs,
@@ -1050,7 +1136,12 @@ def observe_station():
 
     stones = []
     for s in WORLD.get("stones", []):
-        stones.append(StoneInfo(type=s["type"], position=list(s["position"])))
+        stones.append(StoneInfo(
+            type=s["type"],
+            position=list(s["position"]),
+            grade=s.get("grade", "unknown"),
+            quantity=s.get("quantity", 0),
+        ))
 
     return StationContext(
         grid_w=GRID_W,
@@ -1070,11 +1161,13 @@ def get_snapshot():
     for agent in snap["agents"].values():
         for cell in agent.get("revealed", []):
             revealed.add(tuple(cell))
-    # Filter stones to only those on revealed cells and strip hidden _true_type
+    # Filter stones to only those on revealed cells and strip hidden internal fields
     visible = []
     for s in snap["stones"]:
         if tuple(s["position"]) in revealed:
             s.pop("_true_type", None)
+            s.pop("_true_grade", None)
+            s.pop("_true_quantity", None)
             visible.append(s)
     snap["stones"] = visible
     # Serialize concentration_map tuple keys to JSON-safe "x,y" strings

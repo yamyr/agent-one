@@ -54,7 +54,7 @@ DIG_TOOL = {
     "type": "function",
     "function": {
         "name": "dig",
-        "description": f"Dig at current tile to extract a buried stone. Costs 6 fuel units (~{BATTERY_COST_DIG:.2%} battery). The stone must be present and not yet extracted.",
+        "description": f"Dig at current tile to extract a vein. Costs 6 fuel units (~{BATTERY_COST_DIG:.2%} battery). The vein must be analyzed first.",
         "parameters": {"type": "object", "properties": {}},
     },
 }
@@ -63,7 +63,7 @@ PICKUP_TOOL = {
     "type": "function",
     "function": {
         "name": "pickup",
-        "description": "Pick up an extracted stone at current tile into inventory. The stone must have been dug out first.",
+        "description": "Pick up an extracted vein at current tile into inventory (with its basalt quantity). The vein must have been dug out first.",
         "parameters": {"type": "object", "properties": {}},
     },
 }
@@ -72,7 +72,7 @@ ANALYZE_TOOL = {
     "type": "function",
     "function": {
         "name": "analyze",
-        "description": f"Analyze an unknown stone at current tile to reveal its true type (core or basalt). Costs 3 fuel units (~{BATTERY_COST_ANALYZE:.2%} battery). Must be done before dig/pickup.",
+        "description": f"Analyze an unknown vein at current tile to reveal its grade (low/medium/high/rich/pristine) and basalt quantity. Costs 3 fuel units (~{BATTERY_COST_ANALYZE:.2%} battery). Must be done before dig/pickup.",
         "parameters": {"type": "object", "properties": {}},
     },
 }
@@ -81,7 +81,7 @@ ANALYZE_GROUND_TOOL = {
     "type": "function",
     "function": {
         "name": "analyze_ground",
-        "description": f"Analyze ground concentration at current tile to detect nearby core deposits. Returns a 0.0-1.0 reading (higher = closer to cores). Costs 3 fuel units (~{BATTERY_COST_ANALYZE_GROUND:.2%} battery).",
+        "description": f"Analyze ground concentration at current tile to detect nearby basalt vein deposits. Returns a 0.0-1.0 reading (higher = closer to high-grade veins). Costs 3 fuel units (~{BATTERY_COST_ANALYZE_GROUND:.2%} battery).",
         "parameters": {"type": "object", "properties": {}},
     },
 }
@@ -130,30 +130,30 @@ class MistralRoverReasoner:
             if 0 <= nx < GRID_W and 0 <= ny < GRID_H and (nx, ny) not in visited_set:
                 unvisited_dirs.append(name)
 
-        # Stone at current tile
+        # Vein at current tile
         ground = check_ground(self.agent_id)
         stone_info = ground["stone"]
         if stone_info:
             if stone_info["type"] == "unknown":
-                stone_line = "unknown (needs analyze to reveal type)"
+                stone_line = "unknown vein (needs analyze to reveal grade and quantity)"
             elif stone_info["extracted"]:
-                stone_line = f"{stone_info['type']} (extracted — ready for pickup)"
+                stone_line = f"{stone_info.get('grade', '?')} vein, qty={stone_info.get('quantity', 0)} (extracted — ready for pickup)"
             else:
-                stone_line = f"{stone_info['type']} (analyzed, buried — needs dig)"
+                stone_line = f"{stone_info.get('grade', '?')} vein, qty={stone_info.get('quantity', 0)} (analyzed, buried — needs dig)"
         else:
             stone_line = "none"
 
         # Mission target
         world_mission = WORLD.get("mission", {})
-        target_type = world_mission.get("target_type", "core")
-        target_count = world_mission.get("target_count", 2)
-        collected = world_mission.get("collected_count", 0)
+        target_type = world_mission.get("target_type", "basalt_vein")
+        target_quantity = world_mission.get("target_quantity", 100)
+        collected_qty = world_mission.get("collected_quantity", 0)
 
         parts = []
 
         parts.append(
             f"You are {self.agent_id}, an autonomous Mars rover.\n"
-            "Your job: explore the grid, find stones, analyze them, dig them out, pick them up.\n"
+            "Your job: explore the grid, find basalt veins, analyze them, dig them out, pick them up.\n"
             "Think step by step but keep it to 1-2 sentences, then call a tool.\n"
             "\n"
             "COORDINATE SYSTEM:\n"
@@ -161,10 +161,11 @@ class MistralRoverReasoner:
             "- East = X increases, West = X decreases\n"
             "- To reach a tile with HIGHER Y, move NORTH. To reach LOWER Y, move SOUTH.\n"
             "\n"
-            "STONE WORKFLOW:\n"
-            "- Stones start as 'unknown'. You must ANALYZE them first to reveal their true type.\n"
-            "- After analyzing: DIG to extract, then PICKUP to collect.\n"
-            "- Use analyze_ground to read concentration (0.0-1.0). Higher = closer to core deposits.\n"
+            "VEIN WORKFLOW:\n"
+            "- Veins start as 'unknown'. You must ANALYZE them first to reveal grade + quantity.\n"
+            "- Grades: low, medium, high, rich, pristine. Higher grade = more basalt.\n"
+            "- After analyzing: DIG to extract, then PICKUP to collect into inventory.\n"
+            "- Use analyze_ground to read concentration (0.0-1.0). Higher = closer to rich veins.\n"
             "\n"
             "RULES:\n"
             f"- Battery is your lifeline. Move costs 1 fuel unit/tile (~{BATTERY_COST_MOVE:.2%}), dig 6 units (~{BATTERY_COST_DIG:.2%}), analyze 3 units (~{BATTERY_COST_ANALYZE:.2%}), pickup 2 units (~{BATTERY_COST_PICKUP:.2%}).\n"
@@ -172,8 +173,8 @@ class MistralRoverReasoner:
             "the station will recharge you automatically.\n"
             "- ALWAYS keep enough battery to return to station. When your battery drops to 67% or below, \n"
             "head back to station IMMEDIATELY — this is the return-to-base threshold.\n"
-            "- If you find an unknown stone: analyze → dig → pickup. All on the same tile.\n"
-            "- Once you have collected all target stones, RETURN TO STATION to complete the mission.\n"
+            "- If you find an unknown vein: analyze → dig → pickup. All on the same tile.\n"
+            "- Once you have collected enough basalt, RETURN TO STATION to deliver and complete the mission.\n"
             "- Prefer unvisited tiles when exploring. Don't backtrack aimlessly.\n"
             "- Ground is auto-scanned after every move. No need to check manually.\n"
             "- Follow your current tasks list. It tells you exactly what to do next.".format(
@@ -184,7 +185,7 @@ class MistralRoverReasoner:
         parts.append(
             f"\n== Mission ==\n"
             f"Objective: {mission['objective']}\n"
-            f"Target: collect {target_count} {target_type} stones ({collected}/{target_count} done)"
+            f"Target: collect {target_quantity} units of basalt from veins ({collected_qty}/{target_quantity} delivered)"
         )
 
         tasks = agent.get("tasks", [])
@@ -193,7 +194,7 @@ class MistralRoverReasoner:
             for i, task in enumerate(tasks, 1):
                 parts.append(f"{i}. {task}")
         else:
-            parts.append("\n== Current Tasks ==\n1. Explore unvisited tiles to find stones")
+            parts.append("\n== Current Tasks ==\n1. Explore unvisited tiles to find veins")
 
         parts.append(
             f"\n== State ==\n"
@@ -201,11 +202,11 @@ class MistralRoverReasoner:
             f"Battery: {battery:.0%} ({moves_on_battery} moves remaining, {FUEL_CAPACITY_ROVER} fuel capacity)\n"
             f"Distance to station: {dist_to_station} tiles\n"
             f"Safety margin: {'OK' if battery > RETURN_TO_BASE_THRESHOLD else 'LOW — return to station immediately'}\n"
-            f"Inventory: {len(inventory)} stones"
-            + (f" ({', '.join(s['type'] for s in inventory)})" if inventory else "")
+            f"Inventory: {len(inventory)} veins"
+            + (" (" + ", ".join(f"{s.get('grade','?')} qty={s.get('quantity',0)}" for s in inventory) + ")" if inventory else "")
         )
 
-        # Visible stones (on revealed tiles)
+        # Visible veins (on revealed tiles)
         revealed_set = {tuple(c) for c in agent.get("revealed", [])}
         visible_stones = []
         for stone in WORLD.get("stones", []):
@@ -214,8 +215,13 @@ class MistralRoverReasoner:
                 dist = abs(sp[0] - x) + abs(sp[1] - y)
                 status = "extracted" if stone.get("extracted") else "buried"
                 hint = _direction_hint(sp[0] - x, sp[1] - y)
+                grade_info = stone.get("grade", "unknown")
+                qty_info = stone.get("quantity", 0)
+                label = f"{stone['type']} {grade_info}" if stone["type"] != "unknown" else "unknown vein"
+                if qty_info > 0:
+                    label += f" qty={qty_info}"
                 visible_stones.append(
-                    f"{stone['type']} ({status}) at ({sp[0]},{sp[1]}) — {hint}, {dist} tiles"
+                    f"{label} ({status}) at ({sp[0]},{sp[1]}) — {hint}, {dist} tiles"
                 )
 
         parts.append(
@@ -223,10 +229,10 @@ class MistralRoverReasoner:
             f"Grid: {GRID_W}x{GRID_H}\n"
             f"Tiles visited: {len(agent.get('visited', []))}\n"
             f"Unvisited neighbors: {', '.join(unvisited_dirs) if unvisited_dirs else 'none'}\n"
-            f"Stone here: {stone_line}"
+            f"Vein here: {stone_line}"
         )
         if visible_stones:
-            parts.append("Visible stones nearby:")
+            parts.append("Visible veins nearby:")
             for vs in visible_stones:
                 parts.append(f"  - {vs}")
 
@@ -329,7 +335,7 @@ class MockRoverReasoner:
         agent = WORLD["agents"][self.agent_id]
         x, y = agent["position"]
         mission = WORLD.get("mission", {})
-        target_type = mission.get("target_type", "core")
+        target_type = mission.get("target_type", "basalt_vein")
 
         context = (
             f"Mock rover at ({x},{y}), battery={agent['battery']:.0%}, "
@@ -383,20 +389,20 @@ class MockRoverReasoner:
                 },
             }
 
-        # Check for stone at current tile — analyze, dig, or pickup
+        # Check for vein at current tile — analyze, dig, or pickup
         stone_here = _find_stone_at(x, y)
         if stone_here:
             if not stone_here.get("analyzed"):
-                thinking = f"I'm at ({x}, {y}). Found an unknown stone — analyzing."
+                thinking = f"I'm at ({x}, {y}). Found an unknown vein — analyzing."
                 return {"thinking": thinking, "action": {"name": "analyze", "params": {}}}
             elif not stone_here.get("extracted"):
-                thinking = f"I'm at ({x}, {y}). Found a {stone_here['type']} stone — digging."
+                thinking = f"I'm at ({x}, {y}). Found a {stone_here.get('grade', '?')} vein — digging."
                 return {"thinking": thinking, "action": {"name": "dig", "params": {}}}
             else:
-                thinking = f"I'm at ({x}, {y}). Stone extracted — picking up."
+                thinking = f"I'm at ({x}, {y}). Vein extracted — picking up."
                 return {"thinking": thinking, "action": {"name": "pickup", "params": {}}}
 
-        # If carrying target stone, navigate toward station
+        # If carrying basalt, navigate toward station
         has_target = any(s["type"] == target_type for s in agent.get("inventory", []))
         if has_target:
             station = WORLD["agents"].get("station")
@@ -411,7 +417,7 @@ class MockRoverReasoner:
             else:
                 direction = "north"
                 distance = 1
-            thinking = f"I'm at ({x}, {y}). Carrying target stone, heading to station at ({sp[0]},{sp[1]})."
+            thinking = f"I'm at ({x}, {y}). Carrying basalt, heading to station at ({sp[0]},{sp[1]})."
             return {
                 "thinking": thinking,
                 "action": {
@@ -477,8 +483,8 @@ SCAN_TOOL = {
     "function": {
         "name": "scan",
         "description": "Scan the area below to sample concentration readings from sensors. "
-        "Returns probability values for surrounding tiles indicating likelihood of precious "
-        f"stone deposits. Higher values mean closer to core deposits. Costs 2 fuel units (~{BATTERY_COST_SCAN:.2%} battery).",
+        "Returns probability values for surrounding tiles indicating likelihood of "
+        f"high-grade basalt vein deposits. Higher values mean closer to rich veins. Costs 2 fuel units (~{BATTERY_COST_SCAN:.2%} battery).",
         "parameters": {"type": "object", "properties": {}},
     },
 }
@@ -487,7 +493,7 @@ DRONE_TOOLS = [DRONE_MOVE_TOOL, SCAN_TOOL]
 
 
 class DroneAgent:
-    """Drone scout agent powered by Mistral LLM. Moves fast, scans for stone deposits."""
+    """Drone scout agent powered by Mistral LLM. Moves fast, scans for basalt vein deposits."""
 
     def __init__(self, agent_id="drone-mistral", model="mistral-small-latest"):
         self.agent_id = agent_id
@@ -530,8 +536,8 @@ class DroneAgent:
 
         parts.append(
             f"You are {self.agent_id}, an autonomous Mars drone scout.\n"
-            "Your job: fly over the terrain and SCAN areas to detect concentration of precious stone deposits.\n"
-            "You are a pure scout — you CANNOT dig or pick up stones. Rovers depend on your scan data.\n"
+            "Your job: fly over the terrain and SCAN areas to detect basalt vein deposits.\n"
+            "You are a pure scout — you CANNOT dig or pick up veins. Rovers depend on your scan data.\n"
             "Think step by step but keep it to 1-2 sentences, then call a tool.\n"
             "\n"
             "COORDINATE SYSTEM:\n"
@@ -540,7 +546,7 @@ class DroneAgent:
             "\n"
             "SCAN STRATEGY:\n"
             "- Use 'scan' to sample concentration readings at your current position.\n"
-            "- Readings range 0.0-1.0. Higher values indicate precious stone deposits nearby.\n"
+            "- Readings range 0.0-1.0. Higher values indicate high-grade basalt veins nearby.\n"
             "- Scan data is shared with rovers automatically — they will navigate to hotspots you find.\n"
             "- Try to cover the map systematically. Don't scan the same area twice.\n"
             "- Prioritize scanning unexplored areas far from previous scan positions.\n"

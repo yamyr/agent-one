@@ -6,6 +6,25 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Changed (Basalt Vein System)
+
+- **Vein-based mineral system**: Replaced binary stone types (core/basalt) with a vein grade system. Every vein is basalt with a grade (low/medium/high/rich/pristine) determining quantity, following exponential rarity decay (`weight = 200 * e^(-1.3 * index)`)
+- **Vein data model**: Each vein has hidden `_true_grade` and `_true_quantity` fields revealed on analyze. Grades map to quantity ranges: low (10-50), medium (51-150), high (151-350), rich (351-700), pristine (701-1000)
+- **Quantity-based missions**: Mission success now requires collecting a target quantity of basalt (default 100 units) rather than a count of specific stone types. `target_count`/`collected_count` replaced with `target_quantity`/`collected_quantity`
+- **Concentration map scaling**: Ground concentration boost near veins now scales with grade index — higher-grade veins produce stronger signals
+- **Task planning**: Rover task generation prioritizes higher-grade veins (pristine first) when choosing navigation targets
+- **Agent prompts**: All rover, drone, and station LLM prompts updated for vein terminology — tool descriptions, workflow instructions, and context display reference grades and quantities
+- **Narrator keywords**: Updated narration keyword filter from "core" to "vein"
+- **UI vein visualization**: Stone rendering replaced with grade-based colors (pristine=gold, rich=deep gold, high=amber, medium=silver, low=gray) and size scaling (6-14px by grade). Rich/pristine veins get SVG glow effect
+- **UI inventory display**: Agent detail modal shows grade + quantity per vein (e.g., "HIGH x237")
+- **UI mission progress**: Mission bar shows quantity-based progress (e.g., "237 / 100 basalt")
+- **Pydantic models**: `StoneInfo` and `InventoryItem` gained `grade` and `quantity` fields; `RoverWorldView` uses `target_quantity`/`collected_quantity`
+- **Test coverage**: 278 tests passing — added `TestVeinGradeDistribution` (5 tests) validating exponential rarity, updated all stone-related test classes for vein data structures
+
+### Lessons Learned
+
+- When spawning agent teams with file-editing permissions, coordinate edits carefully — concurrent writes to the same file cause "file modified since read" conflicts. Assign file ownership per agent to avoid collisions.
+
 ### Changed (Battery & Fuel Rebalance)
 
 - **Fuel capacity system**: Rovers carry 350 fuel units, Drone carries 250 fuel units. Battery remains a 0.0–1.0 float (fraction of capacity)

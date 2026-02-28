@@ -10,11 +10,15 @@ class AgentMission(BaseModel):
 
 class InventoryItem(BaseModel):
     type: str
+    grade: str = "unknown"
+    quantity: int = 0
 
 
 class StoneInfo(BaseModel):
     position: list[int]
     type: str
+    grade: str = "unknown"
+    quantity: int = 0
     extracted: bool = False
     analyzed: bool = False
 
@@ -40,9 +44,9 @@ class RoverWorldView(BaseModel):
     grid_w: int
     grid_h: int
     station_position: list[int]
-    target_type: str = "core"
-    target_count: int = 1
-    collected_count: int = 0
+    target_type: str = "basalt_vein"
+    target_quantity: int = 100
+    collected_quantity: int = 0
 
 
 class PendingCommand(BaseModel):
