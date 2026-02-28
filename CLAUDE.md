@@ -154,12 +154,12 @@ Every PR description **must** follow the template in `.github/PULL_REQUEST_TEMPL
 
 | What | Detail |
 |------|--------|
-| Python | 3.12+ |
+| Python | 3.14+ |
 | LLM SDK | `mistralai` |
 | TTS SDK | `elevenlabs` (optional — voice narration) |
 | API keys | `MISTRAL_API_KEY` (required), `ELEVENLABS_API_KEY` (optional) |
 | SurrealDB | running on port 4002 (dev) |
-| Node | >= 22.12.0 |
+| Node | >= 24.0.0 (LTS) |
 | Base code | Protocol types and BaseAgent adapted from Snowball |
 
 ## Key Spec References
@@ -170,8 +170,5 @@ Every PR description **must** follow the template in `.github/PULL_REQUEST_TEMPL
 - `_private/PROTOCOL_REF.md` — protocol reference from Snowball
 
 ## Active Technologies
-- Python 3.12+ (server), JavaScript/Vue 3 (UI) + FastAPI, Vue 3, Vite, Mistral AI SDK, ElevenLabs SDK (001-fix-narration-ui)
-- N/A (in-memory state only) (001-fix-narration-ui)
-
-## Recent Changes
-- 001-fix-narration-ui: Added Python 3.12+ (server), JavaScript/Vue 3 (UI) + FastAPI, Vue 3, Vite, Mistral AI SDK, ElevenLabs SDK
+- Python 3.14+ (server), JavaScript/Vue 3 (UI) + FastAPI, Vue 3, Vite, Mistral AI SDK, ElevenLabs SDK
+- Node 24 LTS, uv package manager

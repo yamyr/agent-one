@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Changed (Runtime Upgrade)
+
+- **Python 3.12 → 3.14**: Updated `server/pyproject.toml` (`requires-python`), CI workflow (`python-version`), Dockerfile (`python:3.14-slim`), regenerated `uv.lock`
+- **Node 22 → 24 LTS**: Updated `ui/package.json` (`engines.node`), CI workflow (`node-version`), Dockerfile (`node:24-slim`)
+- Updated docs: `CLAUDE.md`, `README.md`, `DEV_README.md` to reflect new version requirements
+
 ### Added (Co-Authoring Guidelines)
 
 - **Co-authoring standard**: All commits and PRs now use `Co-Authored-By: agent-one team <agent-one@yanok.ai>` — added to CLAUDE.md as mandatory rule and to PR template footer
