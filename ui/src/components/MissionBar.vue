@@ -1,15 +1,24 @@
 <script setup>
 defineProps({
-  mission: Object,
+  mission: {
+    type: Object,
+    default: null,
+  },
 })
 </script>
 
 <template>
-  <div v-if="mission" class="mission-bar">
+  <div
+    v-if="mission"
+    class="mission-bar"
+  >
     <span class="mission-label">Mission</span>
     <span class="mission-target">collect {{ mission.target_count }} {{ mission.target_type }}</span>
     <span class="mission-progress">{{ mission.collected_count }} / {{ mission.target_count }}</span>
-    <span class="mission-status" :class="mission.status">{{ mission.status }}</span>
+    <span
+      class="mission-status"
+      :class="mission.status"
+    >{{ mission.status }}</span>
   </div>
 </template>
 

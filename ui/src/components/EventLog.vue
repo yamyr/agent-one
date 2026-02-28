@@ -2,22 +2,41 @@
 import { agentColor } from '../constants.js'
 
 defineProps({
-  events: Array,
+  events: {
+    type: Array,
+    default: () => [],
+  },
 })
 </script>
 
 <template>
   <section class="event-log">
     <h2>Event Log</h2>
-    <div v-if="events.length === 0" class="empty">
+    <div
+      v-if="events.length === 0"
+      class="empty"
+    >
       Waiting for mission events...
     </div>
-    <div v-for="(event, i) in events" :key="i" class="event">
-      <span v-if="event.tick != null" class="event-tick">#{{ event.tick }}</span>
-      <span class="event-source" :style="{ color: agentColor(event.source) }">{{ event.source }}</span>
+    <div
+      v-for="(event, i) in events"
+      :key="i"
+      class="event"
+    >
+      <span
+        v-if="event.tick != null"
+        class="event-tick"
+      >#{{ event.tick }}</span>
+      <span
+        class="event-source"
+        :style="{ color: agentColor(event.source) }"
+      >{{ event.source }}</span>
       <span class="event-type">{{ event.type }}</span>
       <span class="event-name">{{ event.name }}</span>
-      <pre v-if="event.payload" class="event-payload">{{ JSON.stringify(event.payload, null, 2) }}</pre>
+      <pre
+        v-if="event.payload"
+        class="event-payload"
+      >{{ JSON.stringify(event.payload, null, 2) }}</pre>
     </div>
   </section>
 </template>

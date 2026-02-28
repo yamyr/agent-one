@@ -3,9 +3,18 @@ import AgentPane from './AgentPane.vue'
 import { agentColor } from '../constants.js'
 
 const props = defineProps({
-  worldState: Object,
-  agentIds: Array,
-  agentEvents: Object,
+  worldState: {
+    type: Object,
+    default: null,
+  },
+  agentIds: {
+    type: Array,
+    default: () => [],
+  },
+  agentEvents: {
+    type: Object,
+    default: () => ({}),
+  },
 })
 
 const emit = defineEmits(['select-agent'])
@@ -48,16 +57,18 @@ function agentMemory(id) {
 <template>
   <section class="agent-panes">
     <AgentPane
-      v-for="id in agentIds" :key="id"
-      :agentId="id"
+      v-for="id in agentIds"
+      :key="id"
+      :agent-id="id"
       :position="agentPosition(id)"
       :battery="batteryPct(id)"
-      :inventoryCount="inventoryCount(id)"
+      :inventory-count="inventoryCount(id)"
       :mission="missionObjective(id)"
       :memory="agentMemory(id)"
       :events="agentEvents[id]"
       :color="agentColor(id)"
-      @select-agent="emit('select-agent', $event)" />
+      @select-agent="emit('select-agent', $event)"
+    />
   </section>
 </template>
 

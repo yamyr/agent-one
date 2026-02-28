@@ -62,3 +62,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Cached mock fallback instance in RoverAgent instead of creating a new `MockRoverAgent` per failure
 - Added logging for hallucinated tool names and LLM thinking when no valid tool action is returned
 - Installed GitHub Spec Kit (`github/spec-kit`) with shorthand aliases: `/c`, `/s`, `/p`, `/t`, `/i`, `/t2i`
+- ESLint config now ignores `dist/` and `node_modules/` build output
+- Auto-fixed 148 Vue template formatting warnings (attribute line breaks, indentation)
+- Added `default` or `required` to all Vue component props to resolve 18 `vue/require-default-prop` warnings — zero ESLint warnings remain

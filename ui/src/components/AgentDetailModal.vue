@@ -2,8 +2,14 @@
 import { agentColor } from '../constants.js'
 
 const props = defineProps({
-  agent: Object,
-  agentId: String,
+  agent: {
+    type: Object,
+    default: null,
+  },
+  agentId: {
+    type: String,
+    default: '',
+  },
 })
 
 const emit = defineEmits(['close'])
@@ -20,60 +26,133 @@ function batteryPct() {
 </script>
 
 <template>
-  <div class="modal-overlay" @click.self="emit('close')">
-    <div class="modal" v-if="agent">
+  <div
+    class="modal-overlay"
+    @click.self="emit('close')"
+  >
+    <div
+      v-if="agent"
+      class="modal"
+    >
       <div class="modal-header">
-        <span class="modal-title" :style="{ color: agentColor(agentId) }">{{ agentId }}</span>
-        <button class="modal-close" @click="emit('close')">x</button>
+        <span
+          class="modal-title"
+          :style="{ color: agentColor(agentId) }"
+        >{{ agentId }}</span>
+        <button
+          class="modal-close"
+          @click="emit('close')"
+        >
+          x
+        </button>
       </div>
       <div class="modal-body">
         <div class="modal-section">
-          <div class="modal-label">Type</div>
-          <div class="modal-value">{{ agent.type || 'rover' }}</div>
+          <div class="modal-label">
+            Type
+          </div>
+          <div class="modal-value">
+            {{ agent.type || 'rover' }}
+          </div>
         </div>
         <div class="modal-section">
-          <div class="modal-label">Mission</div>
-          <div class="modal-value">{{ agent.mission.objective }}</div>
+          <div class="modal-label">
+            Mission
+          </div>
+          <div class="modal-value">
+            {{ agent.mission.objective }}
+          </div>
         </div>
-        <div class="modal-section" v-if="agent.tasks && agent.tasks.length">
-          <div class="modal-label">Current Task</div>
-          <div class="modal-value task-value">{{ agent.tasks[0] }}</div>
+        <div
+          v-if="agent.tasks && agent.tasks.length"
+          class="modal-section"
+        >
+          <div class="modal-label">
+            Current Task
+          </div>
+          <div class="modal-value task-value">
+            {{ agent.tasks[0] }}
+          </div>
         </div>
         <div class="modal-section">
-          <div class="modal-label">Position</div>
-          <div class="modal-value">{{ position() }}</div>
+          <div class="modal-label">
+            Position
+          </div>
+          <div class="modal-value">
+            {{ position() }}
+          </div>
         </div>
         <div class="modal-section">
-          <div class="modal-label">Battery</div>
-          <div class="modal-value">{{ batteryPct() }}</div>
+          <div class="modal-label">
+            Battery
+          </div>
+          <div class="modal-value">
+            {{ batteryPct() }}
+          </div>
         </div>
         <div class="modal-section">
-          <div class="modal-label">Tiles visited</div>
-          <div class="modal-value">{{ agent.visited.length }}</div>
+          <div class="modal-label">
+            Tiles visited
+          </div>
+          <div class="modal-value">
+            {{ agent.visited.length }}
+          </div>
         </div>
-        <div class="modal-section" v-if="agent.inventory">
-          <div class="modal-label">Inventory</div>
-          <div class="modal-value" v-if="agent.inventory.length === 0">Empty</div>
-          <div class="modal-inv" v-else>
-            <span v-for="(stone, i) in agent.inventory" :key="i" class="inv-stone" :class="stone.type">
+        <div
+          v-if="agent.inventory"
+          class="modal-section"
+        >
+          <div class="modal-label">
+            Inventory
+          </div>
+          <div
+            v-if="agent.inventory.length === 0"
+            class="modal-value"
+          >
+            Empty
+          </div>
+          <div
+            v-else
+            class="modal-inv"
+          >
+            <span
+              v-for="(stone, i) in agent.inventory"
+              :key="i"
+              class="inv-stone"
+              :class="stone.type"
+            >
               {{ stone.type }}
             </span>
           </div>
         </div>
         <div class="modal-section">
-          <div class="modal-label">Tools</div>
+          <div class="modal-label">
+            Tools
+          </div>
           <div class="modal-tools">
-            <div v-for="tool in (agent.tools || [])" :key="tool.name" class="tool-item">
+            <div
+              v-for="tool in (agent.tools || [])"
+              :key="tool.name"
+              class="tool-item"
+            >
               <span class="tool-name">{{ tool.name }}</span>
               <span class="tool-desc">{{ tool.description }}</span>
             </div>
-            <div v-if="!agent.tools || agent.tools.length === 0" class="empty">
+            <div
+              v-if="!agent.tools || agent.tools.length === 0"
+              class="empty"
+            >
               No tools
             </div>
           </div>
         </div>
-        <div class="modal-section" v-if="agent.last_context">
-          <div class="modal-label">System Prompt</div>
+        <div
+          v-if="agent.last_context"
+          class="modal-section"
+        >
+          <div class="modal-label">
+            System Prompt
+          </div>
           <pre class="modal-context">{{ agent.last_context }}</pre>
         </div>
       </div>
