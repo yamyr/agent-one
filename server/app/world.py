@@ -1072,6 +1072,10 @@ def observe_station():
         grid_h=GRID_H,
         rovers=rovers,
         stones=stones,
+        tick=WORLD.get("tick", 0),
+        mission_status=WORLD.get("mission_status", "in_progress"),
+        collected_quantity=WORLD.get("collected_quantity", 0),
+        target_quantity=WORLD.get("target_quantity", 100),
     )
 
 

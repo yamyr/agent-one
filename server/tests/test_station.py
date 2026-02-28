@@ -24,9 +24,9 @@ def _mock_client_response(content=None, tool_calls=None):
     return response
 
 
-def _make_station_context():
+def _make_station_context(**overrides):
     """Build a typed StationContext for testing."""
-    return StationContext(
+    defaults = dict(
         grid_w=20,
         grid_h=20,
         rovers=[
@@ -50,6 +50,8 @@ def _make_station_context():
             StoneInfo(type="unknown", position=[10, 10]),
         ],
     )
+    defaults.update(overrides)
+    return StationContext(**defaults)
 
 
 class TestStationDefine(unittest.TestCase):
@@ -236,3 +238,61 @@ class TestBuildWorldSummary(unittest.TestCase):
         ctx = _make_station_context()
         summary = _build_world_summary(ctx)
         self.assertIn("Veins on map: 2", summary)
+
+class TestBuildWorldSummaryExtended(unittest.TestCase):
+    def test_summary_includes_tick(self):
+        ctx = _make_station_context(tick=42)
+        summary = _build_world_summary(ctx)
+        self.assertIn("Tick: 42", summary)
+
+    def test_summary_includes_mission_status(self):
+        ctx = _make_station_context(tick=10, mission_status="completed", collected_quantity=5, target_quantity=5)
+        summary = _build_world_summary(ctx)
+        self.assertIn("Mission status: completed", summary)
+        self.assertIn("5/5", summary)
+
+
+class TestStationEvaluate(unittest.TestCase):
+    def _make_agent(self):
+        return StationAgent.__new__(StationAgent)
+
+    def test_evaluate_returns_dict(self):
+        agent = self._make_agent()
+        ctx = _make_station_context(tick=10)
+        events = [{"name": "scan", "source": "drone", "payload": {"text": "ok"}}]
+        with unittest.mock.patch.object(agent, "_call_llm", return_value={"thinking": "ok", "actions": []}) as m:
+            result = agent.evaluate_situation(ctx, events)
+        self.assertIn("thinking", result)
+        m.assert_called_once()
+
+    def test_evaluate_includes_tick_in_prompt(self):
+        agent = self._make_agent()
+        ctx = _make_station_context(tick=25)
+        events = [{"name": "dig", "source": "rover", "payload": {"text": "dug"}}]
+        with unittest.mock.patch.object(agent, "_call_llm", return_value={"thinking": "", "actions": []}) as m:
+            agent.evaluate_situation(ctx, events)
+        prompt = m.call_args[0][0]
+        self.assertIn("Tick 25", prompt)
+
+    def test_evaluate_with_empty_events(self):
+        agent = self._make_agent()
+        ctx = _make_station_context(tick=5)
+        with unittest.mock.patch.object(agent, "_call_llm", return_value={"thinking": "", "actions": []}) as m:
+            agent.evaluate_situation(ctx, [])
+        prompt = m.call_args[0][0]
+        self.assertIn("(no recent events)", prompt)
+
+
+class TestStationContextFields(unittest.TestCase):
+    def test_default_values(self):
+        ctx = StationContext(grid_w=10, grid_h=10, rovers=[], stones=[])
+        self.assertEqual(ctx.tick, 0)
+        self.assertEqual(ctx.mission_status, "in_progress")
+        self.assertEqual(ctx.collected_quantity, 0)
+        self.assertEqual(ctx.target_quantity, 100)
+
+    def test_custom_values(self):
+        ctx = _make_station_context(tick=50, mission_status="completed", collected_quantity=10, target_quantity=10)
+        self.assertEqual(ctx.tick, 50)
+        self.assertEqual(ctx.mission_status, "completed")
+

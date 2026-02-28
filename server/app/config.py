@@ -32,7 +32,7 @@ class Settings(BaseSettings):
     world_seed: str = ""
 
     # Active agents (comma-separated: "rover-mistral,drone-mistral")
-    active_agents: str = "rover-mistral,drone-mistral"
+    active_agents: str = "rover-mistral,drone-mistral,station-loop"
 
     # ElevenLabs narration
     elevenlabs_api_key: str = ""

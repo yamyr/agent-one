@@ -24,6 +24,7 @@ from .world import MAX_INVENTORY_ROVER
 from .world import check_ground, direction_hint
 from .world import set_agent_model
 from .world import execute_action, get_snapshot, charge_agent, next_tick
+from .station import StationAgent
 
 logger = logging.getLogger(__name__)
 
@@ -1023,3 +1024,55 @@ class DroneMistralLoop(DroneLoop):
         super().__init__(agent_id="drone-mistral", interval=interval, world=world)
         self._reasoner = DroneAgent(agent_id=self.agent_id, world=self._world)
         set_agent_model(self.agent_id, self._reasoner.model)
+
+
+# ── Station reactive loop ────────────────────────────────────────────────────────
+
+
+class StationLoop(BaseAgent):
+    """Station periodic evaluation loop — monitors field events and coordinates agents."""
+
+    INTERESTING_EVENTS = frozenset({
+        "thinking", "notify", "check", "dig", "analyze", "scan",
+        "world_event", "mission_success", "mission_failed", "mission_aborted",
+        "charge_rover", "deploy_solar_panel", "use_solar_battery",
+    })
+
+    def __init__(self, interval: float = 20.0, world: World | None = None):
+        super().__init__(agent_id="station-loop", interval=interval, world=world)
+        self._station = StationAgent()
+        self._event_buffer: list[dict] = []
+
+    def buffer_event(self, event: dict):
+        """Buffer a field event for next evaluation cycle."""
+        self._event_buffer.append(event)
+        if len(self._event_buffer) > 50:
+            self._event_buffer = self._event_buffer[-50:]
+
+    async def tick(self, host) -> None:
+        if not self._event_buffer:
+            return
+
+        context = self._world.observe_station()
+        result = await asyncio.to_thread(
+            self._station.evaluate_situation, context, self._event_buffer
+        )
+        self._event_buffer.clear()
+
+        if result.get("thinking"):
+            msg = make_message(
+                source="station",
+                type="event",
+                name="thinking",
+                payload={"text": result["thinking"]},
+            )
+            await host.broadcast(msg.to_dict())
+
+        for action in result.get("actions", []):
+            action_msg = make_message(
+                source="station",
+                type="action",
+                name=action["name"],
+                payload=action.get("args", {}),
+            )
+            await host.broadcast(action_msg.to_dict())

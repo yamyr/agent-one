@@ -89,3 +89,7 @@ class StationContext(BaseModel):
     grid_h: int
     rovers: list[RoverSummary]
     stones: list[StoneInfo]
+    tick: int = 0
+    mission_status: str = "in_progress"
+    collected_quantity: int = 0
+    target_quantity: int = 100

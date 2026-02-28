@@ -95,6 +95,8 @@ def _build_world_summary(context: StationContext):
             f'mission="{rover.mission.objective}" visited={rover.visited_count}'
         )
     lines.append(f"Veins on map: {len(context.stones)}")
+    lines.append(f"Tick: {context.tick}")
+    lines.append(f"Mission status: {context.mission_status} (collected {context.collected_quantity}/{context.target_quantity})")
     for s in context.stones:
         grade_str = f" grade={s.grade}" if s.grade != "unknown" else ""
         qty_str = f" qty={s.quantity}" if s.quantity > 0 else ""
@@ -195,3 +197,28 @@ class StationAgent:
             "Decide how to respond. You may reassign missions or broadcast alerts."
         )
         return self._call_llm(prompt, context)
+
+    def evaluate_situation(self, context: StationContext, events: list[dict]) -> dict:
+        """Periodically evaluate mission status and recent field events."""
+        event_lines = []
+        for e in events[-10:]:
+            payload = e.get("payload", {})
+            text = payload.get("text", payload.get("message", str(payload)))
+            event_lines.append(
+                f"- [{e.get('name')}] from {e.get('source')}: {text}"
+            )
+        event_summary = "\n".join(event_lines) if event_lines else "(no recent events)"
+
+        user_msg = (
+            f"SITUATION REPORT (Tick {context.tick}):\n"
+            f"Mission: {context.mission_status} \u2014 "
+            f"collected {context.collected_quantity}/{context.target_quantity}\n\n"
+            f"Recent field events:\n{event_summary}\n\n"
+            f"Evaluate the mission status. Should you:\n"
+            f"1. Reassign any rover missions?\n"
+            f"2. Broadcast an alert about conditions?\n"
+            f"3. Recall any rovers in danger?\n"
+            f"4. Take no action (if everything is fine)?\n"
+            f"Respond with tool calls only if action is needed."
+        )
+        return self._call_llm(user_msg, context)
