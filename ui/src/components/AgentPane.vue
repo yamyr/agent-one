@@ -77,7 +77,11 @@ function eventText(e) {
     <div
       class="agent-header"
       style="cursor:pointer"
+      tabindex="0"
+      role="button"
       @click="emit('select-agent', agentId)"
+      @keydown.enter="emit('select-agent', agentId)"
+      @keydown.space.prevent="emit('select-agent', agentId)"
     >
       <div class="agent-row-1">
         <span

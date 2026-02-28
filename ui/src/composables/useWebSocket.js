@@ -13,8 +13,12 @@ export function useWebSocket({ onConnect, onEvent } = {}) {
     const byAgent = {}
     for (const e of events.value) {
       if (e.source === 'world') continue
-      if (!byAgent[e.source]) byAgent[e.source] = []
-      if (byAgent[e.source].length < 50) byAgent[e.source].push(e)
+      const bucket = byAgent[e.source]
+      if (bucket) {
+        if (bucket.length < 50) bucket.push(e)
+      } else {
+        byAgent[e.source] = [e]
+      }
     }
     return byAgent
   })
@@ -47,7 +51,7 @@ export function useWebSocket({ onConnect, onEvent } = {}) {
         event._uid = ++eventUid
         events.value.unshift(event)
         if (events.value.length > 200) {
-          events.value.length = 200
+          events.value.splice(200)
         }
         if (onEvent) onEvent(event)
       }
