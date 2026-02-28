@@ -1,6 +1,6 @@
 <script setup>
 import { computed, ref, watch, onMounted, onUnmounted } from 'vue'
-import { TILE_SIZE, MAP_W, MAP_H, VIEWPORT_W, VIEWPORT_H, VEIN_COLORS, VEIN_SIZES, SOLAR_PANEL_COLOR, SOLAR_PANEL_DEPLETED_COLOR, agentColor, revealRadius } from '../constants.js'
+import { TILE_SIZE, VIEWPORT_W, VIEWPORT_H, VEIN_COLORS, VEIN_SIZES, SOLAR_PANEL_COLOR, SOLAR_PANEL_DEPLETED_COLOR, agentColor, revealRadius } from '../constants.js'
 
 const props = defineProps({
   worldState: {
@@ -33,6 +33,12 @@ const ZOOM_MIN = 0.7
 const ZOOM_MAX = 2.2
 const ZOOM_STEP = 0.1
 
+// Dynamic viewport dimensions: more tiles when zoomed out, fewer when zoomed in
+const visibleW = computed(() => Math.ceil(VIEWPORT_W / zoom.value))
+const visibleH = computed(() => Math.ceil(VIEWPORT_H / zoom.value))
+const dynamicMapW = computed(() => visibleW.value * TILE_SIZE)
+const dynamicMapH = computed(() => visibleH.value * TILE_SIZE)
+
 function cameraLoop() {
   const dx = targetCamX.value - camX.value
   const dy = targetCamY.value - camY.value
@@ -58,17 +64,19 @@ watch([() => props.worldState, () => props.followAgent], () => {
   if (!props.worldState || !props.followAgent) return
   const a = props.worldState.agents?.[props.followAgent]
   if (a) {
-    targetCamX.value = a.position[0] - Math.floor(VIEWPORT_W / 2)
-    targetCamY.value = a.position[1] - Math.floor(VIEWPORT_H / 2)
+    targetCamX.value = a.position[0] - Math.floor(visibleW.value / 2)
+    targetCamY.value = a.position[1] - Math.floor(visibleH.value / 2)
   }
 }, { deep: true })
 
 const tiles = computed(() => {
   const arr = []
-  for (let dy = 0; dy < VIEWPORT_H; dy++) {
-    for (let dx = 0; dx < VIEWPORT_W; dx++) {
+  const vw = visibleW.value
+  const vh = visibleH.value
+  for (let dy = 0; dy < vh; dy++) {
+    for (let dx = 0; dx < vw; dx++) {
       const x = camX.value + dx
-      const y = camY.value + VIEWPORT_H - 1 - dy  // flip Y for SVG
+      const y = camY.value + vh - 1 - dy  // flip Y for SVG
       arr.push({ x, y, sx: dx * TILE_SIZE, sy: dy * TILE_SIZE, key: `${x}-${y}` })
     }
   }
@@ -149,7 +157,7 @@ function tileFill(t) {
 
 function worldToScreen(wx, wy) {
   const sx = (wx - camX.value) * TILE_SIZE + TILE_SIZE / 2
-  const sy = (VIEWPORT_H - 1 - (wy - camY.value)) * TILE_SIZE + TILE_SIZE / 2
+  const sy = (visibleH.value - 1 - (wy - camY.value)) * TILE_SIZE + TILE_SIZE / 2
   return { sx, sy }
 }
 
@@ -166,14 +174,14 @@ function isAgentVisible(id) {
   const a = props.worldState.agents[id]
   if (!a) return false
   const [wx, wy] = a.position
-  return wx >= camX.value && wx < camX.value + VIEWPORT_W &&
-         wy >= camY.value && wy < camY.value + VIEWPORT_H
+  return wx >= camX.value && wx < camX.value + visibleW.value &&
+         wy >= camY.value && wy < camY.value + visibleH.value
 }
 
 function isStoneVisible(s) {
   const [wx, wy] = s.position
-  return wx >= camX.value && wx < camX.value + VIEWPORT_W &&
-         wy >= camY.value && wy < camY.value + VIEWPORT_H
+  return wx >= camX.value && wx < camX.value + visibleW.value &&
+         wy >= camY.value && wy < camY.value + visibleH.value
 }
 
 function veinGrade(s) {
@@ -191,12 +199,12 @@ function stoneScreenX(s) {
 
 function stoneScreenY(s) {
   const half = veinSize(s) / 2
-  return (VIEWPORT_H - 1 - (s.position[1] - camY.value)) * TILE_SIZE + TILE_SIZE / 2 - half
+  return (visibleH.value - 1 - (s.position[1] - camY.value)) * TILE_SIZE + TILE_SIZE / 2 - half
 }
 
 function stoneRotateCenter(s) {
   const cx = (s.position[0] - camX.value) * TILE_SIZE + TILE_SIZE / 2
-  const cy = (VIEWPORT_H - 1 - (s.position[1] - camY.value)) * TILE_SIZE + TILE_SIZE / 2
+  const cy = (visibleH.value - 1 - (s.position[1] - camY.value)) * TILE_SIZE + TILE_SIZE / 2
   return `rotate(45, ${cx}, ${cy})`
 }
 
@@ -207,8 +215,8 @@ function veinHasGlow(s) {
 
 function isPanelVisible(p) {
   const [wx, wy] = p.position
-  return wx >= camX.value && wx < camX.value + VIEWPORT_W &&
-         wy >= camY.value && wy < camY.value + VIEWPORT_H
+  return wx >= camX.value && wx < camX.value + visibleW.value &&
+         wy >= camY.value && wy < camY.value + visibleH.value
 }
 
 function panelScreenX(p) {
@@ -216,7 +224,7 @@ function panelScreenX(p) {
 }
 
 function panelScreenY(p) {
-  return (VIEWPORT_H - 1 - (p.position[1] - camY.value)) * TILE_SIZE + 2
+  return (visibleH.value - 1 - (p.position[1] - camY.value)) * TILE_SIZE + 2
 }
 
 // Drag-to-pan
@@ -231,8 +239,8 @@ function onMouseMove(e) {
   const dy = e.clientY - dragStart.value.y
   const svg = e.currentTarget
   const rect = svg.getBoundingClientRect()
-  const tilePixelW = rect.width / VIEWPORT_W
-  const tilePixelH = rect.height / VIEWPORT_H
+  const tilePixelW = rect.width / visibleW.value
+  const tilePixelH = rect.height / visibleH.value
   if (Math.abs(dx) >= tilePixelW) {
     const tileDx = Math.round(dx / tilePixelW)
     // Drag is instant — move both target and camera directly
@@ -277,11 +285,7 @@ function onWheel(e) {
 }
 
 const mapViewBox = computed(() => {
-  const vbW = MAP_W / zoom.value
-  const vbH = MAP_H / zoom.value
-  const x = (MAP_W - vbW) / 2
-  const y = (MAP_H - vbH) / 2
-  return `${x} ${y} ${vbW} ${vbH}`
+  return `0 0 ${dynamicMapW.value} ${dynamicMapH.value}`
 })
 
 // Agent trail data: last N visited positions per mobile agent
@@ -384,8 +388,8 @@ function panCamera(dx, dy) {
   targetCamY.value += dy
 }
 
-// Expose camera for minimap & keyboard shortcuts
-defineExpose({ camX, camY, panCamera })
+// Expose camera and dynamic viewport for minimap & keyboard shortcuts
+defineExpose({ camX, camY, visibleW, visibleH, panCamera })
 </script>
 
 <template>
@@ -497,8 +501,8 @@ defineExpose({ camX, camY, panCamera })
           <rect
             x="0"
             y="0"
-            :width="MAP_W"
-            :height="MAP_H"
+            :width="dynamicMapW"
+            :height="dynamicMapH"
             fill="white"
           />
           <circle
@@ -571,8 +575,8 @@ defineExpose({ camX, camY, panCamera })
       <rect
         x="0"
         y="0"
-        :width="MAP_W"
-        :height="MAP_H"
+        :width="dynamicMapW"
+        :height="dynamicMapH"
         fill="var(--bg-primary)"
         opacity="0.6"
         mask="url(#fog-mask)"

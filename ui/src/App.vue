@@ -22,6 +22,8 @@ const worldMapRef = ref(null)
 const followAgent = ref(null)  // which agent the camera follows (null = free camera)
 const camXVal = computed(() => worldMapRef.value?.camX ?? -10)
 const camYVal = computed(() => worldMapRef.value?.camY ?? -10)
+const visibleWVal = computed(() => worldMapRef.value?.visibleW ?? 20)
+const visibleHVal = computed(() => worldMapRef.value?.visibleH ?? 20)
 
 const mobileAgents = computed(() => {
   if (!agentIds.value) return []
@@ -208,6 +210,8 @@ useKeyboard({
           :agent-ids="agentIds"
           :cam-x="camXVal"
           :cam-y="camYVal"
+          :viewport-w="visibleWVal"
+          :viewport-h="visibleHVal"
           @navigate="onMinimapNavigate"
         />
         <EventLog :events="events" />
