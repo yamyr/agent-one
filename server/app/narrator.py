@@ -349,10 +349,11 @@ class Narrator:
     async def feed(self, event: dict):
         """Feed an event to the narrator. Non-blocking.
 
-        Text narration is always generated regardless of the enabled flag.
-        The ``_enabled`` flag only controls whether ElevenLabs voice audio
-        is produced.
+        When narration is disabled, events are silently dropped.
         """
+        if not self._enabled:
+            return
+
         weight = _is_interesting(event)
         if weight == 0:
             return
