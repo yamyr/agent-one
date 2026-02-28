@@ -11,7 +11,7 @@ Each agent in `WORLD["agents"][id]`:
 | Field | Type | Description |
 |-------|------|-------------|
 | `position` | `[x, y]` | Current tile |
-| `battery` | `float` | 0.0–1.0, drains 0.02 per move |
+| `battery` | `float` | 0.0–1.0 (fraction of fuel capacity). Rovers: 350 fuel units, Drone: 250 fuel units. Move costs 1 fuel unit per tile (~0.29% for rovers, ~0.4% for drone). Agents return to base when battery ≤ 67%. |
 | `mission` | `dict` | `{objective, plan[]}` — will be dynamic from base station |
 | `visited` | `[[x, y], ...]` | List of positions the agent has been to. Seeded with starting position. Updated on each successful move (no duplicates). |
 

@@ -175,7 +175,9 @@ class TestExecuteAction(unittest.TestCase):
 
     def test_execute_move_insufficient_battery_multi(self):
         """Multi-tile move should fail when battery < cost for full distance."""
-        WORLD["agents"]["rover-mock"]["battery"] = 0.03  # enough for 1 tile, not 3
+        WORLD["agents"]["rover-mock"]["battery"] = (
+            BATTERY_COST_MOVE * 2
+        )  # enough for ~1-2 tiles, not 3
         result = execute_action("rover-mock", "move", {"direction": "east", "distance": 3})
         self.assertFalse(result["ok"])
         self.assertIn("Not enough battery", result["error"])
@@ -434,7 +436,7 @@ class TestAnalyze(unittest.TestCase):
         self.assertIn("Unknown agent", result["error"])
 
     def test_analyze_not_enough_battery(self):
-        WORLD["agents"]["rover-mock"]["battery"] = 0.01
+        WORLD["agents"]["rover-mock"]["battery"] = BATTERY_COST_ANALYZE * 0.5  # below analyze cost
         result = execute_action("rover-mock", "analyze", {})
         self.assertFalse(result["ok"])
         self.assertIn("Not enough battery", result["error"])
@@ -477,7 +479,7 @@ class TestAnalyzeGround(unittest.TestCase):
         self.assertIn("5,5", readings)
 
     def test_analyze_ground_not_enough_battery(self):
-        WORLD["agents"]["rover-mock"]["battery"] = 0.01
+        WORLD["agents"]["rover-mock"]["battery"] = BATTERY_COST_ANALYZE_GROUND * 0.5  # below cost
         result = execute_action("rover-mock", "analyze_ground", {})
         self.assertFalse(result["ok"])
         self.assertIn("Not enough battery", result["error"])
@@ -540,11 +542,11 @@ class TestDig(unittest.TestCase):
         self.assertIn("already extracted", result["error"])
 
     def test_dig_not_enough_battery(self):
-        WORLD["agents"]["rover-mock"]["battery"] = 0.01
+        WORLD["agents"]["rover-mock"]["battery"] = BATTERY_COST_DIG * 0.5  # below dig cost
         result = execute_action("rover-mock", "dig", {})
         self.assertFalse(result["ok"])
         self.assertIn("Not enough battery", result["error"])
-        self.assertAlmostEqual(WORLD["agents"]["rover-mock"]["battery"], 0.01)
+        self.assertAlmostEqual(WORLD["agents"]["rover-mock"]["battery"], BATTERY_COST_DIG * 0.5)
 
     def test_dig_failed_no_drain(self):
         WORLD["stones"] = []
