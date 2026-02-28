@@ -1,5 +1,6 @@
 <script setup>
 import { computed, ref, watch, onMounted, onUnmounted } from 'vue'
+import { usePreferences } from '../composables/usePreferences.js'
 import { TILE_SIZE, VIEWPORT_W, VIEWPORT_H, VEIN_COLORS, VEIN_SIZES, SOLAR_PANEL_COLOR, SOLAR_PANEL_DEPLETED_COLOR, agentColor, revealRadius } from '../constants.js'
 
 const props = defineProps({
@@ -27,14 +28,15 @@ const camY = ref(-Math.floor(VIEWPORT_H / 2))
 const targetCamX = ref(camX.value)
 const targetCamY = ref(camY.value)
 let rafId = null
-const zoom = ref(1)
+const { prefs } = usePreferences()
+// zoom is now persisted
 const ZOOM_MIN = 0.7
 const ZOOM_MAX = 2.2
 const ZOOM_STEP = 0.1
 
 // Dynamic viewport dimensions: more tiles when zoomed out, fewer when zoomed in
-const visibleW = computed(() => Math.ceil(VIEWPORT_W / zoom.value))
-const visibleH = computed(() => Math.ceil(VIEWPORT_H / zoom.value))
+const visibleW = computed(() => Math.ceil(VIEWPORT_W / prefs.zoom))
+const visibleH = computed(() => Math.ceil(VIEWPORT_H / prefs.zoom))
 const dynamicMapW = computed(() => visibleW.value * TILE_SIZE)
 const dynamicMapH = computed(() => visibleH.value * TILE_SIZE)
 
@@ -271,15 +273,15 @@ function clamp(v, min, max) {
 }
 
 function zoomIn() {
-  zoom.value = clamp(Number((zoom.value + ZOOM_STEP).toFixed(2)), ZOOM_MIN, ZOOM_MAX)
+  prefs.zoom = clamp(Number((prefs.zoom + ZOOM_STEP).toFixed(2)), ZOOM_MIN, ZOOM_MAX)
 }
 
 function zoomOut() {
-  zoom.value = clamp(Number((zoom.value - ZOOM_STEP).toFixed(2)), ZOOM_MIN, ZOOM_MAX)
+  prefs.zoom = clamp(Number((prefs.zoom - ZOOM_STEP).toFixed(2)), ZOOM_MIN, ZOOM_MAX)
 }
 
 function resetZoom() {
-  zoom.value = 1
+  prefs.zoom = 1
 }
 
 function onWheel(e) {
@@ -289,7 +291,7 @@ function onWheel(e) {
 }
 
 // Re-center camera when zoom changes so the viewport expands/contracts around center
-watch(zoom, (newZ, oldZ) => {
+watch(() => prefs.zoom, (newZ, oldZ) => {
   const oldW = Math.ceil(VIEWPORT_W / oldZ)
   const oldH = Math.ceil(VIEWPORT_H / oldZ)
   const newW = Math.ceil(VIEWPORT_W / newZ)
@@ -440,7 +442,7 @@ defineExpose({ camX, camY, visibleW, visibleH, panCamera, navigateTo })
       >
         −
       </button>
-      <span class="zoom-label">{{ Math.round(zoom * 100) }}%</span>
+      <span class="zoom-label">{{ Math.round(prefs.zoom * 100) }}%</span>
       <button
         class="zoom-btn"
         title="Zoom in"

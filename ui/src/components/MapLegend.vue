@@ -1,11 +1,11 @@
 <script setup>
-import { ref } from 'vue'
+import { usePreferences } from '../composables/usePreferences.js'
 import { AGENT_COLORS, VEIN_COLORS } from '../constants.js'
 
-const visible = ref(false)
+const { prefs } = usePreferences()
 
 function toggle() {
-  visible.value = !visible.value
+  prefs.showLegend = !prefs.showLegend
 }
 </script>
 
@@ -13,10 +13,10 @@ function toggle() {
   <div class="legend-wrapper">
     <button
       class="legend-toggle"
-      :class="{ active: visible }"
+      :class="{ active: prefs.showLegend }"
       title="Toggle Map Legend"
       type="button"
-      aria-expanded="visible"
+      :aria-expanded="prefs.showLegend"
       aria-controls="map-legend-content"
       @click="toggle"
     >
@@ -24,7 +24,7 @@ function toggle() {
     </button>
     <Transition name="legend">
       <div
-        v-if="visible"
+        v-if="prefs.showLegend"
         id="map-legend-content"
         class="legend-content"
       >
