@@ -276,6 +276,11 @@ def execute_action(agent_id, action_name, params):
             return {"ok": False, "error": f"Invalid direction: {direction}"}
         distance = max(1, min(MAX_MOVE_DISTANCE, int(params.get("distance", 1))))
 
+        cost = BATTERY_COST_MOVE * distance
+        if agent["battery"] < cost:
+            record_memory(agent_id, f"Failed move {direction}: not enough battery ({agent['battery']:.0%} < {cost:.0%})")
+            return {"ok": False, "error": f"Not enough battery to move {distance} tiles (need {cost:.0%}, have {agent['battery']:.0%})"}
+
         ox, oy = agent["position"]
         tx, ty = ox + delta[0] * distance, oy + delta[1] * distance
         result = move_agent(agent_id, tx, ty)
