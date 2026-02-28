@@ -10,7 +10,7 @@ export const STONE_COLORS = {
 
 export const AGENT_COLORS = {
   'station': '#44cc88',
-  'rover-mock': '#6688cc',
+  'randy-rover': '#6688cc',
   'rover-mistral': '#e06030',
 }
 

@@ -20,7 +20,7 @@ ASSIGN_MISSION_TOOL = {
             "properties": {
                 "agent_id": {
                     "type": "string",
-                    "description": "The rover agent to assign (e.g. 'rover-mock', 'rover-mistral').",
+                    "description": "The rover agent to assign (e.g. 'randy-rover', 'rover-mistral').",
                 },
                 "objective": {
                     "type": "string",
@@ -55,7 +55,7 @@ STATION_TOOLS = [ASSIGN_MISSION_TOOL, BROADCAST_ALERT_TOOL]
 SYSTEM_PROMPT = (
     "You are the Mars base station. You coordinate the Mars mission.\n"
     "Your role is to assign missions to rover agents and respond to field reports.\n"
-    "You have two rovers available: 'rover-mock' and 'rover-mistral'.\n"
+    "You have two rovers available: 'randy-rover' and 'rover-mistral'.\n"
     "Keep responses short (1-2 sentences of reasoning, then act).\n"
     "Always assign missions to at least one rover when defining the initial mission.\n"
 )

@@ -11,11 +11,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - GitHub Actions CI pipeline (`.github/workflows/ci.yml`) with 5 jobs: change detection, server lint (ruff), server test (rut + SurrealDB), UI lint + build (eslint + vite), and Docker build verification
 - ESLint 9 flat config for Vue 3 frontend (`ui/eslint.config.js`)
 - RoverAgent default model upgraded from `mistral-small-latest` to `magistral-medium-latest` for improved reasoning
-- MockRoverAgent converted from random direction picker to full LLM-powered agent using `mistral-small-latest` with 8 randomized personality prompts (daring scout, cautious geologist, speed-runner, etc.)
 
 ### Changed
 
-- MockRoverAgent now builds full context (position, battery, inventory, visible stones, station distance) and uses Mistral API for decision-making instead of random.choice
+- Renamed mock rover agent ID from `rover-mock` to `randy-rover` across all files (world state, agent code, tests, station prompts, UI constants)
 
 ### Fixed
 

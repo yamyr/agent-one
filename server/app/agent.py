@@ -248,147 +248,36 @@ class RoverAgent:
 
 
 class MockRoverAgent:
-    """Rover agent powered by mistral-small-latest with randomized mission prompts."""
+    """Mock rover that picks a random valid direction each turn — no LLM calls."""
 
-    MISSION_PROMPTS = [
-        "You are a daring Mars scout. Push into unknown territory — favor edges and corners of the grid that haven't been explored. Avoid retracing your steps.",
-        "You are a cautious geologist. Move methodically in a spiral pattern outward from your starting position. Prioritize tiles adjacent to known stone locations.",
-        "You are a speed-runner rover. Cover as much ground as possible each turn. Use maximum distance moves and sweep across the grid in long straight lines.",
-        "You are a treasure hunter. If you know about any stones, beeline toward the nearest one. Otherwise, zigzag diagonally across the grid to maximize coverage.",
-        "You are a battery-conscious explorer. Always keep at least 40% battery reserve. Explore tiles close to the station first, then gradually venture further.",
-        "You are a grid sweeper. Move in a systematic row-by-row pattern — go east until you hit the edge, step south, then go west. Cover every tile.",
-        "You are an opportunistic rover. Prioritize digging and picking up any stone you find immediately. Between stones, explore in random directions.",
-        "You are a perimeter scout. Explore the outer edges of the grid first, then work your way inward. Map the boundaries before the interior.",
-    ]
-
-    def __init__(self, agent_id="rover-mock", model="mistral-small-latest"):
+    def __init__(self, agent_id="randy-rover"):
         self.agent_id = agent_id
-        self.model = model
-        self._client = None
-        self._mission_prompt = random.choice(self.MISSION_PROMPTS)
-        logger.info("MockRoverAgent personality: %s", self._mission_prompt[:60])
-
-    def _get_client(self):
-        if self._client is None:
-            if not settings.mistral_api_key:
-                raise RuntimeError("MISTRAL_API_KEY not set")
-            self._client = Mistral(api_key=settings.mistral_api_key)
-        return self._client
-
-    def _build_context(self):
-        """Build LLM context with randomized personality and current state."""
-        agent = WORLD["agents"][self.agent_id]
-        x, y = agent["position"]
-        mission = agent["mission"]
-        battery = agent["battery"]
-        inventory = agent.get("inventory", [])
-
-        visited = agent.get("visited", [])
-        visited_set = {tuple(p) for p in visited}
-        unvisited_dirs = []
-        for name, (dx, dy) in DIRECTIONS.items():
-            nx, ny = x + dx, y + dy
-            if 0 <= nx < GRID_W and 0 <= ny < GRID_H and (nx, ny) not in visited_set:
-                unvisited_dirs.append(name)
-
-        # Stone at current tile
-        ground = check_ground(self.agent_id)
-        stone_info = ground["stone"]
-        if stone_info:
-            if stone_info["extracted"]:
-                stone_line = f"{stone_info['type']} (extracted — ready for pickup)"
-            else:
-                stone_line = f"{stone_info['type']} (buried — needs dig)"
-        else:
-            stone_line = "none"
-
-        # Station distance for battery safety
-        station = WORLD["agents"].get("station")
-        station_pos = station["position"] if station else [0, 0]
-        dist_to_station = abs(x - station_pos[0]) + abs(y - station_pos[1])
-        moves_on_battery = int(battery / 0.02)
-
-        # Visible stones
-        revealed_set = {tuple(c) for c in agent.get("revealed", [])}
-        visible_stones = []
-        for stone in WORLD.get("stones", []):
-            sp = tuple(stone["position"])
-            if sp in revealed_set and list(sp) != [x, y]:
-                dist = abs(sp[0] - x) + abs(sp[1] - y)
-                status = "extracted" if stone.get("extracted") else "buried"
-                hint = _direction_hint(sp[0] - x, sp[1] - y)
-                visible_stones.append(
-                    f"{stone['type']} ({status}) at ({sp[0]},{sp[1]}) — {hint}, {dist} tiles"
-                )
-
-        parts = [
-            self._mission_prompt,
-            "\nKeep responses to 1-2 sentences of reasoning, then call a tool.",
-            f"\n== Mission ==\nObjective: {mission['objective']}",
-            "\n== State ==",
-            f"Position: ({x}, {y})",
-            f"Battery: {battery:.0%} ({moves_on_battery} moves remaining)",
-            f"Distance to station: {dist_to_station} tiles",
-            f"Safety: {'OK' if moves_on_battery > dist_to_station + 3 else 'LOW — head back'}",
-            f"Inventory: {len(inventory)} stones",
-            "\n== Environment ==",
-            f"Grid: {GRID_W}x{GRID_H}",
-            f"Tiles visited: {len(visited)}",
-            f"Unvisited neighbors: {', '.join(unvisited_dirs) if unvisited_dirs else 'none'}",
-            f"Stone here: {stone_line}",
-        ]
-
-        if visible_stones:
-            parts.append("Visible stones nearby:")
-            for vs in visible_stones:
-                parts.append(f"  - {vs}")
-
-        parts.append("\n== Rules ==")
-        parts.append(
-            f"- Move costs 2%/tile, dig costs 6%, pickup costs 2%\n"
-            f"- Station at ({station_pos[0]},{station_pos[1]}) for recharge\n"
-            f"- Keep enough battery to return. If low, head back.\n"
-            f"- North=Y decreases, South=Y increases, East=X increases, West=X decreases\n"
-            f"- If stone is here: dig first, then pickup\n"
-            f"- Ground auto-scanned after each move"
-        )
-
-        return "\n".join(parts)
 
     def run_turn(self):
-        """Single-shot LLM call with randomized personality. Returns {thinking, action}."""
-        client = self._get_client()
-        context = self._build_context()
-        WORLD["agents"][self.agent_id]["last_context"] = context
+        agent = WORLD["agents"][self.agent_id]
+        x, y = agent["position"]
+        visited_set = {tuple(p) for p in agent.get("visited", [])}
 
-        messages = [
-            {"role": "system", "content": context},
-            {"role": "user", "content": "Observe your surroundings and decide your next move."},
-        ]
+        valid = []
+        unvisited = []
+        for name, (dx, dy) in DIRECTIONS.items():
+            nx, ny = x + dx, y + dy
+            if 0 <= nx < GRID_W and 0 <= ny < GRID_H:
+                valid.append((name, nx, ny))
+                if (nx, ny) not in visited_set:
+                    unvisited.append((name, nx, ny))
 
-        logger.info("Calling Mistral (%s) for %s", self.model, self.agent_id)
-        response = client.chat.complete(
-            model=self.model,
-            messages=messages,
-            tools=ROVER_TOOLS,
+        candidates = unvisited if unvisited else valid
+        direction, tx, ty = random.choice(candidates)
+
+        context = (
+            f"Mock rover at ({x},{y}), battery={agent['battery']:.0%}, "
+            f"visited={len(agent.get('visited', []))}, "
+            f'mission="{agent["mission"]["objective"]}"'
         )
-        choice = response.choices[0]
+        agent["last_context"] = context
 
-        thinking = choice.message.content or None
-        action = None
-
-        if thinking:
-            logger.info("MockRover thinking: %s", thinking)
-
-        if choice.message.tool_calls:
-            tc = choice.message.tool_calls[0]
-            name = tc.function.name
-            args = (
-                json.loads(tc.function.arguments)
-                if isinstance(tc.function.arguments, str)
-                else tc.function.arguments
-            )
-            if name in ("move", "dig", "pickup"):
-                action = {"name": name, "params": args}
+        thinking = f"I'm at ({x}, {y}). I'll move {direction} to ({tx}, {ty})."
+        action = {"name": "move", "params": {"direction": direction}}
 
         return {"thinking": thinking, "action": action}

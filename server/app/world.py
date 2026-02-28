@@ -91,7 +91,7 @@ WORLD = {
             "mission": {"objective": "Coordinate Mars mission", "plan": []},
             "visited": [[0, 0]],
         },
-        "rover-mock": {
+        "randy-rover": {
             "position": [2, 10],
             "battery": 1.0,
             "mission": {"objective": "Explore the terrain", "plan": []},
