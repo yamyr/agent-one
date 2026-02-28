@@ -196,7 +196,7 @@ async def lifespan(app):
 
 app = FastAPI(
     title="Mars Mission API",
-    version="0.1.0",  # x-release-please-version
+    version="0.2.0",  # x-release-please-version
     lifespan=lifespan,
 )
 
