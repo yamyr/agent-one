@@ -4,7 +4,7 @@ A multi-agent LLM-powered simulation where autonomous agents collaborate to comp
 
 ## Concept
 
-Autonomous agents — a **Rover**, **Drone**, and **Station** — coordinate through a central **Coordinator** to carry out Mars exploration missions. Each agent runs its own LLM reasoning loop, observes the world state, executes tool calls, and communicates via a structured message protocol. Goals are tracked probabilistically, and a human operator can intervene at any time.
+Autonomous agents — a **Rover**, **Drone**, and **Station** — coordinate through a central **Coordinator** to carry out Mars exploration missions. Each agent runs its own LLM reasoning loop (Mistral API), observes the world state, executes tool calls, and communicates via a structured message protocol. Goals are tracked probabilistically, and a human operator can intervene at any time.
 
 ```
 ┌─────────────────────┐
@@ -19,11 +19,21 @@ Autonomous agents — a **Rover**, **Drone**, and **Station** — coordinate thr
        ▼              ▼              ▼
   ┌─────────┐   ┌──────────┐   ┌──────────┐
   │  Rover  │   │  Drone   │   │ Station  │
-  │ MoveTo  │   │  Scan    │   │ Allocate │
-  │ Drill   │   │  Map     │   │  Power   │
-  │ Carry   │   │  Relay   │   │  Alert   │
+  │ Move    │   │  Scan    │   │ Charge   │
+  │ Dig     │   │  Map     │   │  Power   │
+  │ Analyze │   │  Relay   │   │  Alert   │
+  │ Pickup  │   │          │   │          │
   └─────────┘   └──────────┘   └──────────┘
 ```
+
+### Key Features
+
+- **Grid-based Mars world** with terrain, hidden stone types (core/basalt), fog-of-war visibility, and concentration maps
+- **AI Narration** — Mistral LLM generates live commentary ("David Attenborough meets space podcaster"), with optional ElevenLabs TTS voice synthesis including emotion tags
+- **Real-time UI** — Vue 3 mission control dashboard with surface map, rover telemetry, event log, and narration player via WebSocket streaming
+- **Per-rover visibility radius** shown as colored dashed circles on the map
+- **Rovers start at station (0,0)** and explore outward autonomously
+- **GitHub → Discord notifications** — PR and main-branch push events forwarded to Discord channels via webhook
 
 ## How It Works
 
@@ -39,9 +49,10 @@ Agents never communicate directly — all messages route through the Coordinator
 
 ## Tech Stack
 
-- **Python 3.12+**
-- **Mistral AI** (`mistralai` SDK)
-- **JSON stdio** for agent subprocess communication
+- **Backend**: Python 3.12+, FastAPI, SurrealDB, `mistralai` SDK, `elevenlabs` SDK, `uv` package manager
+- **Frontend**: Vue 3 (Composition API), Vite 7
+- **CI/CD**: GitHub Actions (lint, test, build), Discord webhook notifications
+- **Deployment**: Docker multi-stage build, Railway
 
 ## Setup
 
@@ -50,26 +61,52 @@ Agents never communicate directly — all messages route through the Coordinator
 git clone https://github.com/mhack-agent-one/agent-one.git
 cd agent-one
 
-# Virtual environment
-python3 -m venv .venv
-source .venv/bin/activate
-
-# Dependencies
-pip install mistralai
-
-# API key
+# Server
+cd server
+uv sync                        # install Python deps
 export MISTRAL_API_KEY="your-key-here"
+export ELEVENLABS_API_KEY="your-key-here"  # optional — enables voice narration
+./run                          # uvicorn on :4009 with --reload
+
+# UI (separate terminal)
+cd ui
+npm install
+npm run dev                    # vite on :4089
 ```
 
 ## Project Structure
 
 ```
 agent-one/
-├── SPEC.md           # Full system specification
-├── IDEA.md           # High-level vision
-├── ROADMAP.md        # Development milestones
-├── CLAUDE.md         # Developer guidance
-└── hackathon_info.md # Event details
+├── server/                        # Python FastAPI backend (port 4009)
+│   ├── app/
+│   │   ├── main.py                # FastAPI app, lifespan, CORS, agent loop
+│   │   ├── config.py              # pydantic-settings, reads .env
+│   │   ├── views.py               # REST endpoints + /ws WebSocket
+│   │   ├── broadcast.py           # WebSocket fan-out singleton
+│   │   ├── agent.py               # RoverAgent (Mistral LLM) + MockRoverAgent
+│   │   ├── narrator.py            # AI narration engine (Mistral + ElevenLabs TTS)
+│   │   ├── station.py             # Station agent logic
+│   │   ├── world.py               # World model + simulation
+│   │   └── db.py                  # SurrealDB connection helpers
+│   └── tests/
+├── ui/                            # Vue 3 + Vite frontend (port 4089)
+│   └── src/components/
+│       ├── WorldMap.vue            # SVG grid map with fog-of-war
+│       ├── NarrationPlayer.vue     # AI narration with typewriter + audio
+│       ├── EventLog.vue            # Scrolling event log
+│       ├── AgentPane.vue           # Individual agent telemetry
+│       ├── AgentPanes.vue          # Agent panel container
+│       ├── AgentDetailModal.vue    # Agent detail overlay
+│       ├── MissionBar.vue          # Mission progress bar
+│       └── AppHeader.vue           # App header
+├── .github/workflows/
+│   ├── ci.yml                     # Lint, test, build CI pipeline
+│   └── discord-git-notify.yml     # GitHub → Discord notifications
+├── SPEC.md                        # Full system specification
+├── CLAUDE.md                      # Developer guidance
+├── Changelog.md                   # Project changelog
+└── Dockerfile                     # Multi-stage Docker build
 ```
 
 ## Key Concepts
@@ -105,16 +142,23 @@ A goal is satisfied when `confidence >= threshold`. Confidence updates dynamical
 }
 ```
 
-## Roadmap
+## Environment Variables
 
-| Milestone | Description |
-|-----------|-------------|
-| **0** | Scaffold — project structure, base agent class, protocol types |
-| **1** | Coordinator + Rover — world model, agent spawning, rover tools |
-| **2** | Drone + Communication — scanning, probabilistic mapping, action routing |
-| **3** | Events + Human-in-the-loop — storms, terrain shifts, operator confirmations |
-| **4** | Station + Goal Tracking — power management, confidence visualization |
-| **5** | Demo Polish — scripted timeline, UI, dry runs |
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `MISTRAL_API_KEY` | Yes | Mistral AI API key for LLM agent reasoning and narration |
+| `ELEVENLABS_API_KEY` | No | ElevenLabs API key for voice narration (text narration works without it) |
+| `NARRATION_ENABLED` | No | Enable/disable narration at startup (default: off) |
+| `NARRATION_VOICE_ID` | No | ElevenLabs voice ID for TTS |
+| `NARRATION_MIN_INTERVAL_SECONDS` | No | Minimum seconds between narrations |
+
+### Discord Notifications (GitHub Secrets)
+
+| Secret | Required | Description |
+|--------|----------|-------------|
+| `DISCORD_WEBHOOK_URL` | Yes | Default Discord webhook (fallback for both channels) |
+| `DISCORD_WEBHOOK_URL_PR` | No | Optional separate webhook for PR notifications |
+| `DISCORD_WEBHOOK_URL_MAIN` | No | Optional separate webhook for main-branch push notifications |
 
 ## License
 
