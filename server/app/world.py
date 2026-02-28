@@ -172,6 +172,7 @@ def _ensure_chunk(cx, cy):
 
     # Register stones in the global list
     WORLD.setdefault("stones", []).extend(stones)
+    _index_stones(stones)
 
     chunk_data = {"generated": True, "stone_count": len(stones)}
     chunks[key] = chunk_data
@@ -346,6 +347,39 @@ def _init_world_chunks():
             _ensure_chunk(cx, cy)
 
 
+# Spatial index: (x, y) -> stone dict for O(1) lookups.
+# Rebuilt lazily when the WORLD["stones"] list is replaced externally (e.g. tests).
+_stone_index: dict[tuple[int, int], dict] = {}
+_stone_index_source: list | None = None  # tracks which list we indexed
+
+
+def _rebuild_stone_index() -> None:
+    """Rebuild the spatial index from the current stones list."""
+    global _stone_index_source
+    stones = WORLD.get("stones", [])
+    _stone_index.clear()
+    for s in stones:
+        _stone_index[tuple(s["position"])] = s
+    _stone_index_source = stones
+
+
+def _ensure_stone_index() -> None:
+    """Ensure the spatial index is in sync with WORLD['stones']."""
+    if WORLD.get("stones") is not _stone_index_source:
+        _rebuild_stone_index()
+
+
+def _index_stones(stones: list[dict]) -> None:
+    """Add newly generated stones to the spatial index."""
+    for s in stones:
+        _stone_index[tuple(s["position"])] = s
+
+
+def _unindex_stone(stone: dict) -> None:
+    """Remove a stone from the spatial index."""
+    _stone_index.pop(tuple(stone["position"]), None)
+
+
 WORLD = _build_initial_world()
 _init_world_chunks()
 
@@ -413,6 +447,9 @@ def reset_world():
     fresh = _build_initial_world()
     WORLD.clear()
     WORLD.update(fresh)
+    _stone_index.clear()
+    global _stone_index_source
+    _stone_index_source = None
     _init_world_chunks()
     logger.info("World reset")
 
@@ -429,15 +466,15 @@ def check_ground(agent_id):
     if agent is None:
         return {"stone": None}
     x, y = agent["position"]
-    for stone in WORLD.get("stones", []):
-        if stone["position"] == [x, y]:
-            return {
-                "stone": {
-                    "type": stone["type"],
-                    "grade": stone.get("grade", "unknown"),
-                    "quantity": stone.get("quantity", 0),
-                }
+    stone = _find_stone_at(x, y)
+    if stone:
+        return {
+            "stone": {
+                "type": stone["type"],
+                "grade": stone.get("grade", "unknown"),
+                "quantity": stone.get("quantity", 0),
             }
+        }
     return {"stone": None}
 
 
@@ -570,11 +607,9 @@ def execute_action(agent_id, action_name, params):
 
 
 def _find_stone_at(x, y):
-    """Find a stone at the given position, or None."""
-    for stone in WORLD.get("stones", []):
-        if stone["position"] == [x, y]:
-            return stone
-    return None
+    """Find a stone at the given position, or None. O(1) via spatial index."""
+    _ensure_stone_index()
+    return _stone_index.get((x, y))
 
 
 def _execute_analyze(agent_id, agent):
@@ -664,6 +699,7 @@ def _execute_dig(agent_id, agent):
         }
     )
     WORLD["stones"].remove(stone)
+    _unindex_stone(stone)
     logger.info(
         "Agent %s dug and collected %s grade=%s qty=%d at (%d,%d)",
         agent_id,
