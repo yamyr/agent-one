@@ -7,7 +7,7 @@ import random
 from mistralai import Mistral
 
 from .config import settings
-from .world import WORLD, GRID_W, GRID_H, DIRECTIONS, MAX_MOVE_DISTANCE, check_ground, _direction_hint
+from .world import WORLD, GRID_W, GRID_H, DIRECTIONS, MAX_MOVE_DISTANCE, check_ground, _direction_hint, _find_stone_at
 
 logger = logging.getLogger(__name__)
 
@@ -54,7 +54,25 @@ PICKUP_TOOL = {
     },
 }
 
-ROVER_TOOLS = [MOVE_TOOL, DIG_TOOL, PICKUP_TOOL]
+ANALYZE_TOOL = {
+    "type": "function",
+    "function": {
+        "name": "analyze",
+        "description": "Analyze an unknown stone at current tile to reveal its true type (core or basalt). Costs 3% battery. Must be done before dig/pickup.",
+        "parameters": {"type": "object", "properties": {}},
+    },
+}
+
+ANALYZE_GROUND_TOOL = {
+    "type": "function",
+    "function": {
+        "name": "analyze_ground",
+        "description": "Analyze ground concentration at current tile to detect nearby core deposits. Returns a 0.0-1.0 reading (higher = closer to cores). Costs 3% battery.",
+        "parameters": {"type": "object", "properties": {}},
+    },
+}
+
+ROVER_TOOLS = [MOVE_TOOL, ANALYZE_TOOL, DIG_TOOL, PICKUP_TOOL, ANALYZE_GROUND_TOOL]
 
 
 class RoverAgent:
@@ -95,14 +113,16 @@ class RoverAgent:
             if 0 <= nx < GRID_W and 0 <= ny < GRID_H and (nx, ny) not in visited_set:
                 unvisited_dirs.append(name)
 
-        # Stone at current tile (with extracted status)
+        # Stone at current tile (with analyzed/extracted status)
         ground = check_ground(self.agent_id)
         stone_info = ground["stone"]
         if stone_info:
-            if stone_info["extracted"]:
+            if stone_info["type"] == "unknown":
+                stone_line = "unknown (needs analyze to reveal type)"
+            elif stone_info["extracted"]:
                 stone_line = f"{stone_info['type']} (extracted — ready for pickup)"
             else:
-                stone_line = f"{stone_info['type']} (buried — needs dig)"
+                stone_line = f"{stone_info['type']} (analyzed, buried — needs dig)"
         else:
             stone_line = "none"
 
@@ -117,21 +137,26 @@ class RoverAgent:
         # Identity & behavior
         parts.append(
             f"You are {self.agent_id}, an autonomous Mars rover.\n"
-            "Your job: explore the grid, find stones, dig them out, pick them up.\n"
+            "Your job: explore the grid, find stones, analyze them, dig them out, pick them up.\n"
             "Think step by step but keep it to 1-2 sentences, then call a tool.\n"
             "\n"
             "COORDINATE SYSTEM:\n"
-            "- North = Y decreases, South = Y increases\n"
+            "- North = Y increases, South = Y decreases\n"
             "- East = X increases, West = X decreases\n"
-            "- To reach a tile with HIGHER Y, move SOUTH. To reach LOWER Y, move NORTH.\n"
+            "- To reach a tile with HIGHER Y, move NORTH. To reach LOWER Y, move SOUTH.\n"
+            "\n"
+            "STONE WORKFLOW:\n"
+            "- Stones start as 'unknown'. You must ANALYZE them first to reveal their true type.\n"
+            "- After analyzing: DIG to extract, then PICKUP to collect.\n"
+            "- Use analyze_ground to read concentration (0.0-1.0). Higher = closer to core deposits.\n"
             "\n"
             "RULES:\n"
-            "- Battery is your lifeline. Each move costs 2%/tile, dig costs 6%, pickup costs 2%.\n"
+            "- Battery is your lifeline. Move costs 2%/tile, dig 6%, analyze 3%, pickup 2%.\n"
             "- Station is your base at ({sx},{sy}). Return there when battery is low — "
             "the station will recharge you automatically.\n"
             "- ALWAYS keep enough battery to return to station. If distance_to_station * 2% "
             "approaches your battery, head back immediately.\n"
-            "- If you find a stone: dig it, then pickup. Both must happen on the same tile.\n"
+            "- If you find an unknown stone: analyze → dig → pickup. All on the same tile.\n"
             "- Once you have collected all target stones, RETURN TO STATION to complete the mission.\n"
             "- Prefer unvisited tiles when exploring. Don't backtrack aimlessly.\n"
             "- Ground is auto-scanned after every move. No need to check manually.\n"
@@ -191,6 +216,13 @@ class RoverAgent:
             for vs in visible_stones:
                 parts.append(f"  - {vs}")
 
+        # Ground concentration readings
+        readings = agent.get("ground_readings", {})
+        if readings:
+            parts.append("Ground concentration readings:")
+            for pos, val in readings.items():
+                parts.append(f"  - ({pos}): {val:.3f}")
+
         # Short-term memory
         if memory:
             recent = memory[-5:]
@@ -233,7 +265,7 @@ class RoverAgent:
                 if isinstance(tc.function.arguments, str)
                 else tc.function.arguments
             )
-            if name in ("move", "dig", "pickup"):
+            if name in ("move", "dig", "pickup", "analyze", "analyze_ground"):
                 action = {"name": name, "params": args}
 
         return {"thinking": thinking, "action": action}
@@ -258,11 +290,14 @@ class MockRoverAgent:
         )
         agent["last_context"] = context
 
-        # Check for stone at current tile — dig or pickup
-        ground = check_ground(self.agent_id)
-        if ground["stone"]:
-            if not ground["stone"]["extracted"]:
-                thinking = f"I'm at ({x}, {y}). Found a {ground['stone']['type']} stone — digging."
+        # Check for stone at current tile — analyze, dig, or pickup
+        stone_here = _find_stone_at(x, y)
+        if stone_here:
+            if not stone_here.get("analyzed"):
+                thinking = f"I'm at ({x}, {y}). Found an unknown stone — analyzing."
+                return {"thinking": thinking, "action": {"name": "analyze", "params": {}}}
+            elif not stone_here.get("extracted"):
+                thinking = f"I'm at ({x}, {y}). Found a {stone_here['type']} stone — digging."
                 return {"thinking": thinking, "action": {"name": "dig", "params": {}}}
             else:
                 thinking = f"I'm at ({x}, {y}). Stone extracted — picking up."
@@ -278,7 +313,7 @@ class MockRoverAgent:
                 direction = "east" if dx > 0 else "west"
                 distance = min(abs(dx), MAX_MOVE_DISTANCE)
             elif dy != 0:
-                direction = "south" if dy > 0 else "north"
+                direction = "north" if dy > 0 else "south"
                 distance = min(abs(dy), MAX_MOVE_DISTANCE)
             else:
                 # Already at station

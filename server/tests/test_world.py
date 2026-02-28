@@ -3,6 +3,7 @@ import unittest
 from app.world import WORLD, move_agent, execute_action, get_snapshot, check_ground
 from app.world import check_mission_status, charge_rover
 from app.world import BATTERY_COST_MOVE, BATTERY_COST_DIG, BATTERY_COST_PICKUP
+from app.world import BATTERY_COST_ANALYZE, BATTERY_COST_ANALYZE_GROUND
 from app.world import CHARGE_RATE, REVEAL_RADIUS, GRID_W, GRID_H, AGENT_STARTS, MAX_MOVE_DISTANCE
 from app.world import assign_mission, _cells_in_radius, record_memory, MEMORY_MAX
 from app.world import update_tasks, _direction_hint
@@ -131,10 +132,11 @@ class TestExecuteAction(unittest.TestCase):
         self.assertIn("Unknown agent", result["error"])
 
     def test_execute_move_all_directions(self):
+        """North = +Y, South = -Y with flipped coordinate system."""
         WORLD["agents"]["rover-mock"]["position"] = [10, 10]
         for direction, expected in [
-            ("north", [10, 9]),
-            ("south", [10, 11]),
+            ("north", [10, 11]),
+            ("south", [10, 9]),
             ("east", [11, 10]),
             ("west", [10, 10]),
         ]:
@@ -172,7 +174,7 @@ class TestStones(unittest.TestCase):
         self.assertLessEqual(len(stones), 8)
 
     def test_guaranteed_core_stones(self):
-        core_count = sum(1 for s in WORLD["stones"] if s["type"] == "core")
+        core_count = sum(1 for s in WORLD["stones"] if s["_true_type"] == "core")
         self.assertGreaterEqual(core_count, 1)
 
     def test_stones_in_snapshot(self):
@@ -185,8 +187,14 @@ class TestStones(unittest.TestCase):
         for stone in WORLD["stones"]:
             self.assertIn("position", stone)
             self.assertIn("type", stone)
+            self.assertIn("_true_type", stone)
+            self.assertIn("extracted", stone)
+            self.assertIn("analyzed", stone)
             self.assertEqual(len(stone["position"]), 2)
-            self.assertIn(stone["type"], ("core", "basalt"))
+            self.assertIn(stone["_true_type"], ("core", "basalt"))
+            self.assertEqual(stone["type"], "unknown")
+            self.assertFalse(stone["extracted"])
+            self.assertFalse(stone["analyzed"])
 
     def test_stones_in_bounds(self):
         for stone in WORLD["stones"]:
@@ -200,6 +208,26 @@ class TestStones(unittest.TestCase):
         for stone in WORLD["stones"]:
             pos = tuple(stone["position"])
             self.assertNotIn(pos, AGENT_STARTS)
+
+    def test_snapshot_strips_true_type(self):
+        snap = get_snapshot()
+        for stone in snap["stones"]:
+            self.assertNotIn("_true_type", stone)
+
+    def test_concentration_map_exists(self):
+        self.assertIn("concentration_map", WORLD)
+        conc = WORLD["concentration_map"]
+        self.assertGreater(len(conc), 0)
+        # Max value should be 1.0 (normalized)
+        self.assertAlmostEqual(max(conc.values()), 1.0)
+
+    def test_concentration_map_serialized_in_snapshot(self):
+        snap = get_snapshot()
+        conc = snap.get("concentration_map", {})
+        # Keys should be "x,y" strings
+        for key in conc:
+            self.assertIsInstance(key, str)
+            self.assertIn(",", key)
 
 
 class TestVisited(unittest.TestCase):
@@ -236,19 +264,19 @@ class TestCheckGround(unittest.TestCase):
         WORLD["stones"] = self._original_stones
 
     def test_check_ground_finds_stone(self):
-        WORLD["stones"] = [{"position": [10, 10], "type": "core"}]
+        WORLD["stones"] = [{"position": [10, 10], "type": "unknown", "_true_type": "core", "extracted": False, "analyzed": False}]
         result = check_ground("rover-mock")
-        self.assertEqual(result["stone"]["type"], "core")
+        self.assertEqual(result["stone"]["type"], "unknown")
         self.assertFalse(result["stone"]["extracted"])
 
     def test_check_ground_extracted_stone(self):
-        WORLD["stones"] = [{"position": [10, 10], "type": "core", "extracted": True}]
+        WORLD["stones"] = [{"position": [10, 10], "type": "core", "_true_type": "core", "extracted": True, "analyzed": True}]
         result = check_ground("rover-mock")
         self.assertEqual(result["stone"]["type"], "core")
         self.assertTrue(result["stone"]["extracted"])
 
     def test_check_ground_no_stone(self):
-        WORLD["stones"] = [{"position": [5, 5], "type": "basalt"}]
+        WORLD["stones"] = [{"position": [5, 5], "type": "unknown", "_true_type": "basalt", "extracted": False, "analyzed": False}]
         result = check_ground("rover-mock")
         self.assertIsNone(result["stone"])
 
@@ -299,6 +327,103 @@ class TestStationInWorld(unittest.TestCase):
         self.assertIn((0, 0), AGENT_STARTS)
 
 
+class TestAnalyze(unittest.TestCase):
+    """Test the analyze action that reveals hidden stone types."""
+
+    def setUp(self):
+        WORLD["agents"]["rover-mock"]["position"] = [5, 5]
+        WORLD["agents"]["rover-mock"]["battery"] = 1.0
+        WORLD["agents"]["rover-mock"]["inventory"] = []
+        WORLD["agents"]["rover-mock"]["visited"] = [[5, 5]]
+        WORLD["agents"]["rover-mock"]["memory"] = []
+        self._original_stones = WORLD.get("stones", [])
+        WORLD["stones"] = [{"position": [5, 5], "type": "unknown", "_true_type": "core", "extracted": False, "analyzed": False}]
+
+    def tearDown(self):
+        WORLD["stones"] = self._original_stones
+
+    def test_analyze_reveals_type(self):
+        result = execute_action("rover-mock", "analyze", {})
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["stone"]["type"], "core")
+        self.assertTrue(WORLD["stones"][0]["analyzed"])
+        self.assertEqual(WORLD["stones"][0]["type"], "core")
+
+    def test_analyze_drains_battery(self):
+        execute_action("rover-mock", "analyze", {})
+        self.assertAlmostEqual(WORLD["agents"]["rover-mock"]["battery"], 1.0 - BATTERY_COST_ANALYZE)
+
+    def test_analyze_no_stone(self):
+        WORLD["stones"] = []
+        result = execute_action("rover-mock", "analyze", {})
+        self.assertFalse(result["ok"])
+        self.assertIn("No stone", result["error"])
+
+    def test_analyze_already_analyzed(self):
+        WORLD["stones"] = [{"position": [5, 5], "type": "core", "_true_type": "core", "extracted": False, "analyzed": True}]
+        result = execute_action("rover-mock", "analyze", {})
+        self.assertFalse(result["ok"])
+        self.assertIn("already analyzed", result["error"])
+
+    def test_analyze_unknown_agent(self):
+        result = execute_action("rover-99", "analyze", {})
+        self.assertFalse(result["ok"])
+        self.assertIn("Unknown agent", result["error"])
+
+    def test_analyze_not_enough_battery(self):
+        WORLD["agents"]["rover-mock"]["battery"] = 0.01
+        result = execute_action("rover-mock", "analyze", {})
+        self.assertFalse(result["ok"])
+        self.assertIn("Not enough battery", result["error"])
+
+    def test_analyze_records_memory(self):
+        execute_action("rover-mock", "analyze", {})
+        mem = WORLD["agents"]["rover-mock"]["memory"]
+        self.assertEqual(len(mem), 1)
+        self.assertIn("Analyzed", mem[0])
+        self.assertIn("core", mem[0])
+
+
+class TestAnalyzeGround(unittest.TestCase):
+    """Test the analyze_ground action that reads concentration."""
+
+    def setUp(self):
+        WORLD["agents"]["rover-mock"]["position"] = [5, 5]
+        WORLD["agents"]["rover-mock"]["battery"] = 1.0
+        WORLD["agents"]["rover-mock"]["inventory"] = []
+        WORLD["agents"]["rover-mock"]["visited"] = [[5, 5]]
+        WORLD["agents"]["rover-mock"]["memory"] = []
+        WORLD["agents"]["rover-mock"]["ground_readings"] = {}
+
+    def test_analyze_ground_returns_concentration(self):
+        result = execute_action("rover-mock", "analyze_ground", {})
+        self.assertTrue(result["ok"])
+        self.assertIn("concentration", result)
+        self.assertGreaterEqual(result["concentration"], 0.0)
+        self.assertLessEqual(result["concentration"], 1.0)
+
+    def test_analyze_ground_drains_battery(self):
+        execute_action("rover-mock", "analyze_ground", {})
+        self.assertAlmostEqual(WORLD["agents"]["rover-mock"]["battery"], 1.0 - BATTERY_COST_ANALYZE_GROUND)
+
+    def test_analyze_ground_stores_reading(self):
+        execute_action("rover-mock", "analyze_ground", {})
+        readings = WORLD["agents"]["rover-mock"]["ground_readings"]
+        self.assertIn("5,5", readings)
+
+    def test_analyze_ground_not_enough_battery(self):
+        WORLD["agents"]["rover-mock"]["battery"] = 0.01
+        result = execute_action("rover-mock", "analyze_ground", {})
+        self.assertFalse(result["ok"])
+        self.assertIn("Not enough battery", result["error"])
+
+    def test_analyze_ground_records_memory(self):
+        execute_action("rover-mock", "analyze_ground", {})
+        mem = WORLD["agents"]["rover-mock"]["memory"]
+        self.assertEqual(len(mem), 1)
+        self.assertIn("Ground concentration", mem[0])
+
+
 class TestDig(unittest.TestCase):
 
     def setUp(self):
@@ -307,7 +432,7 @@ class TestDig(unittest.TestCase):
         WORLD["agents"]["rover-mock"]["inventory"] = []
         WORLD["agents"]["rover-mock"]["visited"] = [[5, 5]]
         self._original_stones = WORLD.get("stones", [])
-        WORLD["stones"] = [{"position": [5, 5], "type": "core"}]
+        WORLD["stones"] = [{"position": [5, 5], "type": "core", "_true_type": "core", "extracted": False, "analyzed": True}]
 
     def tearDown(self):
         WORLD["stones"] = self._original_stones
@@ -329,7 +454,7 @@ class TestDig(unittest.TestCase):
         self.assertIn("No stone", result["error"])
 
     def test_dig_already_extracted(self):
-        WORLD["stones"] = [{"position": [5, 5], "type": "core", "extracted": True}]
+        WORLD["stones"] = [{"position": [5, 5], "type": "core", "_true_type": "core", "extracted": True, "analyzed": True}]
         result = execute_action("rover-mock", "dig", {})
         self.assertFalse(result["ok"])
         self.assertIn("already extracted", result["error"])
@@ -347,6 +472,13 @@ class TestDig(unittest.TestCase):
         execute_action("rover-mock", "dig", {})
         self.assertEqual(WORLD["agents"]["rover-mock"]["battery"], old_battery)
 
+    def test_dig_requires_analyze(self):
+        """Dig should fail if stone is not yet analyzed."""
+        WORLD["stones"] = [{"position": [5, 5], "type": "unknown", "_true_type": "core", "extracted": False, "analyzed": False}]
+        result = execute_action("rover-mock", "dig", {})
+        self.assertFalse(result["ok"])
+        self.assertIn("not yet analyzed", result["error"])
+
 
 class TestPickup(unittest.TestCase):
 
@@ -356,7 +488,7 @@ class TestPickup(unittest.TestCase):
         WORLD["agents"]["rover-mock"]["inventory"] = []
         WORLD["agents"]["rover-mock"]["visited"] = [[5, 5]]
         self._original_stones = WORLD.get("stones", [])
-        WORLD["stones"] = [{"position": [5, 5], "type": "core", "extracted": True}]
+        WORLD["stones"] = [{"position": [5, 5], "type": "core", "_true_type": "core", "extracted": True, "analyzed": True}]
 
     def tearDown(self):
         WORLD["stones"] = self._original_stones
@@ -382,7 +514,7 @@ class TestPickup(unittest.TestCase):
         self.assertAlmostEqual(WORLD["agents"]["rover-mock"]["battery"], 1.0 - BATTERY_COST_PICKUP)
 
     def test_pickup_not_extracted(self):
-        WORLD["stones"] = [{"position": [5, 5], "type": "core"}]
+        WORLD["stones"] = [{"position": [5, 5], "type": "core", "_true_type": "core", "extracted": False, "analyzed": True}]
         result = execute_action("rover-mock", "pickup", {})
         self.assertFalse(result["ok"])
         self.assertIn("not yet extracted", result["error"])
@@ -399,14 +531,33 @@ class TestPickup(unittest.TestCase):
         self.assertFalse(result["ok"])
         self.assertIn("Not enough battery", result["error"])
 
+    def test_pickup_requires_analyze(self):
+        """Pickup should fail if stone is not yet analyzed."""
+        WORLD["stones"] = [{"position": [5, 5], "type": "unknown", "_true_type": "core", "extracted": True, "analyzed": False}]
+        result = execute_action("rover-mock", "pickup", {})
+        self.assertFalse(result["ok"])
+        self.assertIn("not yet analyzed", result["error"])
+
     def test_dig_then_pickup(self):
-        WORLD["stones"] = [{"position": [5, 5], "type": "basalt"}]
+        WORLD["stones"] = [{"position": [5, 5], "type": "basalt", "_true_type": "basalt", "extracted": False, "analyzed": True}]
         result = execute_action("rover-mock", "dig", {})
         self.assertTrue(result["ok"])
         result = execute_action("rover-mock", "pickup", {})
         self.assertTrue(result["ok"])
         self.assertEqual(len(WORLD["agents"]["rover-mock"]["inventory"]), 1)
         self.assertEqual(len(WORLD["stones"]), 0)
+
+    def test_analyze_dig_pickup_workflow(self):
+        """Full workflow: analyze → dig → pickup."""
+        WORLD["stones"] = [{"position": [5, 5], "type": "unknown", "_true_type": "core", "extracted": False, "analyzed": False}]
+        result = execute_action("rover-mock", "analyze", {})
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["stone"]["type"], "core")
+        result = execute_action("rover-mock", "dig", {})
+        self.assertTrue(result["ok"])
+        result = execute_action("rover-mock", "pickup", {})
+        self.assertTrue(result["ok"])
+        self.assertEqual(len(WORLD["agents"]["rover-mock"]["inventory"]), 1)
 
 
 class TestCharge(unittest.TestCase):
@@ -529,21 +680,21 @@ class TestFogOfWar(unittest.TestCase):
 
     def test_snapshot_hides_unrevealed_stones(self):
         # Place a stone far from any agent's revealed area
-        WORLD["stones"] = [{"position": [19, 19], "type": "core"}]
+        WORLD["stones"] = [{"position": [19, 19], "type": "unknown", "_true_type": "core", "extracted": False, "analyzed": False}]
         snap = get_snapshot()
         self.assertEqual(len(snap["stones"]), 0)
 
     def test_snapshot_shows_revealed_stones(self):
         # Place a stone within rover-mock's revealed area
-        WORLD["stones"] = [{"position": [10, 10], "type": "core"}]
+        WORLD["stones"] = [{"position": [10, 10], "type": "unknown", "_true_type": "core", "extracted": False, "analyzed": False}]
         snap = get_snapshot()
         self.assertEqual(len(snap["stones"]), 1)
-        self.assertEqual(snap["stones"][0]["type"], "core")
+        self.assertEqual(snap["stones"][0]["type"], "unknown")
 
     def test_snapshot_mixed_visibility(self):
         WORLD["stones"] = [
-            {"position": [10, 10], "type": "core"},
-            {"position": [19, 19], "type": "basalt"},
+            {"position": [10, 10], "type": "unknown", "_true_type": "core", "extracted": False, "analyzed": False},
+            {"position": [19, 19], "type": "unknown", "_true_type": "basalt", "extracted": False, "analyzed": False},
         ]
         snap = get_snapshot()
         self.assertEqual(len(snap["stones"]), 1)
@@ -551,7 +702,7 @@ class TestFogOfWar(unittest.TestCase):
 
     def test_move_reveals_stone(self):
         # Stone beyond reveal radius — not visible at start, visible after moving east
-        WORLD["stones"] = [{"position": [16, 10], "type": "basalt"}]
+        WORLD["stones"] = [{"position": [16, 10], "type": "unknown", "_true_type": "basalt", "extracted": False, "analyzed": False}]
         snap_before = get_snapshot()
         self.assertEqual(len(snap_before["stones"]), 0)
         execute_action("rover-mock", "move", {"direction": "east"})
@@ -604,19 +755,19 @@ class TestMissionCompletion(unittest.TestCase):
         self.assertEqual(snap["mission"]["status"], "running")
 
     def test_collected_count_updates_on_pickup(self):
-        WORLD["stones"] = [{"position": [5, 5], "type": "core", "extracted": True}]
+        WORLD["stones"] = [{"position": [5, 5], "type": "core", "_true_type": "core", "extracted": True, "analyzed": True}]
         execute_action("rover-mock", "pickup", {})
         self.assertEqual(WORLD["mission"]["collected_count"], 1)
 
     def test_non_target_stone_not_counted(self):
-        WORLD["stones"] = [{"position": [5, 5], "type": "basalt", "extracted": True}]
+        WORLD["stones"] = [{"position": [5, 5], "type": "basalt", "_true_type": "basalt", "extracted": True, "analyzed": True}]
         execute_action("rover-mock", "pickup", {})
         self.assertEqual(WORLD["mission"]["collected_count"], 0)
 
     def test_pickup_away_from_station_no_success(self):
         """Picking up a target stone away from station should NOT trigger success."""
         WORLD["mission"]["target_count"] = 1
-        WORLD["stones"] = [{"position": [5, 5], "type": "core", "extracted": True}]
+        WORLD["stones"] = [{"position": [5, 5], "type": "core", "_true_type": "core", "extracted": True, "analyzed": True}]
         result = execute_action("rover-mock", "pickup", {})
         self.assertEqual(WORLD["mission"]["status"], "running")
         self.assertNotIn("mission", result)
@@ -627,7 +778,7 @@ class TestMissionCompletion(unittest.TestCase):
         WORLD["mission"]["target_count"] = 1
         WORLD["agents"]["rover-mock"]["position"] = [0, 0]
         WORLD["agents"]["station"]["position"] = [0, 0]
-        WORLD["stones"] = [{"position": [0, 0], "type": "core", "extracted": True}]
+        WORLD["stones"] = [{"position": [0, 0], "type": "core", "_true_type": "core", "extracted": True, "analyzed": True}]
         result = execute_action("rover-mock", "pickup", {})
         self.assertEqual(WORLD["mission"]["status"], "success")
         self.assertIn("mission", result)
@@ -649,12 +800,12 @@ class TestMissionCompletion(unittest.TestCase):
         WORLD["agents"]["station"]["position"] = [0, 0]
         # Rover-mock picks up one core at station
         WORLD["agents"]["rover-mock"]["position"] = [0, 0]
-        WORLD["stones"] = [{"position": [0, 0], "type": "core", "extracted": True}]
+        WORLD["stones"] = [{"position": [0, 0], "type": "core", "_true_type": "core", "extracted": True, "analyzed": True}]
         execute_action("rover-mock", "pickup", {})
         self.assertEqual(WORLD["mission"]["status"], "running")
         # Rover-mistral picks up another core at station
         WORLD["agents"]["rover-mistral"]["position"] = [0, 0]
-        WORLD["stones"] = [{"position": [0, 0], "type": "core", "extracted": True}]
+        WORLD["stones"] = [{"position": [0, 0], "type": "core", "_true_type": "core", "extracted": True, "analyzed": True}]
         result = execute_action("rover-mistral", "pickup", {})
         self.assertEqual(WORLD["mission"]["status"], "success")
         self.assertEqual(WORLD["mission"]["collected_count"], 2)
@@ -720,20 +871,20 @@ class TestMemory(unittest.TestCase):
         self.assertIn("(11,10)", mem[0])
 
     def test_move_records_stone_found(self):
-        WORLD["stones"] = [{"position": [11, 10], "type": "core"}]
+        WORLD["stones"] = [{"position": [11, 10], "type": "unknown", "_true_type": "core", "extracted": False, "analyzed": False}]
         execute_action("rover-mock", "move", {"direction": "east"})
         mem = WORLD["agents"]["rover-mock"]["memory"]
-        self.assertIn("core", mem[0])
+        self.assertIn("unknown", mem[0])
 
     def test_dig_records_memory(self):
-        WORLD["stones"] = [{"position": [10, 10], "type": "basalt"}]
+        WORLD["stones"] = [{"position": [10, 10], "type": "basalt", "_true_type": "basalt", "extracted": False, "analyzed": True}]
         execute_action("rover-mock", "dig", {})
         mem = WORLD["agents"]["rover-mock"]["memory"]
         self.assertEqual(len(mem), 1)
         self.assertIn("Dug out basalt", mem[0])
 
     def test_pickup_records_memory(self):
-        WORLD["stones"] = [{"position": [10, 10], "type": "core", "extracted": True}]
+        WORLD["stones"] = [{"position": [10, 10], "type": "core", "_true_type": "core", "extracted": True, "analyzed": True}]
         execute_action("rover-mock", "pickup", {})
         mem = WORLD["agents"]["rover-mock"]["memory"]
         self.assertEqual(len(mem), 1)
@@ -775,12 +926,19 @@ class TestMemory(unittest.TestCase):
 
 
 class TestDirectionHint(unittest.TestCase):
+    """Direction hints use math convention: north = +Y, south = -Y."""
 
     def test_north(self):
-        self.assertEqual(_direction_hint(0, -3), "north")
+        self.assertEqual(_direction_hint(0, 3), "north")
+
+    def test_south(self):
+        self.assertEqual(_direction_hint(0, -3), "south")
 
     def test_south_east(self):
-        self.assertEqual(_direction_hint(2, 5), "south, east")
+        self.assertEqual(_direction_hint(2, -5), "south, east")
+
+    def test_north_east(self):
+        self.assertEqual(_direction_hint(2, 5), "north, east")
 
     def test_west(self):
         self.assertEqual(_direction_hint(-1, 0), "west")
@@ -813,22 +971,29 @@ class TestUpdateTasks(unittest.TestCase):
         self.assertEqual(len(tasks), 1)
         self.assertIn("Explore", tasks[0])
 
-    def test_dig_when_stone_buried(self):
-        WORLD["stones"] = [{"position": [5, 5], "type": "core"}]
+    def test_analyze_when_stone_unanalyzed(self):
+        WORLD["stones"] = [{"position": [5, 5], "type": "unknown", "_true_type": "core", "extracted": False, "analyzed": False}]
+        update_tasks("rover-mock")
+        tasks = WORLD["agents"]["rover-mock"]["tasks"]
+        self.assertEqual(len(tasks), 1)
+        self.assertIn("Analyze", tasks[0])
+
+    def test_dig_when_stone_analyzed(self):
+        WORLD["stones"] = [{"position": [5, 5], "type": "core", "_true_type": "core", "extracted": False, "analyzed": True}]
         update_tasks("rover-mock")
         tasks = WORLD["agents"]["rover-mock"]["tasks"]
         self.assertEqual(len(tasks), 1)
         self.assertIn("Dig", tasks[0])
 
     def test_pickup_when_stone_extracted(self):
-        WORLD["stones"] = [{"position": [5, 5], "type": "core", "extracted": True}]
+        WORLD["stones"] = [{"position": [5, 5], "type": "core", "_true_type": "core", "extracted": True, "analyzed": True}]
         update_tasks("rover-mock")
         tasks = WORLD["agents"]["rover-mock"]["tasks"]
         self.assertEqual(len(tasks), 1)
         self.assertIn("Pick up", tasks[0])
 
     def test_navigate_to_known_stone(self):
-        WORLD["stones"] = [{"position": [8, 5], "type": "core"}]
+        WORLD["stones"] = [{"position": [8, 5], "type": "unknown", "_true_type": "core", "extracted": False, "analyzed": False}]
         # Make sure the stone tile is revealed
         agent = WORLD["agents"]["rover-mock"]
         if [8, 5] not in agent.get("revealed", []):
