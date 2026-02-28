@@ -5,7 +5,7 @@ from app.world import check_mission_status, charge_rover
 from app.world import BATTERY_COST_MOVE, BATTERY_COST_DIG, BATTERY_COST_PICKUP
 from app.world import CHARGE_RATE, REVEAL_RADIUS, GRID_W, GRID_H, AGENT_STARTS
 from app.world import assign_mission, _cells_in_radius, record_memory, MEMORY_MAX
-from app.world import update_tasks, _direction_hint
+from app.world import update_tasks, _direction_hint, reset_world
 
 
 class TestMoveAgent(unittest.TestCase):
@@ -794,15 +794,18 @@ class TestUpdateTasks(unittest.TestCase):
         self._orig_inv = WORLD["agents"]["randy-rover"].get("inventory", [])[:]
         self._orig_stones = WORLD.get("stones", [])[:]
         self._orig_tasks = WORLD["agents"]["randy-rover"].get("tasks", [])[:]
+        self._orig_discovered = WORLD["agents"]["randy-rover"].get("discovered_stones", [])[:]
         WORLD["agents"]["randy-rover"]["position"] = [5, 5]
         WORLD["agents"]["randy-rover"]["inventory"] = []
         WORLD["agents"]["randy-rover"]["tasks"] = []
+        WORLD["agents"]["randy-rover"]["discovered_stones"] = []
 
     def tearDown(self):
         WORLD["agents"]["randy-rover"]["position"] = self._orig_pos
         WORLD["agents"]["randy-rover"]["inventory"] = self._orig_inv
         WORLD["stones"] = self._orig_stones
         WORLD["agents"]["randy-rover"]["tasks"] = self._orig_tasks
+        WORLD["agents"]["randy-rover"]["discovered_stones"] = self._orig_discovered
 
     def test_explore_when_no_stones(self):
         WORLD["stones"] = []
@@ -825,17 +828,27 @@ class TestUpdateTasks(unittest.TestCase):
         self.assertEqual(len(tasks), 1)
         self.assertIn("Pick up", tasks[0])
 
-    def test_navigate_to_known_stone(self):
+    def test_navigate_to_discovered_stone(self):
         WORLD["stones"] = [{"position": [8, 5], "type": "core"}]
-        # Make sure the stone tile is revealed
         agent = WORLD["agents"]["randy-rover"]
-        if [8, 5] not in agent.get("revealed", []):
-            agent.setdefault("revealed", []).append([8, 5])
+        agent["discovered_stones"] = [[8, 5]]
         update_tasks("randy-rover")
         tasks = WORLD["agents"]["randy-rover"]["tasks"]
         self.assertEqual(len(tasks), 1)
         self.assertIn("Navigate", tasks[0])
         self.assertIn("east", tasks[0])
+
+    def test_no_navigate_to_undiscovered_stone(self):
+        WORLD["stones"] = [{"position": [8, 5], "type": "core"}]
+        agent = WORLD["agents"]["randy-rover"]
+        agent["discovered_stones"] = []
+        # Stone is on a revealed tile but not discovered
+        if [8, 5] not in agent.get("revealed", []):
+            agent.setdefault("revealed", []).append([8, 5])
+        update_tasks("randy-rover")
+        tasks = WORLD["agents"]["randy-rover"]["tasks"]
+        self.assertEqual(len(tasks), 1)
+        self.assertIn("Explore", tasks[0])
 
     def test_return_to_station_when_has_target(self):
         WORLD["agents"]["randy-rover"]["inventory"] = [{"type": "core"}]
@@ -843,3 +856,27 @@ class TestUpdateTasks(unittest.TestCase):
         tasks = WORLD["agents"]["randy-rover"]["tasks"]
         self.assertEqual(len(tasks), 1)
         self.assertIn("Return to station", tasks[0])
+
+
+class TestResetWorld(unittest.TestCase):
+
+    def test_reset_restores_positions(self):
+        WORLD["agents"]["randy-rover"]["position"] = [15, 15]
+        WORLD["agents"]["randy-rover"]["battery"] = 0.1
+        WORLD["mission"]["status"] = "success"
+        reset_world()
+        self.assertEqual(WORLD["agents"]["randy-rover"]["position"], [2, 10])
+        self.assertEqual(WORLD["agents"]["randy-rover"]["battery"], 1.0)
+        self.assertEqual(WORLD["mission"]["status"], "running")
+
+    def test_reset_clears_inventory_and_memory(self):
+        WORLD["agents"]["randy-rover"]["inventory"] = [{"type": "core"}]
+        WORLD["agents"]["randy-rover"]["memory"] = ["something"]
+        reset_world()
+        self.assertEqual(WORLD["agents"]["randy-rover"]["inventory"], [])
+        self.assertEqual(WORLD["agents"]["randy-rover"]["memory"], [])
+
+    def test_reset_regenerates_stones(self):
+        WORLD["stones"] = []
+        reset_world()
+        self.assertGreaterEqual(len(WORLD["stones"]), 5)
