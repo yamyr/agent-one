@@ -121,6 +121,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Removed
+
+- **Stale `/mission/status` endpoint**: Removed hardcoded placeholder endpoint from `views.py` that returned `{"status": "idle", "mission": null}` — real mission status is served via world state ([#69](https://github.com/mhack-agent-one/agent-one/issues/69))
+- **`test_mission_status_returns_idle`**: Removed corresponding test from `test_health.py`
+
+
 ### Added (UI Polish Round 3 — Phases 3–8)
 
 - **Persisted zoom preference**: Zoom level saved to `localStorage` via `usePreferences` composable; survives page refresh
