@@ -250,8 +250,13 @@ function onMouseUp() {
   dragging.value = false
 }
 
-// Expose camera for minimap
-defineExpose({ camX, camY })
+function panCamera(dx, dy) {
+  targetCamX.value += dx
+  targetCamY.value += dy
+}
+
+// Expose camera for minimap & keyboard shortcuts
+defineExpose({ camX, camY, panCamera })
 </script>
 
 <template>
