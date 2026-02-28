@@ -1,25 +1,23 @@
-# Round 3 — Phase 2 & Zoom Fix
+# Round 3 — UI Polish (All Phases)
 
-## Task A: Fix Zoom-Out Tile Scaling
-- [x] Make visible tile count dynamic based on zoom level
-- [x] When zoomed out, render more tiles proportionally (`ceil(VIEWPORT_W / zoom)`)
-- [x] Update camera centering, follow, pan, fog, and visibility checks for dynamic tile count
-- [x] Update MiniMap viewport box to reflect actual visible tile count
-- [x] Zoom re-centering on zoom change (center stays stable)
-- [x] MiniMap navigation uses navigateTo() to prevent rubber-banding
-- [x] Removed dead MAP_W/MAP_H constants
+## Phase 2: Zoom Fix & EventLog Virtualization
+- [x] Dynamic viewport tile count based on zoom level
+- [x] Zoom re-centering, MiniMap navigation, dead code cleanup
+- [x] EventLog virtual scrolling with UID-based animations
+- [x] Build passes, code review complete, PR #52 merged
 
-## Task B: EventLog Virtualization (Round 3 Phase 2)
-- [x] Implement virtual scrolling for EventLog — only render visible events
-- [x] Calculate visible window from scroll offset + container height
-- [x] Use spacer elements (top/bottom) to maintain correct scrollbar behavior
-- [x] Preserve enter transition for new events at top (UID-based, works at 200 cap)
-- [x] Maintain auto-scroll to top behavior
-- [x] Ensure accessibility (ARIA live region still works)
-- [x] CSS containment for paint optimization
+## Phase 4: Toast Dedupe & Rate-Limiting (US2)
+- [x] T006: Deduplication — identical messages increment count instead of duplicating
+- [x] T007: Rate-limiting — MAX_VISIBLE=5, oldest evicted when full
+- [x] T008: Count badge — `×N` rendered inline with toast message
+- [x] T009: Build verification passed
 
-## Verification
-- [x] Build passes (vite build)
-- [x] Code review: all critical/warning issues fixed
-- [x] Update Changelog.md
-- [ ] Create PR and merge to main
+## Phase 6: Loading Skeletons (US4 — remaining)
+- [x] T016: EventLog skeleton state — 6 pulsing rows with staggered animation
+- [x] T018: Build verification passed
+
+## Phase 9: Polish
+- [x] T025: Full build verification
+- [x] T026: Changelog updated
+- [x] T027: This file updated
+- [x] T028: PR created
