@@ -22,6 +22,7 @@
     "eslint": "^9.31.0",
     "eslint-plugin-vue": "~10.3.0",
     "globals": "^17.3.0",
+    "unocss": "^66.6.2",
     "vite": "^7.0.6"
   }
 }
