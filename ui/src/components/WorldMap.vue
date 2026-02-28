@@ -1,5 +1,5 @@
 <script setup>
-import { computed, ref, watch } from 'vue'
+import { computed, ref, watch, onMounted, onUnmounted } from 'vue'
 import { TILE_SIZE, MAP_W, MAP_H, VIEWPORT_W, VIEWPORT_H, VEIN_COLORS, VEIN_SIZES, SOLAR_PANEL_COLOR, SOLAR_PANEL_DEPLETED_COLOR, agentColor, revealRadius } from '../constants.js'
 
 const props = defineProps({
@@ -23,17 +23,39 @@ const emit = defineEmits(['select-agent', 'unfollow'])
 const camX = ref(-Math.floor(VIEWPORT_W / 2))
 const camY = ref(-Math.floor(VIEWPORT_H / 2))
 
+// Smooth camera: targets that camX/camY interpolate toward
+const targetCamX = ref(camX.value)
+const targetCamY = ref(camY.value)
+const LERP_SPEED = 0.15 // fraction per frame (higher = snappier)
+let rafId = null
+
+function cameraLoop() {
+  const dx = targetCamX.value - camX.value
+  const dy = targetCamY.value - camY.value
+  if (Math.abs(dx) > 0.01 || Math.abs(dy) > 0.01) {
+    camX.value += dx * LERP_SPEED
+    camY.value += dy * LERP_SPEED
+    // Snap when very close
+    if (Math.abs(dx) < 0.05) camX.value = targetCamX.value
+    if (Math.abs(dy) < 0.05) camY.value = targetCamY.value
+  }
+  rafId = requestAnimationFrame(cameraLoop)
+}
+
+onMounted(() => { rafId = requestAnimationFrame(cameraLoop) })
+onUnmounted(() => { if (rafId) cancelAnimationFrame(rafId) })
+
 // Track drag state
 const dragging = ref(false)
 const dragStart = ref({ x: 0, y: 0 })
 
-// Follow selected agent: center camera on it when worldState updates
+// Follow selected agent: update target (smooth interpolation via rAF)
 watch([() => props.worldState, () => props.followAgent], () => {
   if (!props.worldState || !props.followAgent) return
   const a = props.worldState.agents?.[props.followAgent]
   if (a) {
-    camX.value = a.position[0] - Math.floor(VIEWPORT_W / 2)
-    camY.value = a.position[1] - Math.floor(VIEWPORT_H / 2)
+    targetCamX.value = a.position[0] - Math.floor(VIEWPORT_W / 2)
+    targetCamY.value = a.position[1] - Math.floor(VIEWPORT_H / 2)
   }
 }, { deep: true })
 
@@ -209,13 +231,16 @@ function onMouseMove(e) {
   const tilePixelH = rect.height / VIEWPORT_H
   if (Math.abs(dx) >= tilePixelW) {
     const tileDx = Math.round(dx / tilePixelW)
-    camX.value -= tileDx
+    // Drag is instant — move both target and camera directly
+    targetCamX.value -= tileDx
+    camX.value = targetCamX.value
     dragStart.value.x = e.clientX
     emit('unfollow')
   }
   if (Math.abs(dy) >= tilePixelH) {
     const tileDy = Math.round(dy / tilePixelH)
-    camY.value += tileDy
+    targetCamY.value += tileDy
+    camY.value = targetCamY.value
     dragStart.value.y = e.clientY
     emit('unfollow')
   }
