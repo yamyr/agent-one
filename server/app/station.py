@@ -7,6 +7,7 @@ from mistralai import Mistral
 
 from .config import settings
 from .models import StationContext
+from .world import assign_mission, charge_rover
 
 logger = logging.getLogger(__name__)
 
@@ -114,6 +115,19 @@ def _parse_tool_calls(tool_calls):
         elif name == "charge_rover":
             actions.append({"name": "charge_rover", "params": args})
     return actions
+
+
+def execute_action(action):
+    """Execute a station action on WORLD. Returns result dict."""
+    name = action["name"]
+    params = action["params"]
+    if name == "assign_mission":
+        return assign_mission(params["agent_id"], params["objective"])
+    elif name == "charge_rover":
+        return charge_rover(params["rover_id"])
+    elif name == "broadcast_alert":
+        return {"ok": True, "message": params["message"]}
+    return {"ok": False, "error": f"Unknown station action: {name}"}
 
 
 class StationAgent:

@@ -1,8 +1,8 @@
 import unittest
 
 from app.world import WORLD, GRID_W, GRID_H
-from app.agent import MockRoverAgent
-from app.models import AgentMission, InventoryItem, StoneInfo
+from app.agent import MockRoverReasoner
+from app.models import AgentMission, InventoryItem, PendingCommand, StoneInfo
 from app.models import RoverAgentState, RoverWorldView, RoverComputed, RoverContext
 
 
@@ -62,7 +62,7 @@ class TestMockRoverAgent(unittest.TestCase):
         WORLD["agents"]["rover-mock"]["visited"] = [[10, 10]]
 
     def test_run_turn_returns_dict(self):
-        agent = MockRoverAgent()
+        agent = MockRoverReasoner()
         ctx = _make_rover_context()
         turn = agent.run_turn(ctx)
         self.assertIsInstance(turn, dict)
@@ -70,14 +70,14 @@ class TestMockRoverAgent(unittest.TestCase):
         self.assertIn("action", turn)
 
     def test_run_turn_has_thinking(self):
-        agent = MockRoverAgent()
+        agent = MockRoverReasoner()
         ctx = _make_rover_context()
         turn = agent.run_turn(ctx)
         self.assertIsInstance(turn["thinking"], str)
         self.assertTrue(len(turn["thinking"]) > 0)
 
     def test_run_turn_action_shape(self):
-        agent = MockRoverAgent()
+        agent = MockRoverReasoner()
         ctx = _make_rover_context()
         turn = agent.run_turn(ctx)
         action = turn["action"]
@@ -87,7 +87,7 @@ class TestMockRoverAgent(unittest.TestCase):
         self.assertIn(action["params"]["direction"], ["north", "south", "east", "west"])
 
     def test_run_turn_does_not_mutate_world(self):
-        agent = MockRoverAgent()
+        agent = MockRoverReasoner()
         pos_before = list(WORLD["agents"]["rover-mock"]["position"])
         ctx = _make_rover_context()
         agent.run_turn(ctx)
@@ -95,7 +95,7 @@ class TestMockRoverAgent(unittest.TestCase):
 
     def test_run_turn_at_corner(self):
         WORLD["agents"]["rover-mock"]["position"] = [0, 0]
-        agent = MockRoverAgent()
+        agent = MockRoverReasoner()
         ctx = _make_rover_context()
         turn = agent.run_turn(ctx)
         self.assertIn(turn["action"]["params"]["direction"], ["north", "east"])
@@ -103,7 +103,7 @@ class TestMockRoverAgent(unittest.TestCase):
     def test_run_turn_at_bottom_right(self):
         WORLD["agents"]["rover-mock"]["position"] = [GRID_W - 1, GRID_H - 1]
         WORLD["agents"]["rover-mock"]["visited"] = [[GRID_W - 1, GRID_H - 1]]
-        agent = MockRoverAgent()
+        agent = MockRoverReasoner()
         ctx = _make_rover_context()
         turn = agent.run_turn(ctx)
         self.assertIn(turn["action"]["params"]["direction"], ["south", "west"])
@@ -116,27 +116,27 @@ class TestMockRoverAgent(unittest.TestCase):
             [10, 9],
             [9, 10],
         ]
-        agent = MockRoverAgent()
+        agent = MockRoverReasoner()
         ctx = _make_rover_context()
         turn = agent.run_turn(ctx)
         self.assertEqual(turn["action"]["params"]["direction"], "north")
 
     def test_mock_analyzes_unknown_stone(self):
-        agent = MockRoverAgent()
+        agent = MockRoverReasoner()
         stone = StoneInfo(position=[10, 10], type="unknown", analyzed=False, extracted=False)
         ctx = _make_rover_context(stone_here=stone)
         turn = agent.run_turn(ctx)
         self.assertEqual(turn["action"]["name"], "analyze")
 
     def test_mock_digs_analyzed_stone(self):
-        agent = MockRoverAgent()
+        agent = MockRoverReasoner()
         stone = StoneInfo(position=[10, 10], type="core", analyzed=True, extracted=False)
         ctx = _make_rover_context(stone_here=stone)
         turn = agent.run_turn(ctx)
         self.assertEqual(turn["action"]["name"], "dig")
 
     def test_mock_picks_up_extracted_stone(self):
-        agent = MockRoverAgent()
+        agent = MockRoverReasoner()
         stone = StoneInfo(position=[10, 10], type="core", analyzed=True, extracted=True)
         ctx = _make_rover_context(stone_here=stone)
         turn = agent.run_turn(ctx)
@@ -144,7 +144,7 @@ class TestMockRoverAgent(unittest.TestCase):
 
     def test_mock_returns_to_station_with_target(self):
         WORLD["agents"]["rover-mock"]["position"] = [5, 5]
-        agent = MockRoverAgent()
+        agent = MockRoverReasoner()
         ctx = _make_rover_context(
             inventory=[InventoryItem(type="core")],
             station_position=[0, 0],
@@ -153,3 +153,37 @@ class TestMockRoverAgent(unittest.TestCase):
         self.assertEqual(turn["action"]["name"], "move")
         # Should head toward station (west or south)
         self.assertIn(turn["action"]["params"]["direction"], ["west", "south"])
+
+    def test_mock_recall_heads_to_station(self):
+        WORLD["agents"]["rover-mock"]["position"] = [5, 5]
+        agent = MockRoverReasoner()
+        recall = PendingCommand(name="recall", payload={"reason": "Emergency"})
+        ctx = _make_rover_context(pending_commands=[recall])
+        turn = agent.run_turn(ctx)
+        self.assertEqual(turn["action"]["name"], "move")
+        # Should head toward station at (0,0) — west or south
+        self.assertIn(turn["action"]["params"]["direction"], ["west", "south"])
+        self.assertIn("RECALL", turn["thinking"])
+
+    def test_mock_recall_overrides_stone(self):
+        """Recall should take priority over stone interaction."""
+        agent = MockRoverReasoner()
+        stone = StoneInfo(position=[10, 10], type="unknown", analyzed=False)
+        recall = PendingCommand(name="recall", payload={"reason": "Storm"})
+        ctx = _make_rover_context(stone_here=stone, pending_commands=[recall])
+        turn = agent.run_turn(ctx)
+        # Should move, not analyze
+        self.assertEqual(turn["action"]["name"], "move")
+        self.assertIn("RECALL", turn["thinking"])
+
+    def test_mock_recall_at_station(self):
+        """If already at station when recall received, still returns valid action."""
+        WORLD["agents"]["rover-mock"]["position"] = [0, 0]
+        agent = MockRoverReasoner()
+        recall = PendingCommand(name="recall", payload={"reason": "Test"})
+        ctx = _make_rover_context(
+            pending_commands=[recall],
+            station_position=[0, 0],
+        )
+        turn = agent.run_turn(ctx)
+        self.assertIn("already at station", turn["thinking"])

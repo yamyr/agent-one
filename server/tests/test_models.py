@@ -1,8 +1,32 @@
 import unittest
 
-from app.models import AgentMission, InventoryItem, StoneInfo
+from app.models import AgentMission, InventoryItem, PendingCommand, StoneInfo
 from app.models import RoverAgentState, RoverWorldView, RoverComputed, RoverContext
 from app.models import RoverSummary, StationContext
+
+
+class TestPendingCommand(unittest.TestCase):
+    def test_defaults(self):
+        cmd = PendingCommand(name="recall")
+        self.assertEqual(cmd.name, "recall")
+        self.assertEqual(cmd.payload, {})
+        self.assertEqual(cmd.id, "")
+
+    def test_with_payload(self):
+        cmd = PendingCommand(name="assign_mission", payload={"objective": "Go north"}, id="abc")
+        self.assertEqual(cmd.name, "assign_mission")
+        self.assertEqual(cmd.payload["objective"], "Go north")
+        self.assertEqual(cmd.id, "abc")
+
+    def test_on_rover_computed(self):
+        cmd = PendingCommand(name="recall", payload={"reason": "Storm"})
+        computed = RoverComputed(pending_commands=[cmd])
+        self.assertEqual(len(computed.pending_commands), 1)
+        self.assertEqual(computed.pending_commands[0].name, "recall")
+
+    def test_rover_computed_default_empty(self):
+        computed = RoverComputed()
+        self.assertEqual(computed.pending_commands, [])
 
 
 class TestStoneInfo(unittest.TestCase):

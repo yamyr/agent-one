@@ -2,7 +2,7 @@ import json
 import unittest
 from unittest.mock import MagicMock, patch
 
-from app.station import StationAgent, _parse_tool_calls, _build_world_summary
+from app.station import StationAgent, _parse_tool_calls, _build_world_summary, execute_action
 from app.models import AgentMission, StoneInfo, RoverSummary, StationContext
 
 
@@ -171,6 +171,42 @@ class TestParseToolCalls(unittest.TestCase):
         ]
         actions = _parse_tool_calls(tool_calls)
         self.assertEqual(len(actions), 2)
+
+
+class TestExecuteAction(unittest.TestCase):
+    def test_assign_mission(self):
+        result = execute_action({
+            "name": "assign_mission",
+            "params": {"agent_id": "rover-mock", "objective": "Go north"},
+        })
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["agent_id"], "rover-mock")
+
+    def test_broadcast_alert(self):
+        result = execute_action({
+            "name": "broadcast_alert",
+            "params": {"message": "Storm incoming!"},
+        })
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["message"], "Storm incoming!")
+
+    def test_charge_rover_at_station(self):
+        from app.world import WORLD
+        WORLD["agents"]["rover-mock"]["position"] = [0, 0]
+        WORLD["agents"]["rover-mock"]["battery"] = 0.5
+        result = execute_action({
+            "name": "charge_rover",
+            "params": {"rover_id": "rover-mock"},
+        })
+        self.assertTrue(result["ok"])
+
+    def test_unknown_action(self):
+        result = execute_action({
+            "name": "self_destruct",
+            "params": {},
+        })
+        self.assertFalse(result["ok"])
+        self.assertIn("Unknown station action", result["error"])
 
 
 class TestBuildWorldSummary(unittest.TestCase):

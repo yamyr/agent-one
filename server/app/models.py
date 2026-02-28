@@ -45,12 +45,20 @@ class RoverWorldView(BaseModel):
     collected_count: int = 0
 
 
+class PendingCommand(BaseModel):
+    """A command queued for an agent by the Host (e.g. recall, assign_mission)."""
+    name: str
+    payload: dict = {}
+    id: str = ""
+
+
 class RoverComputed(BaseModel):
     """Derived fields for decision-making."""
     unvisited_dirs: list[str] = []
     stone_line: str = "none"
     stone_here: StoneInfo | None = None
     visible_stones: list[str] = []
+    pending_commands: list[PendingCommand] = []
 
 
 class RoverContext(BaseModel):

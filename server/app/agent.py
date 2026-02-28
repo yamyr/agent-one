@@ -1,13 +1,23 @@
-"""Rover agents — LLM-powered and mock. Return action dicts, never mutate world."""
+"""Rover agents — reasoners (sync decision engines) and loops (BaseAgent subclasses).
 
+Reasoners return action dicts, never mutate world.
+Loops own the full observe/reason/act/broadcast cycle via BaseAgent.tick().
+"""
+
+import asyncio
 import json
 import logging
 import random
 
 from mistralai import Mistral, SDKError
 
+from .base_agent import BaseAgent
+from .broadcast import broadcaster
 from .config import settings
-from .models import RoverContext
+from .models import PendingCommand, RoverContext
+from .protocol import make_message
+from .world import execute_action, get_snapshot, WORLD, charge_rover, next_tick
+from .world import observe_rover
 
 logger = logging.getLogger(__name__)
 
@@ -84,14 +94,17 @@ ANALYZE_GROUND_TOOL = {
 ROVER_TOOLS = [MOVE_TOOL, ANALYZE_TOOL, DIG_TOOL, PICKUP_TOOL, ANALYZE_GROUND_TOOL]
 
 
-class RoverAgent:
-    """Rover agent that reasons via Mistral. Returns action dict, does not execute."""
+# ── Reasoners (sync decision engines) ──
+
+
+class MistralRoverReasoner:
+    """Rover reasoner that decides via Mistral LLM. Returns action dict, does not execute."""
 
     def __init__(self, agent_id="rover-mistral", model="mistral-small-latest"):
         self.agent_id = agent_id
         self.model = model
         self._client = None
-        self._mock_fallback = MockRoverAgent(agent_id=agent_id)
+        self._mock_fallback = MockRoverReasoner(agent_id=agent_id)
 
     def _get_client(self):
         if self._client is None:
@@ -102,6 +115,7 @@ class RoverAgent:
 
     def _build_context(self, ctx: RoverContext):
         """Assemble LLM context from typed RoverContext."""
+        pending = ctx.computed.pending_commands
         x, y = ctx.agent.position
         mission = ctx.agent.mission
         battery = ctx.agent.battery
@@ -207,6 +221,19 @@ class RoverAgent:
             for entry in recent:
                 parts.append(f"- {entry}")
 
+        # Urgent commands from Host
+        if pending:
+            parts.append("\n== URGENT COMMANDS ==")
+            for cmd in pending:
+                if cmd.name == "recall":
+                    reason = cmd.payload.get("reason", "No reason given")
+                    parts.append(f"RECALL: Return to station immediately. Reason: {reason}")
+                elif cmd.name == "assign_mission":
+                    objective = cmd.payload.get("objective", "")
+                    parts.append(f"NEW MISSION: {objective}")
+                else:
+                    parts.append(f"{cmd.name.upper()}: {cmd.payload}")
+
         return "\n".join(parts)
 
     def run_turn(self, context: RoverContext):
@@ -268,8 +295,8 @@ class RoverAgent:
         return fallback
 
 
-class MockRoverAgent:
-    """Mock rover that explores, collects stones, and returns to station — no LLM calls."""
+class MockRoverReasoner:
+    """Mock rover reasoner — explores, collects stones, returns to station. No LLM calls."""
 
     def __init__(self, agent_id="rover-mock"):
         self.agent_id = agent_id
@@ -286,6 +313,27 @@ class MockRoverAgent:
         visited = context.agent.visited
         grid_w = context.world.grid_w
         grid_h = context.world.grid_h
+
+        # Check for recall command — override everything, head to station
+        for cmd in context.computed.pending_commands:
+            if cmd.name == "recall":
+                sp = station_pos
+                dx, dy = sp[0] - x, sp[1] - y
+                if dx == 0 and dy == 0:
+                    thinking = f"Recall received but already at station ({x}, {y})."
+                    return {"thinking": thinking, "action": {"name": "move", "params": {"direction": "north", "distance": 1}}}
+                if abs(dx) >= abs(dy):
+                    direction = "east" if dx > 0 else "west"
+                    distance = min(abs(dx), MAX_MOVE_DISTANCE)
+                else:
+                    direction = "north" if dy > 0 else "south"
+                    distance = min(abs(dy), MAX_MOVE_DISTANCE)
+                reason = cmd.payload.get("reason", "emergency")
+                thinking = f"RECALL received: {reason}. Heading to station at ({sp[0]},{sp[1]})."
+                return {
+                    "thinking": thinking,
+                    "action": {"name": "move", "params": {"direction": direction, "distance": distance}},
+                }
 
         # Check for stone at current tile — analyze, dig, or pickup
         if stone_here:
@@ -341,3 +389,124 @@ class MockRoverAgent:
         action = {"name": "move", "params": {"direction": direction}}
 
         return {"thinking": thinking, "action": action}
+
+
+# Backward-compat aliases
+MockRoverAgent = MockRoverReasoner
+RoverAgent = MistralRoverReasoner
+
+
+# ── Loops (BaseAgent subclasses — own the tick cycle) ──
+
+
+class RoverLoop(BaseAgent):
+    """Generic rover tick: observe → inject commands → reason → execute → broadcast.
+
+    Subclasses set self._reasoner to a MockRoverReasoner or MistralRoverReasoner.
+    """
+
+    _reasoner: MockRoverReasoner | MistralRoverReasoner
+
+    async def tick(self, host) -> None:
+        context = observe_rover(self.agent_id)
+
+        # Inject pending commands from inbox
+        pending = host.drain_inbox(self.agent_id)
+        if pending:
+            commands = [PendingCommand(**cmd) for cmd in pending]
+            context = context.model_copy(
+                update={"computed": context.computed.model_copy(
+                    update={"pending_commands": commands}
+                )}
+            )
+
+        turn = await asyncio.to_thread(self._reasoner.run_turn, context)
+        WORLD["agents"][self.agent_id]["last_context"] = context.model_dump()
+        tick = next_tick()
+        messages = []
+
+        if turn["thinking"]:
+            msg = make_message(
+                source=self.agent_id,
+                type="event",
+                name="thinking",
+                payload={"text": turn["thinking"]},
+            )
+            messages.append(msg)
+
+        if turn["action"]:
+            result = execute_action(
+                self.agent_id,
+                turn["action"]["name"],
+                turn["action"]["params"],
+            )
+            if result["ok"]:
+                action_msg = make_message(
+                    source=self.agent_id,
+                    type="action",
+                    name=turn["action"]["name"],
+                    payload=result,
+                )
+                messages.append(action_msg)
+
+                ground = result.get("ground")
+                if ground and ground["stone"]:
+                    check_msg = make_message(
+                        source=self.agent_id,
+                        type="event",
+                        name="check",
+                        payload=ground,
+                    )
+                    messages.append(check_msg)
+
+                mission_event = result.get("mission")
+                if mission_event:
+                    mission_msg = make_message(
+                        source="world",
+                        type="event",
+                        name="mission_" + mission_event["status"],
+                        payload=mission_event,
+                    )
+                    messages.append(mission_msg)
+
+        for msg in messages:
+            await host.broadcast(msg.to_dict())
+
+        await broadcaster.send(
+            make_message("world", "event", "state", get_snapshot()).to_dict()
+        )
+
+        # Auto-charge rover when it arrives at station
+        rover = WORLD["agents"].get(self.agent_id)
+        station_agent = WORLD["agents"].get("station")
+        if (
+            rover
+            and station_agent
+            and rover["position"] == station_agent["position"]
+            and rover["battery"] < 1.0
+        ):
+            charge_result = charge_rover(self.agent_id)
+            if charge_result["ok"]:
+                charge_msg = make_message(
+                    source="station",
+                    type="action",
+                    name="charge_rover",
+                    payload=charge_result,
+                )
+                await host.broadcast(charge_msg.to_dict())
+
+
+class RoverMockLoop(RoverLoop):
+    """Rover loop wired to MockRoverReasoner."""
+
+    def __init__(self, interval: float = 0.5):
+        super().__init__(agent_id="rover-mock", interval=interval)
+        self._reasoner = MockRoverReasoner(agent_id=self.agent_id)
+
+
+class RoverMistralLoop(RoverLoop):
+    """Rover loop wired to MistralRoverReasoner."""
+
+    def __init__(self, interval: float = 3.0):
+        super().__init__(agent_id="rover-mistral", interval=interval)
+        self._reasoner = MistralRoverReasoner(agent_id=self.agent_id)
