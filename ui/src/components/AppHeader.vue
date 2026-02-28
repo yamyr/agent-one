@@ -105,4 +105,37 @@ h1 {
   background: var(--bg-status-ok);
   color: var(--accent-green);
 }
+
+@media (max-width: 768px) {
+  header {
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+
+  h1 {
+    font-size: 1rem;
+  }
+}
+
+@media (max-width: 480px) {
+  h1 {
+    font-size: 0.85rem;
+    width: 100%;
+  }
+
+  .header-controls {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .reset-btn,
+  .pause-btn {
+    font-size: 0.65rem;
+    padding: 0.2rem 0.4rem;
+  }
+
+  .status {
+    font-size: 0.65rem;
+  }
+}
 </style>
