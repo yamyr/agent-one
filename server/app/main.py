@@ -218,7 +218,6 @@ def _stop_simulation():
     _agent_tasks.clear()
 
 
-
 @asynccontextmanager
 async def lifespan(app):
     init_db()
@@ -276,7 +275,6 @@ async def reset_simulation():
     narrator.reset()
     await _start_simulation()
     return {"reset": True}
-
 
 
 @app.post("/narration/toggle")

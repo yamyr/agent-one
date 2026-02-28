@@ -63,13 +63,15 @@ def _generate_stones():
         x, y = _random_free_pos(occupied)
         occupied.add((x, y))
         core_positions.append((x, y))
-        stones.append({
-            "position": [x, y],
-            "type": "unknown",
-            "_true_type": "core",
-            "extracted": False,
-            "analyzed": False,
-        })
+        stones.append(
+            {
+                "position": [x, y],
+                "type": "unknown",
+                "_true_type": "core",
+                "extracted": False,
+                "analyzed": False,
+            }
+        )
 
     # Phase 2: fill the rest
     while len(stones) < count:
@@ -77,37 +79,39 @@ def _generate_stones():
         if is_core and core_positions:
             # Preferential attachment: bias toward existing cores
             candidates = [
-                (x, y)
-                for x in range(GRID_W) for y in range(GRID_H)
-                if (x, y) not in occupied
+                (x, y) for x in range(GRID_W) for y in range(GRID_H) if (x, y) not in occupied
             ]
             if candidates:
                 weights = []
                 for cx, cy in candidates:
                     w = sum(1.0 / (1 + abs(cx - px) + abs(cy - py)) for px, py in core_positions)
                     weights.append(w)
-                (x, y), = random.choices(candidates, weights=weights, k=1)
+                ((x, y),) = random.choices(candidates, weights=weights, k=1)
             else:
                 x, y = _random_free_pos(occupied)
             occupied.add((x, y))
             core_positions.append((x, y))
-            stones.append({
-                "position": [x, y],
-                "type": "unknown",
-                "_true_type": "core",
-                "extracted": False,
-                "analyzed": False,
-            })
+            stones.append(
+                {
+                    "position": [x, y],
+                    "type": "unknown",
+                    "_true_type": "core",
+                    "extracted": False,
+                    "analyzed": False,
+                }
+            )
         else:
             x, y = _random_free_pos(occupied)
             occupied.add((x, y))
-            stones.append({
-                "position": [x, y],
-                "type": "unknown",
-                "_true_type": "basalt",
-                "extracted": False,
-                "analyzed": False,
-            })
+            stones.append(
+                {
+                    "position": [x, y],
+                    "type": "unknown",
+                    "_true_type": "basalt",
+                    "extracted": False,
+                    "analyzed": False,
+                }
+            )
 
     return stones, core_positions
 
@@ -123,7 +127,7 @@ def _compute_concentration_map(core_positions):
     for x in range(GRID_W):
         for y in range(GRID_H):
             val = sum(
-                math.exp(-(abs(x - px) + abs(y - py)) ** 2 / (sigma ** 2))
+                math.exp(-((abs(x - px) + abs(y - py)) ** 2) / (sigma**2))
                 for px, py in core_positions
             )
             conc[(x, y)] = val
@@ -165,10 +169,19 @@ _ROVER_TOOL_DEFS = [
         "name": "move",
         "description": "Move 1-3 tiles in a cardinal direction (north/south/east/west). Costs 2% battery per tile. Ground is auto-scanned after each move.",
     },
-    {"name": "analyze", "description": "Analyze an unknown stone at current tile to reveal its true type. Costs 3% battery."},
-    {"name": "dig", "description": "Dig at current tile to extract a stone (costs 6% battery). Stone must be analyzed first."},
+    {
+        "name": "analyze",
+        "description": "Analyze an unknown stone at current tile to reveal its true type. Costs 3% battery.",
+    },
+    {
+        "name": "dig",
+        "description": "Dig at current tile to extract a stone (costs 6% battery). Stone must be analyzed first.",
+    },
     {"name": "pickup", "description": "Pick up an extracted stone at current tile into inventory."},
-    {"name": "analyze_ground", "description": "Analyze ground concentration at current tile to detect nearby core deposits. Costs 3% battery. Returns a 0.0-1.0 reading."},
+    {
+        "name": "analyze_ground",
+        "description": "Analyze ground concentration at current tile to detect nearby core deposits. Costs 3% battery. Returns a 0.0-1.0 reading.",
+    },
 ]
 
 
@@ -285,8 +298,14 @@ def execute_action(agent_id, action_name, params):
 
         cost = BATTERY_COST_MOVE * distance
         if agent["battery"] < cost:
-            record_memory(agent_id, f"Failed move {direction}: not enough battery ({agent['battery']:.0%} < {cost:.0%})")
-            return {"ok": False, "error": f"Not enough battery to move {distance} tiles (need {cost:.0%}, have {agent['battery']:.0%})"}
+            record_memory(
+                agent_id,
+                f"Failed move {direction}: not enough battery ({agent['battery']:.0%} < {cost:.0%})",
+            )
+            return {
+                "ok": False,
+                "error": f"Not enough battery to move {distance} tiles (need {cost:.0%}, have {agent['battery']:.0%})",
+            }
 
         ox, oy = agent["position"]
         tx, ty = ox + delta[0] * distance, oy + delta[1] * distance
@@ -302,25 +321,42 @@ def execute_action(agent_id, action_name, params):
             result["ground"] = check_ground(agent_id)
             ground = result["ground"]
             if ground["stone"]:
-                record_memory(agent_id, f"Moved {direction} {distance} to ({tx},{ty}), found {ground['stone']['type']} stone")
+                record_memory(
+                    agent_id,
+                    f"Moved {direction} {distance} to ({tx},{ty}), found {ground['stone']['type']} stone",
+                )
             else:
-                record_memory(agent_id, f"Moved {direction} {distance} to ({tx},{ty}), empty ground")
+                record_memory(
+                    agent_id, f"Moved {direction} {distance} to ({tx},{ty}), empty ground"
+                )
     elif action_name == "analyze":
         result = _execute_analyze(agent_id, agent)
         if result["ok"]:
-            record_memory(agent_id, f"Analyzed stone at ({result['position'][0]},{result['position'][1]}), type={result['stone']['type']}")
+            record_memory(
+                agent_id,
+                f"Analyzed stone at ({result['position'][0]},{result['position'][1]}), type={result['stone']['type']}",
+            )
     elif action_name == "analyze_ground":
         result = _execute_analyze_ground(agent_id, agent)
         if result["ok"]:
-            record_memory(agent_id, f"Ground concentration at ({result['position'][0]},{result['position'][1]}): {result['concentration']:.3f}")
+            record_memory(
+                agent_id,
+                f"Ground concentration at ({result['position'][0]},{result['position'][1]}): {result['concentration']:.3f}",
+            )
     elif action_name == "dig":
         result = _execute_dig(agent_id, agent)
         if result["ok"]:
-            record_memory(agent_id, f"Dug out {result['stone']['type']} stone at ({result['position'][0]},{result['position'][1]})")
+            record_memory(
+                agent_id,
+                f"Dug out {result['stone']['type']} stone at ({result['position'][0]},{result['position'][1]})",
+            )
     elif action_name == "pickup":
         result = _execute_pickup(agent_id, agent)
         if result["ok"]:
-            record_memory(agent_id, f"Picked up {result['stone']['type']} stone at ({result['position'][0]},{result['position'][1]}), inventory={result['inventory_count']}")
+            record_memory(
+                agent_id,
+                f"Picked up {result['stone']['type']} stone at ({result['position'][0]},{result['position'][1]}), inventory={result['inventory_count']}",
+            )
     else:
         return {"ok": False, "error": f"Unknown action: {action_name}"}
 
@@ -373,7 +409,9 @@ def _execute_analyze_ground(agent_id, agent):
     concentration = WORLD.get("concentration_map", {}).get((x, y), 0.0)
     readings = agent.setdefault("ground_readings", {})
     readings[f"{x},{y}"] = concentration
-    logger.info("Agent %s analyzed ground at (%d,%d), concentration=%.2f", agent_id, x, y, concentration)
+    logger.info(
+        "Agent %s analyzed ground at (%d,%d), concentration=%.2f", agent_id, x, y, concentration
+    )
     return {"ok": True, "position": [x, y], "concentration": round(concentration, 3)}
 
 
@@ -437,7 +475,9 @@ def _execute_charge(agent_id, agent):
 
     old_battery = agent["battery"]
     agent["battery"] = min(1.0, agent["battery"] + CHARGE_RATE)
-    logger.info("Agent %s charged %.0f%% -> %.0f%%", agent_id, old_battery * 100, agent["battery"] * 100)
+    logger.info(
+        "Agent %s charged %.0f%% -> %.0f%%", agent_id, old_battery * 100, agent["battery"] * 100
+    )
     return {"ok": True, "battery_before": old_battery, "battery_after": agent["battery"]}
 
 
@@ -450,7 +490,10 @@ def charge_rover(rover_id):
         return {"ok": False, "error": f"{rover_id} is not a rover"}
     result = _execute_charge(rover_id, agent)
     if result["ok"]:
-        record_memory(rover_id, f"Station charged battery {result['battery_before']:.0%} -> {result['battery_after']:.0%}")
+        record_memory(
+            rover_id,
+            f"Station charged battery {result['battery_before']:.0%} -> {result['battery_after']:.0%}",
+        )
     return result
 
 
@@ -481,8 +524,12 @@ def check_mission_status():
     # Success: enough target stones delivered to station
     if delivered >= mission["target_count"]:
         mission["status"] = "success"
-        logger.info("Mission SUCCESS: delivered %d/%d %s stones to station",
-                     delivered, mission["target_count"], mission["target_type"])
+        logger.info(
+            "Mission SUCCESS: delivered %d/%d %s stones to station",
+            delivered,
+            mission["target_count"],
+            mission["target_type"],
+        )
         return {"status": "success", "collected": collected, "delivered": delivered}
 
     # Failure: all rovers have zero battery and none are at the station
