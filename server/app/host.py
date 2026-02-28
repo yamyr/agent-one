@@ -10,12 +10,11 @@ import logging
 
 from .base_agent import BaseAgent
 from .broadcast import broadcaster
-from .config import settings
 from .narrator import Narrator
 from .protocol import make_message
 from .station import StationAgent, execute_action as station_execute_action
 from .world import abort_mission as world_abort_mission
-from .world import get_snapshot, WORLD
+from .world import get_snapshot
 from .world import observe_station
 
 logger = logging.getLogger(__name__)
@@ -126,13 +125,16 @@ class Host:
             # Route assign_mission to target rover inbox
             if action["name"] == "assign_mission" and action_result.get("ok"):
                 target_id = action["params"]["agent_id"]
-                self.send_command(target_id, {
-                    "name": "assign_mission",
-                    "payload": {
-                        "objective": action["params"]["objective"],
+                self.send_command(
+                    target_id,
+                    {
+                        "name": "assign_mission",
+                        "payload": {
+                            "objective": action["params"]["objective"],
+                        },
+                        "id": correlation_id or "",
                     },
-                    "id": correlation_id or "",
-                })
+                )
 
             # Broadcast to UI
             if action["name"] == "broadcast_alert":
@@ -162,10 +164,13 @@ class Host:
         """Send a recall command to a rover's inbox."""
         if rover_id not in self._inboxes:
             return {"ok": False, "error": f"Unknown rover: {rover_id}"}
-        self.send_command(rover_id, {
-            "name": "recall",
-            "payload": {"reason": "Emergency recall from mission control"},
-        })
+        self.send_command(
+            rover_id,
+            {
+                "name": "recall",
+                "payload": {"reason": "Emergency recall from mission control"},
+            },
+        )
         msg = make_message(
             source="host",
             type="command",

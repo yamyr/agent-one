@@ -8,7 +8,10 @@ class TestRoverFallback(unittest.TestCase):
     def setUp(self):
         WORLD["agents"]["rover-mistral"]["position"] = [10, 10]
         WORLD["agents"]["rover-mistral"]["battery"] = 1.0
-        WORLD["agents"]["rover-mistral"]["mission"] = {"objective": "Explore the terrain", "plan": []}
+        WORLD["agents"]["rover-mistral"]["mission"] = {
+            "objective": "Explore the terrain",
+            "plan": [],
+        }
         WORLD["agents"]["rover-mistral"]["visited"] = [[10, 10]]
 
     def test_fallback_returns_dict(self):

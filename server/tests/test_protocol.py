@@ -68,7 +68,9 @@ class TestMakeMessage(unittest.TestCase):
     def test_make_message_with_correlation(self):
         trigger = make_message("rover-mock", "event", "check", {"stone": "core"})
         response = make_message(
-            "station", "command", "assign_mission",
+            "station",
+            "command",
+            "assign_mission",
             {"agent_id": "rover-mock"},
             correlation_id=trigger.id,
         )
@@ -82,6 +84,7 @@ class TestMakeMessage(unittest.TestCase):
     def test_to_dict_serializable(self):
         """Ensure to_dict produces JSON-serializable output."""
         import json
+
         msg = make_message("rover-mock", "action", "dig", {"x": 1, "y": 2})
         d = msg.to_dict()
         serialized = json.dumps(d)

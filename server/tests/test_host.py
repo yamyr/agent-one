@@ -90,7 +90,10 @@ class TestHostStationRouting(unittest.TestCase):
         result = {
             "thinking": "Assigning mission.",
             "actions": [
-                {"name": "assign_mission", "params": {"agent_id": "rover-mock", "objective": "Go north"}},
+                {
+                    "name": "assign_mission",
+                    "params": {"agent_id": "rover-mock", "objective": "Go north"},
+                },
             ],
         }
 
@@ -98,9 +101,7 @@ class TestHostStationRouting(unittest.TestCase):
             mock_exec.return_value = {"ok": True, "agent_id": "rover-mock", "objective": "Go north"}
             with patch("app.host.broadcaster") as mock_bc:
                 mock_bc.send = AsyncMock()
-                asyncio.run(
-                    host.route_station_actions(result)
-                )
+                asyncio.run(host.route_station_actions(result))
 
         # Command should be in rover inbox
         commands = host.drain_inbox("rover-mock")
@@ -122,9 +123,7 @@ class TestHostStationRouting(unittest.TestCase):
             mock_exec.return_value = {"ok": True, "message": "Storm!"}
             with patch("app.host.broadcaster") as mock_bc:
                 mock_bc.send = AsyncMock()
-                asyncio.run(
-                    host.route_station_actions(result)
-                )
+                asyncio.run(host.route_station_actions(result))
                 # Verify broadcast was called
                 mock_bc.send.assert_called()
 
@@ -132,14 +131,17 @@ class TestHostStationRouting(unittest.TestCase):
 class TestHostAbortMission(unittest.TestCase):
     def setUp(self):
         from app.world import WORLD
+
         self._original_status = WORLD["mission"]["status"]
 
     def tearDown(self):
         from app.world import WORLD
+
         WORLD["mission"]["status"] = self._original_status
 
     def test_abort_broadcasts_event(self):
         from app.world import WORLD
+
         WORLD["mission"]["status"] = "running"
         host = _make_host()
 
@@ -154,6 +156,7 @@ class TestHostAbortMission(unittest.TestCase):
 
     def test_abort_already_ended(self):
         from app.world import WORLD
+
         WORLD["mission"]["status"] = "success"
         host = _make_host()
 
@@ -169,9 +172,7 @@ class TestHostRecall(unittest.TestCase):
 
         with patch("app.host.broadcaster") as mock_bc:
             mock_bc.send = AsyncMock()
-            result = asyncio.run(
-                host.recall_rover("rover-mock")
-            )
+            result = asyncio.run(host.recall_rover("rover-mock"))
 
         self.assertTrue(result["ok"])
         self.assertEqual(result["rover_id"], "rover-mock")
@@ -183,9 +184,7 @@ class TestHostRecall(unittest.TestCase):
     def test_recall_unknown_rover(self):
         host = _make_host()
 
-        result = asyncio.run(
-            host.recall_rover("nonexistent")
-        )
+        result = asyncio.run(host.recall_rover("nonexistent"))
 
         self.assertFalse(result["ok"])
         self.assertIn("Unknown rover", result["error"])

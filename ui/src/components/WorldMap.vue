@@ -1,5 +1,5 @@
 <script setup>
-import { computed, ref, watch } from 'vue'
+import { computed, ref, watch, onMounted, onUnmounted } from 'vue'
 import { TILE_SIZE, MAP_W, MAP_H, VIEWPORT_W, VIEWPORT_H, VEIN_COLORS, VEIN_SIZES, SOLAR_PANEL_COLOR, SOLAR_PANEL_DEPLETED_COLOR, agentColor, revealRadius } from '../constants.js'
 
 const props = defineProps({
@@ -23,17 +23,39 @@ const emit = defineEmits(['select-agent', 'unfollow'])
 const camX = ref(-Math.floor(VIEWPORT_W / 2))
 const camY = ref(-Math.floor(VIEWPORT_H / 2))
 
+// Smooth camera: targets that camX/camY interpolate toward
+const targetCamX = ref(camX.value)
+const targetCamY = ref(camY.value)
+const LERP_SPEED = 0.15 // fraction per frame (higher = snappier)
+let rafId = null
+
+function cameraLoop() {
+  const dx = targetCamX.value - camX.value
+  const dy = targetCamY.value - camY.value
+  if (Math.abs(dx) > 0.01 || Math.abs(dy) > 0.01) {
+    camX.value += dx * LERP_SPEED
+    camY.value += dy * LERP_SPEED
+    // Snap when very close
+    if (Math.abs(dx) < 0.05) camX.value = targetCamX.value
+    if (Math.abs(dy) < 0.05) camY.value = targetCamY.value
+  }
+  rafId = requestAnimationFrame(cameraLoop)
+}
+
+onMounted(() => { rafId = requestAnimationFrame(cameraLoop) })
+onUnmounted(() => { if (rafId) cancelAnimationFrame(rafId) })
+
 // Track drag state
 const dragging = ref(false)
 const dragStart = ref({ x: 0, y: 0 })
 
-// Follow selected agent: center camera on it when worldState updates
+// Follow selected agent: update target (smooth interpolation via rAF)
 watch([() => props.worldState, () => props.followAgent], () => {
   if (!props.worldState || !props.followAgent) return
   const a = props.worldState.agents?.[props.followAgent]
   if (a) {
-    camX.value = a.position[0] - Math.floor(VIEWPORT_W / 2)
-    camY.value = a.position[1] - Math.floor(VIEWPORT_H / 2)
+    targetCamX.value = a.position[0] - Math.floor(VIEWPORT_W / 2)
+    targetCamY.value = a.position[1] - Math.floor(VIEWPORT_H / 2)
   }
 }, { deep: true })
 
@@ -89,6 +111,36 @@ const revealedSet = computed(() => {
 
 function isRevealed(x, y) {
   return revealedSet.value.has(`${x},${y}`)
+}
+
+// Grade weights for concentration radius (mirrors server logic)
+const GRADE_ORDER = ['low', 'medium', 'high', 'rich', 'pristine']
+
+function tileConcentration(x, y) {
+  if (!props.worldState) return 0
+  const stones = props.worldState.stones || []
+  let max = 0
+  for (const s of stones) {
+    const [sx, sy] = s.position
+    const d = Math.abs(x - sx) + Math.abs(y - sy)
+    if (d === 0) return 1
+    const gi = GRADE_ORDER.indexOf(s.grade !== 'unknown' ? s.grade : 'low')
+    const radius = 10 + (gi >= 0 ? gi : 0) * 2
+    const c = Math.max(0, 1 - d / radius)
+    if (c > max) max = c
+  }
+  return max
+}
+
+function tileFill(t) {
+  if (!isRevealed(t.x, t.y)) return null // CSS class handles unrevealed
+  const c = tileConcentration(t.x, t.y)
+  if (c <= 0.05) return null // use CSS default for near-zero
+  // Interpolate from revealed base (#0e0e16) toward warm amber (#443010)
+  const r = Math.round(14 + c * 54)  // 0e → 44
+  const g = Math.round(14 + c * 34)  // 0e → 30
+  const b = Math.round(22 + c * -6)  // 16 → 10
+  return `rgb(${r},${g},${b})`
 }
 
 function worldToScreen(wx, wy) {
@@ -179,13 +231,16 @@ function onMouseMove(e) {
   const tilePixelH = rect.height / VIEWPORT_H
   if (Math.abs(dx) >= tilePixelW) {
     const tileDx = Math.round(dx / tilePixelW)
-    camX.value -= tileDx
+    // Drag is instant — move both target and camera directly
+    targetCamX.value -= tileDx
+    camX.value = targetCamX.value
     dragStart.value.x = e.clientX
     emit('unfollow')
   }
   if (Math.abs(dy) >= tilePixelH) {
     const tileDy = Math.round(dy / tilePixelH)
-    camY.value += tileDy
+    targetCamY.value += tileDy
+    camY.value = targetCamY.value
     dragStart.value.y = e.clientY
     emit('unfollow')
   }
@@ -195,16 +250,81 @@ function onMouseUp() {
   dragging.value = false
 }
 
-// Expose camera for minimap
-defineExpose({ camX, camY })
+// Agent trail data: last N visited positions per mobile agent
+const TRAIL_LENGTH = 20
+
+const agentTrails = computed(() => {
+  if (!props.worldState) return []
+  const trails = []
+  for (const id of props.agentIds) {
+    const a = props.worldState.agents[id]
+    if (!a || a.type === 'station') continue
+    const visited = a.visited || []
+    if (visited.length < 2) continue
+    // Take last TRAIL_LENGTH positions (most recent at end)
+    const recent = visited.slice(-TRAIL_LENGTH)
+    trails.push({ id, positions: recent, color: agentColor(id) })
+  }
+  return trails
+})
+
+function trailSegments(trail) {
+  const segs = []
+  const positions = trail.positions
+  const total = positions.length
+  for (let i = 0; i < total - 1; i++) {
+    const from = worldToScreen(positions[i][0], positions[i][1])
+    const to = worldToScreen(positions[i + 1][0], positions[i + 1][1])
+    // Opacity fades: oldest = 0.05, newest = 0.4
+    const t = i / (total - 1)
+    const opacity = 0.05 + t * 0.35
+    segs.push({
+      key: `${trail.id}-${i}`,
+      x1: from.sx,
+      y1: from.sy,
+      x2: to.sx,
+      y2: to.sy,
+      opacity,
+    })
+  }
+  return segs
+}
+
+// Fog-of-war: compute screen positions for each mobile agent's clear zone
+const fogAgents = computed(() => {
+  if (!props.worldState) return []
+  const agents = []
+  for (const id of props.agentIds) {
+    const a = props.worldState.agents[id]
+    if (!a || a.type === 'station') continue
+    const { sx, sy } = worldToScreen(a.position[0], a.position[1])
+    const r = revealRadius(id) * TILE_SIZE
+    agents.push({ id, cx: sx, cy: sy, r: r + TILE_SIZE }) // +1 tile feather
+  }
+  return agents
+})
+
+function panCamera(dx, dy) {
+  targetCamX.value += dx
+  targetCamY.value += dy
+}
+
+// Expose camera for minimap & keyboard shortcuts
+defineExpose({ camX, camY, panCamera })
 </script>
 
 <template>
   <section class="world-map">
     <h2>
       Surface Map
-      <span v-if="followAgent" class="cam-hint">(following {{ followAgent }})</span>
-      <span v-else class="cam-hint">(free camera · drag to pan)</span>
+      <span
+        v-if="followAgent"
+        class="cam-hint"
+      >(following {{ followAgent }})</span>
+      <span
+        v-else
+        class="cam-hint"
+      >(free camera · drag to pan)</span>
     </h2>
     <svg
       v-if="worldState"
@@ -224,21 +344,71 @@ defineExpose({ camX, camY })
         :width="TILE_SIZE"
         :height="TILE_SIZE"
         :class="isRevealed(t.x, t.y) ? 'grid-tile revealed' : 'grid-tile'"
+        :fill="tileFill(t) || undefined"
       />
 
-      <!-- SVG filter for vein glow -->
+      <!-- SVG defs: filters, gradients, masks -->
       <defs>
-        <filter id="vein-glow" x="-50%" y="-50%" width="200%" height="200%">
-          <feGaussianBlur in="SourceGraphic" stdDeviation="2" result="blur" />
+        <filter
+          id="vein-glow"
+          x="-50%"
+          y="-50%"
+          width="200%"
+          height="200%"
+        >
+          <feGaussianBlur
+            in="SourceGraphic"
+            stdDeviation="2"
+            result="blur"
+          />
           <feMerge>
             <feMergeNode in="blur" />
             <feMergeNode in="SourceGraphic" />
           </feMerge>
         </filter>
+
+        <!-- Fog-of-war: radial gradient for clear zones -->
+        <radialGradient id="fog-clear-grad">
+          <stop
+            offset="0%"
+            stop-color="black"
+          />
+          <stop
+            offset="55%"
+            stop-color="black"
+          />
+          <stop
+            offset="100%"
+            stop-color="black"
+            stop-opacity="0"
+          />
+        </radialGradient>
+
+        <!-- Fog mask: white = fog visible, agent circles punch soft holes -->
+        <mask id="fog-mask">
+          <rect
+            x="0"
+            y="0"
+            :width="MAP_W"
+            :height="MAP_H"
+            fill="white"
+          />
+          <circle
+            v-for="fa in fogAgents"
+            :key="'fog-'+fa.id"
+            :cx="fa.cx"
+            :cy="fa.cy"
+            :r="fa.r"
+            fill="url(#fog-clear-grad)"
+          />
+        </mask>
       </defs>
 
       <!-- veins (stones) -->
-      <template v-for="(s, i) in (worldState.stones || [])" :key="'stone-'+i">
+      <template
+        v-for="(s, i) in (worldState.stones || [])"
+        :key="'stone-'+i"
+      >
         <rect
           v-if="isStoneVisible(s)"
           :x="stoneScreenX(s)"
@@ -253,7 +423,10 @@ defineExpose({ camX, camY })
       </template>
 
       <!-- solar panels -->
-      <template v-for="(p, i) in (worldState.solar_panels || [])" :key="'panel-'+i">
+      <template
+        v-for="(p, i) in (worldState.solar_panels || [])"
+        :key="'panel-'+i"
+      >
         <g v-if="isPanelVisible(p)">
           <rect
             :x="panelScreenX(p)"
@@ -283,11 +456,42 @@ defineExpose({ camX, camY })
         </g>
       </template>
 
+      <!-- fog-of-war overlay -->
+      <rect
+        x="0"
+        y="0"
+        :width="MAP_W"
+        :height="MAP_H"
+        fill="#020208"
+        opacity="0.6"
+        mask="url(#fog-mask)"
+        class="fog-overlay"
+      />
+
+      <!-- agent movement trails -->
+      <template
+        v-for="trail in agentTrails"
+        :key="'trail-'+trail.id"
+      >
+        <line
+          v-for="seg in trailSegments(trail)"
+          :key="seg.key"
+          :x1="seg.x1"
+          :y1="seg.y1"
+          :x2="seg.x2"
+          :y2="seg.y2"
+          :stroke="trail.color"
+          :stroke-opacity="seg.opacity"
+          stroke-width="1.5"
+          stroke-linecap="round"
+        />
+      </template>
+
       <!-- station markers (square) -->
       <g
         v-for="id in stations"
-        :key="'station-'+id"
         v-show="isAgentVisible(id)"
+        :key="'station-'+id"
         :transform="agentTransform(id)"
         class="rover-group"
         style="cursor:pointer"
@@ -356,8 +560,8 @@ defineExpose({ camX, camY })
       <!-- rover dots (circle) -->
       <g
         v-for="id in rovers"
-        :key="'rover-'+id"
         v-show="isAgentVisible(id)"
+        :key="'rover-'+id"
         :transform="agentTransform(id)"
         class="rover-group"
         style="cursor:pointer"
@@ -415,8 +619,8 @@ defineExpose({ camX, camY })
       <!-- drone markers (triangle) -->
       <g
         v-for="id in drones"
-        :key="'drone-'+id"
         v-show="isAgentVisible(id)"
+        :key="'drone-'+id"
         :transform="agentTransform(id)"
         class="rover-group"
         style="cursor:pointer"
@@ -478,9 +682,9 @@ defineExpose({ camX, camY })
 .world-map {
   flex: 3;
   padding: 0.75rem;
-  border: 1px solid #1a1a24;
-  border-radius: 4px;
-  background: #0c0c14;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--bg-card);
   min-width: 0;
 }
 
@@ -491,14 +695,14 @@ defineExpose({ camX, camY })
 }
 
 .grid-tile {
-  fill: #060609;
-  stroke: #111118;
+  fill: var(--bg-tile);
+  stroke: var(--border-dim);
   stroke-width: 0.5;
 }
 
 .grid-tile.revealed {
-  fill: #0e0e16;
-  stroke: #1a1a24;
+  fill: var(--bg-revealed);
+  stroke: var(--border-subtle);
 }
 
 .rover-group {
@@ -506,13 +710,13 @@ defineExpose({ camX, camY })
 }
 
 .rover-label {
-  font-family: 'Courier New', monospace;
+  font-family: var(--font-mono);
   font-size: 6px;
 }
 
 .cam-hint {
   font-size: 0.6rem;
-  color: #444;
+  color: var(--text-dimmer);
   font-weight: normal;
   text-transform: none;
   letter-spacing: 0;

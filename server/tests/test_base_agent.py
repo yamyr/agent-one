@@ -1,6 +1,6 @@
 import asyncio
 import unittest
-from unittest.mock import MagicMock, AsyncMock
+from unittest.mock import MagicMock
 
 from app.base_agent import BaseAgent
 from app.world import WORLD

@@ -161,35 +161,43 @@ function skipAudio() {
       <span class="narrator-label">MISSION COMMS</span>
     </div>
 
-    <div
-      v-if="dialogueLines.length > 0"
-      class="narration-text dialogue-block"
+    <Transition
+      name="narration-fade"
+      mode="out-in"
     >
       <div
-        v-for="(line, idx) in dialogueLines"
-        :key="idx"
-        class="dialogue-line"
+        v-if="dialogueLines.length > 0"
+        :key="'dialogue-' + dialogueLines.length"
+        class="narration-text dialogue-block"
       >
-        <span
-          class="speaker-label"
-          :style="{ color: line.color }"
-        >{{ line.label }}:</span>
-        <span class="speaker-text">{{ line.text }}</span>
+        <div
+          v-for="(line, idx) in dialogueLines"
+          :key="idx"
+          class="dialogue-line"
+        >
+          <span
+            class="speaker-label"
+            :style="{ color: line.color }"
+          >{{ line.label }}:</span>
+          <span class="speaker-text">{{ line.text }}</span>
+        </div>
       </div>
-    </div>
 
-    <div
-      v-else-if="currentText"
-      class="narration-text"
-    >
-      {{ currentText }}
-    </div>
-    <div
-      v-else
-      class="narration-text idle"
-    >
-      Awaiting mission events...
-    </div>
+      <div
+        v-else-if="currentText"
+        :key="'text'"
+        class="narration-text"
+      >
+        {{ currentText }}
+      </div>
+      <div
+        v-else
+        :key="'idle'"
+        class="narration-text idle"
+      >
+        Awaiting mission events...
+      </div>
+    </Transition>
 
     <div class="narration-controls">
       <button
@@ -219,15 +227,15 @@ function skipAudio() {
   gap: 0.75rem;
   padding: 0.5rem 0.75rem;
   margin-bottom: 0.5rem;
-  border: 1px solid #1a1a24;
-  border-radius: 4px;
-  background: #0c0c14;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--bg-card);
   font-size: 0.75rem;
   transition: border-color 0.3s ease;
 }
 
 .narration-bar.playing {
-  border-color: #2a1a30;
+  border-color: var(--bg-status-narration);
 }
 
 .narration-left {
@@ -254,7 +262,7 @@ function skipAudio() {
 }
 
 .narrator-label {
-  color: #555;
+  color: var(--text-muted);
   text-transform: uppercase;
   letter-spacing: 0.08em;
   font-size: 0.65rem;
@@ -262,7 +270,7 @@ function skipAudio() {
 
 .narration-text {
   flex: 1;
-  color: #c8c8d0;
+  color: var(--text-primary);
   font-style: italic;
   line-height: 1.4;
   min-width: 0;
@@ -277,7 +285,7 @@ function skipAudio() {
 }
 
 .narration-text.idle {
-  color: #333;
+  color: var(--text-dim);
   font-style: normal;
 }
 
@@ -305,7 +313,7 @@ function skipAudio() {
 }
 
 .speaker-text {
-  color: #c8c8d0;
+  color: var(--text-primary);
   font-style: italic;
 }
 
@@ -317,29 +325,29 @@ function skipAudio() {
 }
 
 .skip-btn {
-  font-family: 'Courier New', monospace;
+  font-family: var(--font-mono);
   font-size: 0.65rem;
   padding: 0.2rem 0.5rem;
-  border-radius: 3px;
-  border: 1px solid #555;
-  background: #1a1a24;
-  color: #cc8844;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--text-muted);
+  background: var(--bg-input);
+  color: var(--accent-amber);
   cursor: pointer;
 }
 
 .skip-btn:hover {
-  border-color: #888;
-  color: #eebb66;
+  border-color: var(--text-secondary);
+  color: var(--accent-amber-light);
 }
 
 .toggle-btn {
-  font-family: 'Courier New', monospace;
+  font-family: var(--font-mono);
   font-size: 0.65rem;
   padding: 0.2rem 0.5rem;
-  border-radius: 3px;
-  border: 1px solid #555;
-  background: #1a1a24;
-  color: #88cc88;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--text-muted);
+  background: var(--bg-input);
+  color: var(--accent-green-soft);
   cursor: pointer;
   opacity: 0.7;
   transition: opacity 0.2s;
@@ -351,6 +359,17 @@ function skipAudio() {
 
 .toggle-btn.off {
   opacity: 0.3;
+}
+
+/* ── Narration text fade transition ── */
+.narration-fade-enter-active,
+.narration-fade-leave-active {
+  transition: opacity 0.3s ease;
+}
+
+.narration-fade-enter-from,
+.narration-fade-leave-to {
+  opacity: 0;
 }
 
 /* Responsive */

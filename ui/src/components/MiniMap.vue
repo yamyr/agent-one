@@ -107,7 +107,13 @@ function onClick(e) {
       @click="onClick"
     >
       <!-- Background -->
-      <rect x="0" y="0" :width="mapW" :height="mapH" fill="#060609" />
+      <rect
+        x="0"
+        y="0"
+        :width="mapW"
+        :height="mapH"
+        fill="#060609"
+      />
 
       <!-- Revealed tiles -->
       <rect
@@ -143,16 +149,21 @@ function onClick(e) {
         opacity="0.7"
       />
     </svg>
-    <div v-else class="empty">No data</div>
+    <div
+      v-else
+      class="empty"
+    >
+      No data
+    </div>
   </section>
 </template>
 
 <style scoped>
 .minimap {
   padding: 0.5rem;
-  border: 1px solid #1a1a24;
-  border-radius: 4px;
-  background: #0c0c14;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--bg-card);
 }
 
 .minimap-svg {
@@ -160,5 +171,11 @@ function onClick(e) {
   max-height: 120px;
   display: block;
   cursor: crosshair;
+}
+
+@media (max-width: 480px) {
+  .minimap {
+    display: none;
+  }
 }
 </style>

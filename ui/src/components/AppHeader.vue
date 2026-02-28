@@ -40,13 +40,13 @@ header {
   justify-content: space-between;
   align-items: center;
   padding: 1rem 0;
-  border-bottom: 1px solid #222;
+  border-bottom: 1px solid var(--border-separator);
   margin-bottom: 1rem;
 }
 
 h1 {
   font-size: 1.2rem;
-  color: #e06030;
+  color: var(--accent-orange);
 }
 
 .header-controls {
@@ -56,53 +56,86 @@ h1 {
 }
 
 .reset-btn {
-  font-family: 'Courier New', monospace;
+  font-family: var(--font-mono);
   font-size: 0.75rem;
   padding: 0.25rem 0.6rem;
-  border-radius: 3px;
-  border: 1px solid #555;
-  background: #1a1a24;
-  color: #cc4444;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--text-muted);
+  background: var(--bg-input);
+  color: var(--accent-red);
   cursor: pointer;
 }
 
 .reset-btn:hover {
-  border-color: #cc4444;
-  color: #ee6666;
+  border-color: var(--accent-red);
+  color: var(--accent-red-light);
 }
 
 .pause-btn {
-  font-family: 'Courier New', monospace;
+  font-family: var(--font-mono);
   font-size: 0.75rem;
   padding: 0.25rem 0.6rem;
-  border-radius: 3px;
-  border: 1px solid #555;
-  background: #1a1a24;
-  color: #cc8844;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--text-muted);
+  background: var(--bg-input);
+  color: var(--accent-amber);
   cursor: pointer;
 }
 
 .pause-btn:hover {
-  border-color: #888;
-  color: #eebb66;
+  border-color: var(--text-secondary);
+  color: var(--accent-amber-light);
 }
 
 .pause-btn.paused {
-  background: #2a1a0a;
-  border-color: #cc8844;
-  color: #eebb66;
+  background: var(--bg-status-warn);
+  border-color: var(--accent-amber);
+  color: var(--accent-amber-light);
 }
 
 .status {
   font-size: 0.75rem;
   padding: 0.25rem 0.5rem;
-  border-radius: 3px;
-  background: #331111;
-  color: #cc4444;
+  border-radius: var(--radius-sm);
+  background: var(--bg-status-error);
+  color: var(--accent-red);
 }
 
 .status.online {
-  background: #113311;
-  color: #44cc44;
+  background: var(--bg-status-ok);
+  color: var(--accent-green);
+}
+
+@media (max-width: 768px) {
+  header {
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+
+  h1 {
+    font-size: 1rem;
+  }
+}
+
+@media (max-width: 480px) {
+  h1 {
+    font-size: 0.85rem;
+    width: 100%;
+  }
+
+  .header-controls {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .reset-btn,
+  .pause-btn {
+    font-size: 0.65rem;
+    padding: 0.2rem 0.4rem;
+  }
+
+  .status {
+    font-size: 0.65rem;
+  }
 }
 </style>

@@ -175,9 +175,9 @@ function batteryPct() {
 }
 
 .modal {
-  background: #12121a;
-  border: 1px solid #2a2a38;
-  border-radius: 6px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-medium);
+  border-radius: var(--radius-lg);
   width: 380px;
   max-width: 90vw;
   max-height: 80vh;
@@ -189,7 +189,7 @@ function batteryPct() {
   justify-content: space-between;
   align-items: center;
   padding: 0.75rem 1rem;
-  border-bottom: 1px solid #1a1a24;
+  border-bottom: 1px solid var(--border-subtle);
 }
 
 .modal-title {
@@ -199,18 +199,18 @@ function batteryPct() {
 
 .modal-close {
   background: none;
-  border: 1px solid #333;
-  color: #888;
+  border: 1px solid var(--text-dim);
+  color: var(--text-secondary);
   font-size: 0.8rem;
   padding: 0.15rem 0.45rem;
-  border-radius: 3px;
+  border-radius: var(--radius-sm);
   cursor: pointer;
-  font-family: 'Courier New', monospace;
+  font-family: var(--font-mono);
 }
 
 .modal-close:hover {
-  color: #ccc;
-  border-color: #555;
+  color: var(--text-primary);
+  border-color: var(--text-muted);
 }
 
 .modal-body {
@@ -223,7 +223,7 @@ function batteryPct() {
 
 .modal-label {
   font-size: 0.65rem;
-  color: #555;
+  color: var(--text-muted);
   text-transform: uppercase;
   letter-spacing: 0.08em;
   margin-bottom: 0.15rem;
@@ -231,11 +231,11 @@ function batteryPct() {
 
 .modal-value {
   font-size: 0.8rem;
-  color: #c8c8d0;
+  color: var(--text-primary);
 }
 
 .task-value {
-  color: #e0a040;
+  color: var(--accent-task);
 }
 
 .modal-tools {
@@ -245,9 +245,9 @@ function batteryPct() {
 }
 
 .tool-item {
-  background: #0e0e16;
-  border: 1px solid #1a1a24;
-  border-radius: 3px;
+  background: var(--bg-revealed);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
   padding: 0.4rem 0.6rem;
   display: flex;
   flex-direction: column;
@@ -256,13 +256,13 @@ function batteryPct() {
 
 .tool-name {
   font-size: 0.8rem;
-  color: #ccaa44;
+  color: var(--accent-gold);
   font-weight: bold;
 }
 
 .tool-desc {
   font-size: 0.7rem;
-  color: #777;
+  color: var(--text-tertiary);
 }
 
 .modal-inv {
@@ -274,25 +274,40 @@ function batteryPct() {
 .inv-stone {
   font-size: 0.7rem;
   padding: 0.15rem 0.4rem;
-  border-radius: 3px;
-  border: 1px solid #1a1a24;
-  background: #0e0e16;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-revealed);
   font-weight: bold;
   letter-spacing: 0.03em;
 }
 
+.inv-stone.core {
+  color: var(--accent-amber-dark);
+  border-color: #3a2a0a;
+}
+
+.inv-stone.basalt {
+  color: var(--text-secondary);
+  border-color: var(--text-dim);
+}
+
+.inv-stone.unknown {
+  color: #4a4a6a;
+  border-color: #2a2a3a;
+}
+
 .modal-context {
   font-size: 0.7rem;
-  color: #8a9a8a;
-  background: #0a0a10;
-  border: 1px solid #1a1a24;
-  border-radius: 3px;
+  color: var(--accent-memory);
+  background: var(--bg-primary);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
   padding: 0.5rem;
   white-space: pre-wrap;
   word-break: break-word;
   max-height: 300px;
   overflow-y: auto;
-  font-family: 'Courier New', monospace;
+  font-family: var(--font-mono);
   line-height: 1.4;
 }
 </style>
