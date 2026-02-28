@@ -121,6 +121,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Changed
+
+- **`.dockerignore` expanded**: Updated `.dockerignore` with comprehensive exclusions — `.env*`, `__pycache__`, `.pytest_cache`, `.mypy_cache`, IDE files, `.github`, specs, tests, and OS files while preserving `README.md` via negation rule ([#75](https://github.com/mhack-agent-one/agent-one/issues/75))
+
+
 ### Added (UI Polish Round 3 — Phases 3–8)
 
 - **Persisted zoom preference**: Zoom level saved to `localStorage` via `usePreferences` composable; survives page refresh

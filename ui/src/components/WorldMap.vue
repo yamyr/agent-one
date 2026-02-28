@@ -933,6 +933,17 @@ defineExpose({ camX, camY, visibleW, visibleH, panCamera, navigateTo })
   cursor: grabbing;
 }
 
+.dust-particle {
+  animation: dust-drift linear infinite;
+}
+
+@keyframes dust-drift {
+  0% { transform: translate(0, 0); opacity: 0; }
+  20% { opacity: 0.6; }
+  80% { opacity: 0.4; }
+  100% { transform: translate(40px, -30px); opacity: 0; }
+}
+
 .map-skeleton {
   width: 100%;
   aspect-ratio: 1;
