@@ -214,7 +214,7 @@ function agentTransform(id) {
         <circle
           :r="REVEAL_RADIUS * TILE_SIZE"
           fill="none"
-          :stroke="agentColor(a.agent_id)"
+          :stroke="agentColor(id)"
           stroke-width="1"
           opacity="0.3"
           stroke-dasharray="4 3"
