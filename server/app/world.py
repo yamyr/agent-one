@@ -107,9 +107,18 @@ WORLD = {
                     "description": "Move 1-3 tiles in a cardinal direction (north/south/east/west). Costs 2% battery per tile.",
                 },
                 {"name": "check_ground", "description": "Scan current tile for rocks or minerals."},
-                {"name": "dig", "description": "Dig at current tile to extract a stone (costs 3x move battery)."},
-                {"name": "pickup", "description": "Pick up an extracted stone at current tile into inventory."},
-                {"name": "charge", "description": "Recharge battery at the station (must be co-located)."},
+                {
+                    "name": "dig",
+                    "description": "Dig at current tile to extract a stone (costs 3x move battery).",
+                },
+                {
+                    "name": "pickup",
+                    "description": "Pick up an extracted stone at current tile into inventory.",
+                },
+                {
+                    "name": "charge",
+                    "description": "Recharge battery at the station (must be co-located).",
+                },
             ],
         },
         "rover-mistral": {
@@ -128,9 +137,18 @@ WORLD = {
                     "description": "Move 1-3 tiles in a cardinal direction (north/south/east/west). Costs 2% battery per tile.",
                 },
                 {"name": "check_ground", "description": "Scan current tile for rocks or minerals."},
-                {"name": "dig", "description": "Dig at current tile to extract a stone (costs 3x move battery)."},
-                {"name": "pickup", "description": "Pick up an extracted stone at current tile into inventory."},
-                {"name": "charge", "description": "Recharge battery at the station (must be co-located)."},
+                {
+                    "name": "dig",
+                    "description": "Dig at current tile to extract a stone (costs 3x move battery).",
+                },
+                {
+                    "name": "pickup",
+                    "description": "Pick up an extracted stone at current tile into inventory.",
+                },
+                {
+                    "name": "charge",
+                    "description": "Recharge battery at the station (must be co-located).",
+                },
             ],
         },
     },
@@ -207,21 +225,35 @@ def execute_action(agent_id, action_name, params):
             result["ground"] = check_ground(agent_id)
             ground = result["ground"]
             if ground["stone"]:
-                record_memory(agent_id, f"Moved {direction} {distance} to ({tx},{ty}), found {ground['stone']['type']} stone")
+                record_memory(
+                    agent_id,
+                    f"Moved {direction} {distance} to ({tx},{ty}), found {ground['stone']['type']} stone",
+                )
             else:
-                record_memory(agent_id, f"Moved {direction} {distance} to ({tx},{ty}), empty ground")
+                record_memory(
+                    agent_id, f"Moved {direction} {distance} to ({tx},{ty}), empty ground"
+                )
     elif action_name == "dig":
         result = _execute_dig(agent_id, agent)
         if result["ok"]:
-            record_memory(agent_id, f"Dug out {result['stone']['type']} stone at ({result['position'][0]},{result['position'][1]})")
+            record_memory(
+                agent_id,
+                f"Dug out {result['stone']['type']} stone at ({result['position'][0]},{result['position'][1]})",
+            )
     elif action_name == "pickup":
         result = _execute_pickup(agent_id, agent)
         if result["ok"]:
-            record_memory(agent_id, f"Picked up {result['stone']['type']} stone at ({result['position'][0]},{result['position'][1]}), inventory={result['inventory_count']}")
+            record_memory(
+                agent_id,
+                f"Picked up {result['stone']['type']} stone at ({result['position'][0]},{result['position'][1]}), inventory={result['inventory_count']}",
+            )
     elif action_name == "charge":
         result = _execute_charge(agent_id, agent)
         if result["ok"]:
-            record_memory(agent_id, f"Charged battery {result['battery_before']:.0%} -> {result['battery_after']:.0%}")
+            record_memory(
+                agent_id,
+                f"Charged battery {result['battery_before']:.0%} -> {result['battery_after']:.0%}",
+            )
     else:
         return {"ok": False, "error": f"Unknown action: {action_name}"}
 
@@ -301,7 +333,9 @@ def _execute_charge(agent_id, agent):
 
     old_battery = agent["battery"]
     agent["battery"] = min(1.0, agent["battery"] + CHARGE_RATE)
-    logger.info("Agent %s charged %.0f%% -> %.0f%%", agent_id, old_battery * 100, agent["battery"] * 100)
+    logger.info(
+        "Agent %s charged %.0f%% -> %.0f%%", agent_id, old_battery * 100, agent["battery"] * 100
+    )
     return {"ok": True, "battery_before": old_battery, "battery_after": agent["battery"]}
 
 
@@ -325,8 +359,12 @@ def check_mission_status():
     # Success: collected enough target stones
     if collected >= mission["target_count"]:
         mission["status"] = "success"
-        logger.info("Mission SUCCESS: collected %d/%d %s stones",
-                     collected, mission["target_count"], mission["target_type"])
+        logger.info(
+            "Mission SUCCESS: collected %d/%d %s stones",
+            collected,
+            mission["target_count"],
+            mission["target_type"],
+        )
         return {"status": "success", "collected": collected}
 
     # Failure: all rovers have zero battery and none are at the station
