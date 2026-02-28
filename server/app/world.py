@@ -1031,13 +1031,7 @@ def _update_rover_tasks(agent_id, agent):
     revealed_set = {tuple(c) for c in agent.get("revealed", [])}
     tasks = []
 
-    # Inventory status (observational — agent decides what to do with this info)
     inv_count = len(inventory)
-    inv_qty = sum(s.get("quantity", 0) for s in inventory if s["type"] == target_type)
-    if inv_count >= MAX_INVENTORY_ROVER:
-        tasks.append(f"Inventory full ({inv_count}/{MAX_INVENTORY_ROVER} veins, {inv_qty} basalt units)")
-    elif inv_count > 0:
-        tasks.append(f"Inventory: {inv_count}/{MAX_INVENTORY_ROVER} veins ({inv_qty} basalt units)")
 
     # Vein at current tile → analyze, dig, or pickup (priority order)
     stone_here = _find_stone_at(x, y)
@@ -1048,12 +1042,10 @@ def _update_rover_tasks(agent_id, agent):
             tasks.append(
                 f"Dig {stone_here['grade']} vein (qty={stone_here['quantity']}) at current tile ({x},{y})"
             )
-        else:
+        elif inv_count < MAX_INVENTORY_ROVER:
             tasks.append(
                 f"Pick up {stone_here['grade']} vein (qty={stone_here['quantity']}) at current tile ({x},{y})"
             )
-        agent["tasks"] = tasks
-        return
 
     # Known veins on revealed tiles → navigate to best one
     # Prefer: unknown veins (might be high-grade) first, then by grade (higher = better), then distance

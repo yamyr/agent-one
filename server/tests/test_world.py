@@ -1113,15 +1113,13 @@ class TestUpdateTasks(unittest.TestCase):
         WORLD["stones"] = [_make_vein([5, 5])]
         update_tasks("rover-mistral")
         tasks = WORLD["agents"]["rover-mistral"]["tasks"]
-        self.assertEqual(len(tasks), 1)
-        self.assertIn("Analyze", tasks[0])
+        self.assertTrue(any("Analyze" in t for t in tasks))
 
     def test_dig_when_stone_analyzed(self):
         WORLD["stones"] = [_make_vein([5, 5], grade="high", quantity=200, analyzed=True)]
         update_tasks("rover-mistral")
         tasks = WORLD["agents"]["rover-mistral"]["tasks"]
-        self.assertEqual(len(tasks), 1)
-        self.assertIn("Dig", tasks[0])
+        self.assertTrue(any("Dig" in t for t in tasks))
 
     def test_pickup_when_stone_extracted(self):
         WORLD["stones"] = [
@@ -1129,8 +1127,7 @@ class TestUpdateTasks(unittest.TestCase):
         ]
         update_tasks("rover-mistral")
         tasks = WORLD["agents"]["rover-mistral"]["tasks"]
-        self.assertEqual(len(tasks), 1)
-        self.assertIn("Pick up", tasks[0])
+        self.assertTrue(any("Pick up" in t for t in tasks))
 
     def test_navigate_to_known_stone(self):
         WORLD["stones"] = [_make_vein([8, 5])]
@@ -1143,14 +1140,15 @@ class TestUpdateTasks(unittest.TestCase):
         self.assertIn("Navigate", tasks[0])
         self.assertIn("east", tasks[0])
 
-    def test_inventory_status_when_has_basalt(self):
+    def test_goal_present_when_carrying_basalt(self):
+        """Tasks should show an actionable goal even when inventory has items."""
         WORLD["agents"]["rover-mistral"]["inventory"] = [
             {"type": "basalt_vein", "grade": "high", "quantity": 200}
         ]
         update_tasks("rover-mistral")
         tasks = WORLD["agents"]["rover-mistral"]["tasks"]
-        self.assertTrue(any("Inventory" in t for t in tasks))
-        self.assertTrue(any("1/3" in t for t in tasks))
+        self.assertTrue(len(tasks) >= 1)
+        self.assertFalse(any("Inventory" in t for t in tasks))
 
 
 class TestObserveRover(unittest.TestCase):
