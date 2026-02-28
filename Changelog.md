@@ -121,6 +121,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Style
+
+- **Lazy logging in broadcast.py**: Replaced f-string logging calls with `%`-style lazy formatting to defer string interpolation when log level is disabled ([#73](https://github.com/mhack-agent-one/agent-one/issues/73))
+
+
 ### Added (UI Polish Round 3 — Phases 3–8)
 
 - **Persisted zoom preference**: Zoom level saved to `localStorage` via `usePreferences` composable; survives page refresh
