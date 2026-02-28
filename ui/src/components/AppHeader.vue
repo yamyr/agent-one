@@ -11,11 +11,23 @@ const emit = defineEmits(['toggle-pause', 'reset'])
   <header>
     <h1>Mars Mission Control</h1>
     <div class="header-controls">
-      <button class="reset-btn" @click="emit('reset')">RESET</button>
-      <button class="pause-btn" :class="{ paused }" @click="emit('toggle-pause')">
+      <button
+        class="reset-btn"
+        @click="emit('reset')"
+      >
+        RESET
+      </button>
+      <button
+        class="pause-btn"
+        :class="{ paused }"
+        @click="emit('toggle-pause')"
+      >
         {{ paused ? 'RESUME' : 'PAUSE' }}
       </button>
-      <span class="status" :class="{ online: connected }">
+      <span
+        class="status"
+        :class="{ online: connected }"
+      >
         {{ connected ? 'CONNECTED' : 'DISCONNECTED' }}
       </span>
     </div>

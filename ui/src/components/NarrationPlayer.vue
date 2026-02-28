@@ -2,7 +2,10 @@
 import { ref, watch } from 'vue'
 
 const props = defineProps({
-  narration: Object,
+  narration: {
+    type: Object,
+    default: null,
+  },
   narrationEnabled: Boolean,
 })
 
@@ -95,16 +98,28 @@ function skipAudio() {
 </script>
 
 <template>
-  <div class="narration-bar" :class="{ playing: isPlaying }">
+  <div
+    class="narration-bar"
+    :class="{ playing: isPlaying }"
+  >
     <div class="narration-left">
-      <span class="narrator-icon" :class="{ active: isPlaying }">🎙</span>
+      <span
+        class="narrator-icon"
+        :class="{ active: isPlaying }"
+      >🎙</span>
       <span class="narrator-label">NARRATOR</span>
     </div>
 
-    <div class="narration-text" v-if="currentText">
+    <div
+      v-if="currentText"
+      class="narration-text"
+    >
       {{ currentText }}
     </div>
-    <div class="narration-text idle" v-else>
+    <div
+      v-else
+      class="narration-text idle"
+    >
       Awaiting mission events...
     </div>
 
@@ -112,16 +127,16 @@ function skipAudio() {
       <button
         v-if="isPlaying"
         class="skip-btn"
-        @click="skipAudio"
         title="Skip narration"
+        @click="skipAudio"
       >
         SKIP
       </button>
       <button
         class="toggle-btn"
         :class="{ off: !narrationEnabled }"
-        @click="emit('toggle-narration')"
         :title="narrationEnabled ? 'Mute narrator' : 'Unmute narrator'"
+        @click="emit('toggle-narration')"
       >
         {{ narrationEnabled ? '🔊' : '🔇' }}
       </button>

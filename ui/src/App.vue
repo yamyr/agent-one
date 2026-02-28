@@ -58,15 +58,33 @@ function agentData(id) {
 
 <template>
   <div class="app">
-    <AppHeader :connected="connected" :paused="paused" @toggle-pause="togglePause" @reset="resetSimulation" />
+    <AppHeader
+      :connected="connected"
+      :paused="paused"
+      @toggle-pause="togglePause"
+      @reset="resetSimulation"
+    />
 
-    <NarrationPlayer :narration="narration" :narrationEnabled="narrationEnabled" @toggle-narration="toggleNarration" />
+    <NarrationPlayer
+      :narration="narration"
+      :narration-enabled="narrationEnabled"
+      @toggle-narration="toggleNarration"
+    />
 
     <MissionBar :mission="worldState ? worldState.mission : null" />
 
     <div class="top-row">
-      <WorldMap :worldState="worldState" :agentIds="agentIds" @select-agent="selectAgent" />
-      <AgentPanes :worldState="worldState" :agentIds="agentIds" :agentEvents="agentEvents" @select-agent="selectAgent" />
+      <WorldMap
+        :world-state="worldState"
+        :agent-ids="agentIds"
+        @select-agent="selectAgent"
+      />
+      <AgentPanes
+        :world-state="worldState"
+        :agent-ids="agentIds"
+        :agent-events="agentEvents"
+        @select-agent="selectAgent"
+      />
     </div>
 
     <EventLog :events="events" />
@@ -74,8 +92,9 @@ function agentData(id) {
     <AgentDetailModal
       v-if="selectedAgent"
       :agent="agentData(selectedAgent)"
-      :agentId="selectedAgent"
-      @close="closeAgent" />
+      :agent-id="selectedAgent"
+      @close="closeAgent"
+    />
   </div>
 </template>
 
