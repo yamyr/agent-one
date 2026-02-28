@@ -196,9 +196,11 @@ class RoverAgent:
             "the station will recharge you automatically.\n"
             "- ALWAYS keep enough battery to return to station. When your battery drops to 67% or below, \n"
             "head back to station IMMEDIATELY — this is the return-to-base threshold.\n"
-            "- SOLAR PANELS: You carry 2 solar panels. Deploy them (deploy_solar_panel) at strategic locations\n"
-            "far from station to create recharge points. Each panel has a 25% battery pack.\n"
-            "Use use_solar_battery at a panel tile to recharge. Panels are single-use.\n"
+            "- SOLAR PANELS: You carry 2 solar panels. Deploy them (deploy_solar_panel) when you're exploring\n"
+            "far from station and your battery is getting low (~40-50%). Place them at strategic locations\n"
+            "along your exploration route so you can recharge on the way back. Each panel has a 25% battery pack.\n"
+            "Use use_solar_battery when you're at a panel tile and need charge. Panels are single-use.\n"
+            "Consider the environment: deploy panels at intersections of exploration paths or near stone deposits.\n"
             "- If you find an unknown stone: analyze → dig → pickup. All on the same tile.\n"
             "- Once you have collected all target stones, RETURN TO STATION to complete the mission.\n"
             "- Prefer unvisited tiles when exploring. Don't backtrack aimlessly.\n"
@@ -234,6 +236,20 @@ class RoverAgent:
             f"Inventory: {len(inventory)} stones"
             + (f" ({', '.join(s['type'] for s in inventory)})" if inventory else "")
         )
+
+        # Solar panel info
+        panels_remaining = agent.get("solar_panels_remaining", 0)
+        nearby_panels = []
+        for panel in WORLD.get("solar_panels", []):
+            pd = abs(panel["position"][0] - x) + abs(panel["position"][1] - y)
+            if pd <= 15:
+                status = "depleted" if panel["depleted"] else f"{panel['battery']:.0%} charge"
+                nearby_panels.append(f"  ({panel['position'][0]},{panel['position'][1]}) — {status}, {pd} tiles away")
+        parts.append(f"Solar panels remaining: {panels_remaining}")
+        if nearby_panels:
+            parts.append("Nearby solar panels:")
+            for np in nearby_panels:
+                parts.append(np)
 
         # Visible stones (on revealed tiles)
         revealed_set = {tuple(c) for c in agent.get("revealed", [])}
@@ -408,22 +424,22 @@ class MockRoverAgent:
                 "action": {"name": "move", "params": {"direction": direction, "distance": distance}},
             }
 
-        # Deploy solar panel when far from station and battery dropping
+        # Deploy solar panel when battery getting low and far from any charge source
         station = WORLD["agents"].get("station")
         sp = station["position"] if station else [0, 0]
         dist_to_station = abs(x - sp[0]) + abs(y - sp[1])
         panels_remaining = agent.get("solar_panels_remaining", 0)
-        if panels_remaining > 0 and dist_to_station >= 15 and 0.50 <= agent["battery"] <= 0.65:
+        if panels_remaining > 0 and agent["battery"] < 0.45 and dist_to_station >= 8:
             # Don't deploy if there's already a panel nearby
             existing_nearby = False
             for panel in WORLD.get("solar_panels", []):
                 if not panel["depleted"]:
                     pd = abs(panel["position"][0] - x) + abs(panel["position"][1] - y)
-                    if pd < 10:
+                    if pd < 8:
                         existing_nearby = True
                         break
             if not existing_nearby:
-                thinking = f"I'm at ({x}, {y}). Far from station ({dist_to_station} tiles). Deploying solar panel as recharge point!"
+                thinking = f"I'm at ({x}, {y}). Battery at {agent['battery']:.0%}, {dist_to_station} tiles from station. Deploying solar panel!"
                 return {"thinking": thinking, "action": {"name": "deploy_solar_panel", "params": {}}}
 
         # Check for stone at current tile — analyze, dig, or pickup

@@ -132,21 +132,21 @@ async def agent_loop(agent, interval):
                 }
             )
 
-            # Auto-charge rover when it arrives at station
-            rover = WORLD["agents"].get(agent.agent_id)
+            # Auto-charge any agent when it arrives at station
+            agent_data = WORLD["agents"].get(agent.agent_id)
             station_agent = WORLD["agents"].get("station")
             if (
-                rover
+                agent_data
                 and station_agent
-                and rover["position"] == station_agent["position"]
-                and rover["battery"] < 1.0
+                and agent_data["position"] == station_agent["position"]
+                and agent_data["battery"] < 1.0
             ):
                 charge_result = charge_rover(agent.agent_id)
                 if charge_result["ok"]:
                     charge_event = {
                         "source": "station",
                         "type": "action",
-                        "name": "charge_rover",
+                        "name": "charge_agent",
                         "payload": charge_result,
                     }
                     await broadcaster.send(charge_event)

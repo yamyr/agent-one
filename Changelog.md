@@ -14,11 +14,35 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   - `use_solar_battery` action: consumes panel battery to recharge rover (single-use, then depleted)
   - Drone-exclusive: drones cannot deploy or use solar batteries
   - Duplicate position rejected: only one panel per tile
-  - MockRoverAgent deploys panels strategically when far from station (15+ tiles) and battery 50-65%
+  - MockRoverAgent deploys panels when battery < 45% and ≥8 tiles from station (simplified heuristic)
   - MockRoverAgent navigates to nearby solar panels when battery is low (before returning to station)
   - Task system suggests nearby solar panels as recharge option before forcing return-to-base
   - Frontend: gold/yellow SVG icon on tiles with grid-line detail; depleted panels shown greyed out
-  - 11 new tests (160 total pass): deploy, use, depletion, drone-exclusion, caps, snapshots
+  - LLM rover prompt includes solar panel context (panels remaining, nearby panels with charge status)
+  - 11 new tests for solar panel mechanics
+
+- **Drone Charging Test**: Verifies drones charge at station alongside rovers
+
+- **Stone Proximity Concentration Test**: Verifies proximity-based concentration values decay with distance
+
+### Changed
+
+- **Station Charging for All Entities**: `charge_rover` renamed to `charge_agent` (legacy alias kept). Now charges any non-station agent (rovers AND drones) at the station. Main loop auto-charges all agents at station each tick.
+
+- **Fixed Per-Tile Stone Probability**: Replaced noise-based concentration map with deterministic per-tile probability
+  - Each tile has 1.5% chance (`STONE_PROBABILITY`) of spawning a stone during chunk generation
+  - 30% of stones are cores (`CORE_PROBABILITY`), rest basalt
+  - Origin chunk still guarantees ≥1 core stone
+  - Removed `_noise_concentration` and `_boost_concentration_near_cores` functions
+  - `get_concentration(x, y)` now returns stone-proximity-based value (1.0 at stone, linear decay over 10 tiles)
+  - Works naturally with infinite grid — no global probability distribution needed
+
+- **Simplified MockRoverAgent Solar Panel Deploy**: Battery < 45% (was 50-65%) and ≥8 tiles from station (was ≥15). No nearby panel within 8 tiles (was 10). Lets LLM-powered rovers make their own decisions.
+
+### Errors & Lessons
+
+- **Concentration map in infinite world**: A probability distribution across an infinite grid gives near-zero per-tile values. Fixed by switching to per-tile spawn probability + proximity-based readings.
+- **Drone charging omission**: `charge_rover` had a type check rejecting non-rovers, preventing drone auto-charge. Fixed by accepting all non-station agents.
 
 ### Changed (Battery & Fuel Rebalance)
 

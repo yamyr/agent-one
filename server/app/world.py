@@ -3,9 +3,7 @@
 import copy
 import hashlib
 import logging
-import math
 import random
-import struct
 
 from .config import settings
 
@@ -52,6 +50,8 @@ MAX_SOLAR_PANELS = 2  # each rover starts with 2 panels
 
 AGENT_STARTS = {(0, 0)}
 STONE_TYPES = ["core", "basalt"]
+STONE_PROBABILITY = 0.015  # 1.5% chance per tile of spawning a stone
+CORE_PROBABILITY = 0.3  # 30% of spawned stones are cores
 ROVER_REVEAL_RADIUS = 3
 DRONE_REVEAL_RADIUS = 6
 REVEAL_RADIUS = ROVER_REVEAL_RADIUS  # legacy alias
@@ -134,28 +134,37 @@ def _ensure_chunk(cx, cy):
     rng = random.Random(_chunk_seed(cx, cy))
     x0, y0 = cx * CHUNK_SIZE, cy * CHUNK_SIZE
 
-    # Concentration: seeded hash-based pseudo-noise
-    conc = {}
-    for dy in range(CHUNK_SIZE):
-        for dx in range(CHUNK_SIZE):
-            wx, wy = x0 + dx, y0 + dy
-            conc[(wx, wy)] = _noise_concentration(wx, wy)
-
-    # Stones: origin chunk guaranteed ≥1 core, others 0-2 stones
+    # Per-tile stone generation: each tile has STONE_PROBABILITY chance
     stones = []
     is_origin = cx == 0 and cy == 0
     occupied = set(AGENT_STARTS) if is_origin else set()
-    num_stones = rng.randint(1, 3) if is_origin else rng.randint(0, 2)
 
-    for i in range(num_stones):
-        is_core = (i == 0 and is_origin) or rng.random() < 0.3
+    for dy in range(CHUNK_SIZE):
+        for dx in range(CHUNK_SIZE):
+            wx, wy = x0 + dx, y0 + dy
+            if (wx, wy) in occupied:
+                continue
+            if rng.random() < STONE_PROBABILITY:
+                is_core = rng.random() < CORE_PROBABILITY
+                stones.append(
+                    {
+                        "position": [wx, wy],
+                        "type": "unknown",
+                        "_true_type": "core" if is_core else "basalt",
+                        "extracted": False,
+                        "analyzed": False,
+                    }
+                )
+                occupied.add((wx, wy))
+
+    # Origin chunk guaranteed ≥1 core stone
+    if is_origin and not any(s["_true_type"] == "core" for s in stones):
         sx, sy = _random_free_pos(occupied, rng, cx, cy)
-        occupied.add((sx, sy))
         stones.append(
             {
                 "position": [sx, sy],
                 "type": "unknown",
-                "_true_type": "core" if is_core else "basalt",
+                "_true_type": "core",
                 "extracted": False,
                 "analyzed": False,
             }
@@ -163,8 +172,6 @@ def _ensure_chunk(cx, cy):
 
     # Register stones in the global list
     WORLD.setdefault("stones", []).extend(stones)
-    # Merge concentration into global map
-    WORLD.setdefault("concentration_map", {}).update(conc)
 
     chunk_data = {"generated": True, "stone_count": len(stones)}
     chunks[key] = chunk_data
@@ -172,59 +179,28 @@ def _ensure_chunk(cx, cy):
     return chunk_data
 
 
-def _noise_concentration(x, y):
-    """Deterministic noise value 0.0-1.0 for world tile (x, y).
+def _stone_proximity_concentration(x, y):
+    """Compute concentration based on proximity to actual stones in world.
 
-    Uses layered hash-based noise at multiple frequencies to create
-    natural-looking concentration fields. Core stones later boost
-    nearby values via _boost_concentration_near_cores().
+    Returns 0.0-1.0 where 1.0 = stone at this tile, decays with Manhattan distance.
     """
-    base_seed = settings.world_seed or 42
-    val = 0.0
-    amp = 1.0
-    total_amp = 0.0
-    for octave in range(3):
-        freq = 1 << octave  # 1, 2, 4
-        h = hashlib.md5(f"{base_seed}:{x * freq}:{y * freq}:{octave}".encode()).digest()
-        n = struct.unpack("<H", h[:2])[0] / 65535.0
-        val += n * amp
-        total_amp += amp
-        amp *= 0.5
-    raw = val / total_amp  # 0.0-1.0
-    return round(raw * 0.4, 4)  # base noise is low; cores boost it
-
-
-def _boost_concentration_near_cores():
-    """After stones are placed, boost concentration near core positions."""
-    sigma = 4.0
-    core_positions = []
+    max_conc = 0.0
     for s in WORLD.get("stones", []):
-        if s.get("_true_type") == "core":
-            core_positions.append(tuple(s["position"]))
-    if not core_positions:
-        return
-    conc = WORLD.setdefault("concentration_map", {})
-    boosted = set()
-    for px, py in core_positions:
-        for dx in range(-8, 9):
-            for dy in range(-8, 9):
-                cell = (px + dx, py + dy)
-                if cell in boosted:
-                    continue
-                d = abs(dx) + abs(dy)
-                boost = math.exp(-(d**2) / (sigma**2))
-                if cell in conc:
-                    conc[cell] = min(1.0, conc[cell] + boost * 0.6)
-                else:
-                    conc[cell] = round(boost * 0.6, 4)
-                boosted.add(cell)
+        sx, sy = s["position"]
+        d = abs(x - sx) + abs(y - sy)
+        if d == 0:
+            return 1.0
+        conc = max(0.0, 1.0 - d / 10.0)  # linear decay over 10 tiles
+        if conc > max_conc:
+            max_conc = conc
+    return round(max_conc, 4)
 
 
 def get_concentration(x, y):
-    """Get concentration at (x, y), generating the chunk if needed."""
+    """Get concentration at (x, y) based on proximity to stones."""
     cx, cy = _chunk_key(x, y)
     _ensure_chunk(cx, cy)
-    return WORLD.get("concentration_map", {}).get((x, y), 0.0)
+    return _stone_proximity_concentration(x, y)
 
 
 def _cells_in_radius(cx, cy, radius):
@@ -385,11 +361,9 @@ def _build_initial_world():
 
 def _init_world_chunks():
     """Generate starting chunks around origin after WORLD is initialized."""
-    # Generate the origin chunk and immediate neighbors
     for cx in range(-1, 2):
         for cy in range(-1, 2):
             _ensure_chunk(cx, cy)
-    _boost_concentration_near_cores()
 
 
 WORLD = _build_initial_world()
@@ -785,20 +759,24 @@ def _execute_use_solar_battery(agent_id, agent):
     }
 
 
-def charge_rover(rover_id):
-    """Station-initiated charge: recharge a rover that is co-located with the station."""
-    agent = WORLD["agents"].get(rover_id)
+def charge_agent(agent_id):
+    """Station-initiated charge: recharge any agent that is co-located with the station."""
+    agent = WORLD["agents"].get(agent_id)
     if agent is None:
-        return {"ok": False, "error": f"Unknown agent: {rover_id}"}
-    if agent.get("type") != "rover":
-        return {"ok": False, "error": f"{rover_id} is not a rover"}
-    result = _execute_charge(rover_id, agent)
+        return {"ok": False, "error": f"Unknown agent: {agent_id}"}
+    if agent.get("type") == "station":
+        return {"ok": False, "error": f"{agent_id} is a station"}
+    result = _execute_charge(agent_id, agent)
     if result["ok"]:
         record_memory(
-            rover_id,
+            agent_id,
             f"Station charged battery {result['battery_before']:.0%} -> {result['battery_after']:.0%}",
         )
     return result
+
+
+# Keep legacy alias for backward compat
+charge_rover = charge_agent
 
 
 def check_mission_status():

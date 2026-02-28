@@ -1,7 +1,7 @@
 import unittest
 
 from app.world import WORLD, move_agent, execute_action, get_snapshot, check_ground
-from app.world import check_mission_status, charge_rover
+from app.world import check_mission_status, charge_rover, charge_agent
 from app.world import BATTERY_COST_MOVE, BATTERY_COST_DIG, BATTERY_COST_PICKUP
 from app.world import BATTERY_COST_ANALYZE, BATTERY_COST_ANALYZE_GROUND
 from app.world import BATTERY_COST_SCAN, BATTERY_COST_MOVE_DRONE
@@ -238,13 +238,8 @@ class TestStones(unittest.TestCase):
             self.assertNotIn("_true_type", stone)
 
     def test_concentration_map_exists(self):
+        """Concentration map key still exists (empty — proximity-based now)."""
         self.assertIn("concentration_map", WORLD)
-        conc = WORLD["concentration_map"]
-        self.assertGreater(len(conc), 0)
-        # Values should be between 0 and 1
-        for v in conc.values():
-            self.assertGreaterEqual(v, 0.0)
-            self.assertLessEqual(v, 1.0)
 
     def test_concentration_map_serialized_in_snapshot(self):
         snap = get_snapshot()
@@ -739,10 +734,10 @@ class TestCharge(unittest.TestCase):
         self.assertFalse(result["ok"])
         self.assertIn("Unknown agent", result["error"])
 
-    def test_charge_rover_rejects_non_rover(self):
+    def test_charge_agent_rejects_station(self):
         result = charge_rover("station")
         self.assertFalse(result["ok"])
-        self.assertIn("not a rover", result["error"])
+        self.assertIn("station", result["error"])
 
     def test_charge_rover_records_memory(self):
         charge_rover("rover-mock")
@@ -754,6 +749,25 @@ class TestCharge(unittest.TestCase):
         result = execute_action("rover-mock", "charge", {})
         self.assertFalse(result["ok"])
         self.assertIn("Unknown action", result["error"])
+
+    def test_charge_drone_at_station(self):
+        """Drones should also charge at station."""
+        WORLD["agents"]["drone-mistral"]["position"] = [0, 0]
+        WORLD["agents"]["drone-mistral"]["battery"] = 0.5
+        result = charge_agent("drone-mistral")
+        self.assertTrue(result["ok"])
+        self.assertGreater(WORLD["agents"]["drone-mistral"]["battery"], 0.5)
+
+    def test_stone_proximity_concentration(self):
+        """get_concentration should return high values near stones."""
+        from app.world import get_concentration
+        # Place a stone at a known location
+        WORLD["stones"].append({"position": [5, 5], "type": "basalt", "_true_type": "basalt"})
+        c_at = get_concentration(5, 5)
+        c_near = get_concentration(5, 6)
+        c_far = get_concentration(5, 15)
+        self.assertEqual(c_at, 1.0)
+        self.assertGreater(c_near, c_far)
 
 
 class TestFogOfWar(unittest.TestCase):
