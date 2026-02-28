@@ -23,4 +23,4 @@ COPY server/app/ app/
 # Copy built UI assets
 COPY --from=ui-build /build/dist ui_dist/
 
-CMD uv run uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-4009}
+CMD .venv/bin/uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-4009}
