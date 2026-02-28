@@ -12,16 +12,14 @@
 - [x] T004 Implement windowing/limit logic in `EventLog.vue`
 - [x] T005 Limit backing array in `useWebSocket` (200 items)
 
-## Phase 3: MiniMap Legends (R3P3) 🎯
-**Goal**: Explain map symbology.
-- [ ] T007 Create `MapLegend.vue` component
-- [ ] T008 Integrate into `MiniMap.vue` as a toggleable overlay
+## Phase 3: MiniMap Legends (R3P3) ✅
+- [x] T007 Create `MapLegend.vue` component
+- [x] T008 Integrate into `MiniMap.vue` as a toggleable overlay
 
-## Phase 4: Camera Inertia (R3P4)
-**Goal**: Cinematic smooth panning.
-- [ ] T009 Refine `cameraLoop` in `WorldMap.vue` with adaptive lerp
+## Phase 4: Camera Inertia (R3P4) ✅
+- [x] T009 Refine `cameraLoop` in `WorldMap.vue` with adaptive lerp
 
-## Phase 5: Toast Dedupe (R3P5)
+## Phase 5: Toast Dedupe (R3P5) 🎯
 **Goal**: Reduce visual noise.
 - [ ] T010 Update `useToasts.js` to reject duplicate messages within N seconds
 
