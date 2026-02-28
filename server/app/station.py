@@ -133,8 +133,10 @@ class StationAgent:
     def _call_llm(self, user_message):
         """Single LLM call with tools. Returns (thinking, events)."""
         client = self._get_client()
+        context = self._build_context()
+        WORLD["agents"][self.agent_id]["last_context"] = context
         messages = [
-            {"role": "system", "content": self._build_context()},
+            {"role": "system", "content": context},
             {"role": "user", "content": user_message},
         ]
         logger.info("Station LLM call: %s", user_message[:80])

@@ -34,6 +34,12 @@ function missionObjective(id) {
   const a = props.worldState.agents[id]
   return a && a.mission ? a.mission.objective : ''
 }
+
+function agentMemory(id) {
+  if (!props.worldState) return []
+  const a = props.worldState.agents[id]
+  return a && a.memory ? a.memory : []
+}
 </script>
 
 <template>
@@ -45,6 +51,7 @@ function missionObjective(id) {
       :battery="batteryPct(id)"
       :inventoryCount="inventoryCount(id)"
       :mission="missionObjective(id)"
+      :memory="agentMemory(id)"
       :events="agentEvents[id]"
       :color="agentColor(id)"
       @select-agent="emit('select-agent', $event)" />

@@ -25,6 +25,7 @@ STONE_TYPES = ["core", "basalt"]
 REVEAL_RADIUS = 2
 TARGET_STONE_TYPE = "core"
 TARGET_STONE_COUNT = 2
+MEMORY_MAX = 8
 
 
 def _generate_stones():
@@ -84,6 +85,7 @@ WORLD = {
             "visited": [[2, 10]],
             "revealed": _init_revealed(2, 10),
             "inventory": [],
+            "memory": [],
             "type": "rover",
             "tools": [
                 {
@@ -103,6 +105,7 @@ WORLD = {
             "visited": [[2, 12]],
             "revealed": _init_revealed(2, 12),
             "inventory": [],
+            "memory": [],
             "type": "rover",
             "tools": [
                 {
@@ -134,7 +137,7 @@ def check_ground(agent_id):
     x, y = agent["position"]
     for stone in WORLD.get("stones", []):
         if stone["position"] == [x, y]:
-            return {"stone": {"type": stone["type"]}}
+            return {"stone": {"type": stone["type"], "extracted": stone.get("extracted", False)}}
     return {"stone": None}
 
 
@@ -180,14 +183,28 @@ def execute_action(agent_id, action_name, params):
                 agent["visited"].append([tx, ty])
             _expand_revealed(agent, tx, ty)
             result["ground"] = check_ground(agent_id)
+            ground = result["ground"]
+            if ground["stone"]:
+                record_memory(agent_id, f"Moved {direction} to ({tx},{ty}), found {ground['stone']['type']} stone")
+            else:
+                record_memory(agent_id, f"Moved {direction} to ({tx},{ty}), empty ground")
     elif action_name == "dig":
         result = _execute_dig(agent_id, agent)
+        if result["ok"]:
+            record_memory(agent_id, f"Dug out {result['stone']['type']} stone at ({result['position'][0]},{result['position'][1]})")
     elif action_name == "pickup":
         result = _execute_pickup(agent_id, agent)
+        if result["ok"]:
+            record_memory(agent_id, f"Picked up {result['stone']['type']} stone at ({result['position'][0]},{result['position'][1]}), inventory={result['inventory_count']}")
     elif action_name == "charge":
         result = _execute_charge(agent_id, agent)
+        if result["ok"]:
+            record_memory(agent_id, f"Charged battery {result['battery_before']:.0%} -> {result['battery_after']:.0%}")
     else:
         return {"ok": False, "error": f"Unknown action: {action_name}"}
+
+    if not result["ok"]:
+        record_memory(agent_id, f"Failed {action_name}: {result.get('error', '?')}")
 
     if result["ok"]:
         mission_event = check_mission_status()
@@ -308,6 +325,17 @@ def check_mission_status():
         return {"status": "failed", "reason": "all_rovers_depleted"}
 
     return None
+
+
+def record_memory(agent_id, text):
+    """Append a short-term memory entry to an agent's memory log."""
+    agent = WORLD["agents"].get(agent_id)
+    if agent is None:
+        return
+    mem = agent.setdefault("memory", [])
+    mem.append(text)
+    if len(mem) > MEMORY_MAX:
+        del mem[: len(mem) - MEMORY_MAX]
 
 
 def assign_mission(agent_id, objective):

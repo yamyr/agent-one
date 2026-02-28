@@ -68,6 +68,10 @@ function batteryPct() {
             </div>
           </div>
         </div>
+        <div class="modal-section" v-if="agent.last_context">
+          <div class="modal-label">System Prompt</div>
+          <pre class="modal-context">{{ agent.last_context }}</pre>
+        </div>
       </div>
     </div>
   </div>
@@ -196,5 +200,20 @@ function batteryPct() {
 .inv-stone.basalt {
   color: #888;
   border-color: #333;
+}
+
+.modal-context {
+  font-size: 0.7rem;
+  color: #8a9a8a;
+  background: #0a0a10;
+  border: 1px solid #1a1a24;
+  border-radius: 3px;
+  padding: 0.5rem;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 300px;
+  overflow-y: auto;
+  font-family: 'Courier New', monospace;
+  line-height: 1.4;
 }
 </style>

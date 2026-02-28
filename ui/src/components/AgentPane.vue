@@ -1,12 +1,11 @@
 <script setup>
-import { formatMoveEvent } from '../constants.js'
-
 defineProps({
   agentId: String,
   position: String,
   battery: String,
   inventoryCount: Number,
   mission: String,
+  memory: Array,
   events: Array,
   color: String,
 })
@@ -25,15 +24,17 @@ const emit = defineEmits(['select-agent'])
     </div>
     <div v-if="mission" class="agent-mission">{{ mission }}</div>
     <div class="agent-log">
-      <div v-if="!events || events.length === 0" class="empty">
-        No events yet
+      <div v-if="(!memory || memory.length === 0) && (!events || events.length === 0)" class="empty">
+        No activity yet
       </div>
-      <div v-for="(e, i) in (events || [])" :key="i" class="agent-event">
-        <span class="ae-type" :class="e.type">{{ e.type }}</span>
-        <span class="ae-name">{{ e.name }}</span>
-        <span v-if="e.name === 'thinking'" class="ae-text">{{ e.payload.text }}</span>
-        <span v-else-if="e.name === 'move'" class="ae-text">{{ formatMoveEvent(e.payload) }}</span>
-        <span v-else-if="e.payload" class="ae-text">{{ JSON.stringify(e.payload) }}</span>
+      <!-- Memory (recent actions from world state) -->
+      <div v-for="(m, i) in (memory || [])" :key="'m-'+i" class="memory-entry">
+        {{ m }}
+      </div>
+      <!-- Thinking events -->
+      <div v-for="(e, i) in (events || []).filter(e => e.name === 'thinking')" :key="'e-'+i" class="agent-event">
+        <span class="ae-type">think</span>
+        <span class="ae-text">{{ e.payload.text }}</span>
       </div>
     </div>
   </div>
@@ -88,6 +89,13 @@ const emit = defineEmits(['select-agent'])
   flex: 1;
   overflow-y: auto;
   padding: 0.25rem;
+}
+
+.memory-entry {
+  padding: 0.15rem 0.35rem;
+  font-size: 0.7rem;
+  color: #7a9a7a;
+  border-bottom: 1px solid #111118;
 }
 
 .agent-event {

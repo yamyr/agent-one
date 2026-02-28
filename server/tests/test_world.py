@@ -4,7 +4,7 @@ from app.world import WORLD, move_agent, execute_action, get_snapshot, check_gro
 from app.world import check_mission_status
 from app.world import BATTERY_COST_MOVE, BATTERY_COST_DIG, BATTERY_COST_PICKUP
 from app.world import CHARGE_RATE, REVEAL_RADIUS, GRID_W, GRID_H, AGENT_STARTS
-from app.world import assign_mission, _cells_in_radius
+from app.world import assign_mission, _cells_in_radius, record_memory, MEMORY_MAX
 
 
 class TestMoveAgent(unittest.TestCase):
@@ -207,7 +207,14 @@ class TestCheckGround(unittest.TestCase):
     def test_check_ground_finds_stone(self):
         WORLD["stones"] = [{"position": [10, 10], "type": "core"}]
         result = check_ground("rover-mock")
-        self.assertEqual(result["stone"], {"type": "core"})
+        self.assertEqual(result["stone"]["type"], "core")
+        self.assertFalse(result["stone"]["extracted"])
+
+    def test_check_ground_extracted_stone(self):
+        WORLD["stones"] = [{"position": [10, 10], "type": "core", "extracted": True}]
+        result = check_ground("rover-mock")
+        self.assertEqual(result["stone"]["type"], "core")
+        self.assertTrue(result["stone"]["extracted"])
 
     def test_check_ground_no_stone(self):
         WORLD["stones"] = [{"position": [5, 5], "type": "basalt"}]
@@ -607,3 +614,80 @@ class TestMissionCompletion(unittest.TestCase):
         result = execute_action("rover-mock", "move", {"direction": "east"})
         self.assertTrue(result["ok"])
         self.assertNotIn("mission", result)
+
+
+class TestMemory(unittest.TestCase):
+
+    def setUp(self):
+        WORLD["agents"]["rover-mock"]["position"] = [10, 10]
+        WORLD["agents"]["rover-mock"]["battery"] = 1.0
+        WORLD["agents"]["rover-mock"]["inventory"] = []
+        WORLD["agents"]["rover-mock"]["visited"] = [[10, 10]]
+        WORLD["agents"]["rover-mock"]["memory"] = []
+        self._original_stones = WORLD.get("stones", [])
+
+    def tearDown(self):
+        WORLD["stones"] = self._original_stones
+        WORLD["agents"]["rover-mock"]["memory"] = []
+
+    def test_move_records_memory(self):
+        WORLD["stones"] = []
+        execute_action("rover-mock", "move", {"direction": "east"})
+        mem = WORLD["agents"]["rover-mock"]["memory"]
+        self.assertEqual(len(mem), 1)
+        self.assertIn("Moved east", mem[0])
+        self.assertIn("(11,10)", mem[0])
+
+    def test_move_records_stone_found(self):
+        WORLD["stones"] = [{"position": [11, 10], "type": "core"}]
+        execute_action("rover-mock", "move", {"direction": "east"})
+        mem = WORLD["agents"]["rover-mock"]["memory"]
+        self.assertIn("core", mem[0])
+
+    def test_dig_records_memory(self):
+        WORLD["stones"] = [{"position": [10, 10], "type": "basalt"}]
+        execute_action("rover-mock", "dig", {})
+        mem = WORLD["agents"]["rover-mock"]["memory"]
+        self.assertEqual(len(mem), 1)
+        self.assertIn("Dug out basalt", mem[0])
+
+    def test_pickup_records_memory(self):
+        WORLD["stones"] = [{"position": [10, 10], "type": "core", "extracted": True}]
+        execute_action("rover-mock", "pickup", {})
+        mem = WORLD["agents"]["rover-mock"]["memory"]
+        self.assertEqual(len(mem), 1)
+        self.assertIn("Picked up core", mem[0])
+        self.assertIn("inventory=1", mem[0])
+
+    def test_charge_records_memory(self):
+        WORLD["agents"]["rover-mock"]["position"] = [0, 0]
+        WORLD["agents"]["rover-mock"]["battery"] = 0.5
+        execute_action("rover-mock", "charge", {})
+        mem = WORLD["agents"]["rover-mock"]["memory"]
+        self.assertEqual(len(mem), 1)
+        self.assertIn("Charged", mem[0])
+
+    def test_failed_action_records_memory(self):
+        WORLD["stones"] = []
+        execute_action("rover-mock", "dig", {})
+        mem = WORLD["agents"]["rover-mock"]["memory"]
+        self.assertEqual(len(mem), 1)
+        self.assertIn("Failed dig", mem[0])
+
+    def test_memory_capped_at_max(self):
+        for i in range(MEMORY_MAX + 5):
+            record_memory("rover-mock", f"entry {i}")
+        mem = WORLD["agents"]["rover-mock"]["memory"]
+        self.assertEqual(len(mem), MEMORY_MAX)
+        self.assertEqual(mem[0], f"entry {5}")
+        self.assertEqual(mem[-1], f"entry {MEMORY_MAX + 4}")
+
+    def test_memory_in_snapshot(self):
+        record_memory("rover-mock", "test entry")
+        snap = get_snapshot()
+        self.assertIn("memory", snap["agents"]["rover-mock"])
+        self.assertEqual(snap["agents"]["rover-mock"]["memory"], ["test entry"])
+
+    def test_record_memory_unknown_agent(self):
+        # Should not raise
+        record_memory("nonexistent", "noop")
