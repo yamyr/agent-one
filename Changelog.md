@@ -8,6 +8,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added (UI Polish Round 3 — Phases 3–8)
 
+- **Persisted zoom preference**: Zoom level saved to `localStorage` via `usePreferences` composable; survives page refresh
+- **Persisted legend visibility**: MiniMap legend open/closed state saved to `localStorage`; restored on load
 - **Toast rate-limiting**: Max 5 visible toasts; oldest evicted when capacity reached
 - **Toast dedup count badge**: Identical messages within 5s window show `×N` count badge instead of duplicating
 - **Toast timer management**: Dedup resets dismiss timer; evicted toasts clean up their timers
