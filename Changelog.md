@@ -121,6 +121,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Docs
+
+- **ROADMAP.md**: Updated milestone checkboxes to reflect current implementation state — marked completed: M0 protocol types & BaseAgent, M3 drone agent/tools & concurrent agents, voice TTS alerts; updated dependency table to Python 3.14+ / uv sync (#74)
+
 ### Added (UI Polish Round 3 — Phases 3–8)
 
 - **Persisted zoom preference**: Zoom level saved to `localStorage` via `usePreferences` composable; survives page refresh

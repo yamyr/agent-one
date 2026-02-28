@@ -5,8 +5,8 @@ Mars Mission — Multi-Agent LLM Simulation (Mistral Hackathon)
 ## Milestone 0: Scaffold (pre-hackathon)
 
 - [x] Init repo, venv, project structure
-- [ ] Copy/adapt protocol types from Snowball (subset only)
-- [ ] Copy/adapt BaseAgent class (tool framework, streaming, emit helpers)
+- [x] Copy/adapt protocol types from Snowball (subset only)
+- [x] Copy/adapt BaseAgent class (tool framework, streaming, emit helpers)
 - [x] Decide UI approach (terminal with textual/rich? web? both?) → web (Vue 3 + Vite)
 
 ## Milestone 1: Rover picks up a stone (first simulation)
@@ -43,12 +43,12 @@ Mars Mission — Multi-Agent LLM Simulation (Mistral Hackathon)
 
 **Goal:** two field agents running concurrently, communicating through the coordinator.
 
-- [ ] Drone agent: system prompt, scan tools
-- [ ] Drone tools: `scan_area(zones)`, `map_route(from, to)`
+- [x] Drone agent: system prompt, scan tools
+- [x] Drone tools: `scan_area(zones)`, `map_route(from, to)`
 - [ ] Drone emits Action with probabilistic rock map
 - [ ] Coordinator: route Actions from drone -> rover
 - [ ] Rover receives drone findings, uses them in reasoning
-- [ ] All agents active simultaneously
+- [x] All agents active simultaneously
 
 **Done when:** drone scans, rover uses scan data to pick a rock, all streamed live.
 
@@ -79,7 +79,7 @@ Mars Mission — Multi-Agent LLM Simulation (Mistral Hackathon)
 
 ## Stretch: Voice (ElevenLabs prize)
 
-- [ ] TTS reads incoming alerts aloud
+- [x] TTS reads incoming alerts aloud
 - [ ] STT for human commands -> coordinator
 - [ ] Agent "personality" voices (rover = calm, station = urgent)
 
@@ -96,7 +96,7 @@ Mars Mission — Multi-Agent LLM Simulation (Mistral Hackathon)
 | What | Where |
 |------|-------|
 | Mistral API key | MISTRAL_API_KEY env var |
-| Python 3.12+ | venv |
-| mistralai SDK | pip install |
+| Python 3.14+ | uv sync |
+| mistralai SDK | uv sync |
 | Snowball protocol subset | copied/adapted from snowball repo |
 | BaseAgent class | copied/adapted from agents/mistral_base.py |
