@@ -1,6 +1,6 @@
 <script setup>
 import { computed } from 'vue'
-import { GRID_SIZE, TILE_SIZE, MAP_W, MAP_H, STONE_COLORS, agentColor } from '../constants.js'
+import { GRID_SIZE, TILE_SIZE, MAP_W, MAP_H, REVEAL_RADIUS, STONE_COLORS, agentColor } from '../constants.js'
 
 const props = defineProps({
   worldState: {
@@ -210,6 +210,15 @@ function agentTransform(id) {
             repeatCount="indefinite"
           />
         </circle>
+        <!-- visibility radius -->
+        <circle
+          :r="REVEAL_RADIUS * TILE_SIZE"
+          fill="none"
+          stroke="#ff4444"
+          stroke-width="1"
+          opacity="0.3"
+          stroke-dasharray="4 3"
+        />
         <text
           y="18"
           text-anchor="middle"

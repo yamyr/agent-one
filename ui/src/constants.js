@@ -3,6 +3,8 @@ export const TILE_SIZE = 20
 export const MAP_W = GRID_SIZE * TILE_SIZE
 export const MAP_H = GRID_SIZE * TILE_SIZE
 
+export const REVEAL_RADIUS = 5
+
 export const STONE_COLORS = {
   'core': '#b8962a',
   'basalt': '#666666',
