@@ -827,9 +827,18 @@ defineExpose({ camX, camY, visibleW, visibleH, panCamera, navigateTo })
     </svg>
     <div
       v-else
-      class="empty"
+      class="map-skeleton"
     >
-      Waiting for world state...
+      <div class="skeleton-grid">
+        <div
+          v-for="i in 100"
+          :key="i"
+          class="skeleton-tile"
+        />
+      </div>
+      <div class="skeleton-message">
+        Connecting to satellite feed...
+      </div>
     </div>
   </section>
 </template>
@@ -921,5 +930,52 @@ defineExpose({ camX, camY, visibleW, visibleH, panCamera, navigateTo })
 }
 .map-svg:active {
   cursor: grabbing;
+}
+
+.map-skeleton {
+  width: 100%;
+  aspect-ratio: 1;
+  background: var(--bg-primary);
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.skeleton-grid {
+  display: grid;
+  grid-template-columns: repeat(10, 1fr);
+  grid-template-rows: repeat(10, 1fr);
+  width: 100%;
+  height: 100%;
+  opacity: 0.1;
+}
+
+.skeleton-tile {
+  border: 1px solid var(--accent-blue);
+  animation: pulse-grid 2s infinite;
+}
+
+.skeleton-message {
+  position: absolute;
+  color: var(--accent-blue);
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  background: rgba(10, 10, 15, 0.8);
+  padding: 0.5rem 1rem;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--accent-blue);
+  animation: pulse-text 1.5s infinite alternate;
+}
+
+@keyframes pulse-grid {
+  0%, 100% { opacity: 0.1; }
+  50% { opacity: 0.3; }
+}
+
+@keyframes pulse-text {
+  from { opacity: 0.7; }
+  to { opacity: 1; }
 }
 </style>
