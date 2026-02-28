@@ -10,7 +10,7 @@ from .agent import MockRoverAgent, RoverAgent
 from .broadcast import broadcaster
 from .db import init_db, close_db
 from .views import router as views_router
-from .world import get_snapshot
+from .world import execute_action, get_snapshot
 
 logging.basicConfig(
     level=logging.INFO,
@@ -21,14 +21,44 @@ logging.basicConfig(
 
 logger = logging.getLogger(__name__)
 
-INSTRUCTION = "Observe your surroundings and decide your next move."
-
 
 async def agent_loop(agent, interval):
     """Run an agent every `interval` seconds, broadcast events."""
     while True:
         try:
-            events = await asyncio.to_thread(agent.run_turn, INSTRUCTION)
+            turn = await asyncio.to_thread(agent.run_turn)
+            events = []
+
+            if turn["thinking"]:
+                events.append({
+                    "source": agent.agent_id,
+                    "type": "event",
+                    "name": "thinking",
+                    "payload": {"text": turn["thinking"]},
+                })
+
+            if turn["action"]:
+                result = execute_action(
+                    agent.agent_id,
+                    turn["action"]["name"],
+                    turn["action"]["params"],
+                )
+                if result["ok"]:
+                    events.append({
+                        "source": agent.agent_id,
+                        "type": "action",
+                        "name": turn["action"]["name"],
+                        "payload": result,
+                    })
+                    ground = result.get("ground")
+                    if ground and ground["stone"]:
+                        events.append({
+                            "source": agent.agent_id,
+                            "type": "event",
+                            "name": "check",
+                            "payload": ground,
+                        })
+
             for event in events:
                 await broadcaster.send(event)
             await broadcaster.send({

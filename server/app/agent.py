@@ -1,4 +1,4 @@
-"""Minimal Rover agent — calls Mistral with a move tool, runs inside the server process."""
+"""Rover agents — LLM-powered and mock. Return action dicts, never mutate world."""
 
 import json
 import logging
@@ -7,7 +7,7 @@ import random
 from mistralai import Mistral
 
 from .config import settings
-from .world import WORLD, move_agent
+from .world import WORLD, GRID_W, GRID_H, DIRECTIONS
 
 logger = logging.getLogger(__name__)
 
@@ -15,25 +15,24 @@ MOVE_TOOL = {
     "type": "function",
     "function": {
         "name": "move",
-        "description": "Move the rover to a target zone.",
+        "description": "Move the rover one tile in a cardinal direction.",
         "parameters": {
             "type": "object",
             "properties": {
-                "zone": {
+                "direction": {
                     "type": "string",
-                    "description": "Target zone ID, e.g. 'Z03'.",
+                    "enum": ["north", "south", "east", "west"],
+                    "description": "Direction to move: north, south, east, or west.",
                 },
             },
-            "required": ["zone"],
+            "required": ["direction"],
         },
     },
 }
 
-MAX_TOOL_ROUNDS = 5
-
 
 class RoverAgent:
-    """Rover agent that reasons via Mistral and can move between zones."""
+    """Rover agent that reasons via Mistral. Returns action dict, does not execute."""
 
     def __init__(self, agent_id="rover-mistral", model="mistral-small-latest"):
         self.agent_id = agent_id
@@ -47,120 +46,93 @@ class RoverAgent:
             self._client = Mistral(api_key=settings.mistral_api_key)
         return self._client
 
-    def _system_prompt(self):
+    def _build_context(self):
+        """Assemble LLM context from current agent state (sensor readings)."""
         agent = WORLD["agents"][self.agent_id]
-        return (
+        x, y = agent["position"]
+        mission = agent["mission"]
+
+        visited = agent.get("visited", [])
+        visited_set = {tuple(p) for p in visited}
+        unvisited_dirs = []
+        for name, (dx, dy) in DIRECTIONS.items():
+            nx, ny = x + dx, y + dy
+            if 0 <= nx < GRID_W and 0 <= ny < GRID_H and (nx, ny) not in visited_set:
+                unvisited_dirs.append(name)
+
+        system = (
             "You are Rover-1, an autonomous Mars rover.\n"
-            "You explore zones, observe your surroundings, and decide where to move.\n"
+            "You explore the terrain, observe your surroundings, and decide where to move.\n"
             "Keep responses short (1-2 sentences of reasoning, then act).\n"
             "\n"
-            "Current world state:\n"
-            f"- Your position: {agent['position']}\n"
-            f"- Battery: {agent['battery']:.0%}\n"
-            f"- Available zones: {', '.join(WORLD['zones'].keys())}\n"
+            f"Mission: {mission['objective']}\n"
+            "\n"
+            "== Sensor readings ==\n"
+            f"Position: ({x}, {y})\n"
+            f"Grid bounds: {GRID_W}x{GRID_H} (0-indexed)\n"
+            f"Battery: {agent['battery']:.0%}\n"
+            f"Tiles visited: {len(visited)}\n"
+            f"Unvisited neighbors: {', '.join(unvisited_dirs) if unvisited_dirs else 'none'}\n"
+            f"Valid directions: north, south, east, west (one tile per move)\n"
         )
+        return system
 
-    def _execute_tool(self, name, args_json):
-        """Execute a tool call. Returns (result_str, event_dict)."""
-        args = json.loads(args_json) if isinstance(args_json, str) else args_json
-
-        if name == "move":
-            result = move_agent(self.agent_id, args["zone"])
-            if result["ok"]:
-                event = {
-                    "source": self.agent_id,
-                    "type": "action",
-                    "name": "move",
-                    "payload": {"from": result["from"], "to": result["to"]},
-                }
-                return json.dumps(result), event
-            return json.dumps(result), None
-
-        return json.dumps({"ok": False, "error": f"Unknown tool: {name}"}), None
-
-    def run_turn(self, instruction):
-        """Run one observe-reason-act loop. Returns list of event dicts."""
-        events = []
+    def run_turn(self):
+        """Single-shot LLM call. Returns {thinking, action} dict."""
         client = self._get_client()
 
         messages = [
-            {"role": "system", "content": self._system_prompt()},
-            {"role": "user", "content": instruction},
+            {"role": "system", "content": self._build_context()},
+            {"role": "user", "content": "Observe your surroundings and decide your next move."},
         ]
 
-        for _ in range(MAX_TOOL_ROUNDS):
-            logger.info("Calling Mistral (%s) with %d messages", self.model, len(messages))
-            response = client.chat.complete(
-                model=self.model,
-                messages=messages,
-                tools=[MOVE_TOOL],
-            )
-            choice = response.choices[0]
+        logger.info("Calling Mistral (%s) for %s", self.model, self.agent_id)
+        response = client.chat.complete(
+            model=self.model,
+            messages=messages,
+            tools=[MOVE_TOOL],
+        )
+        choice = response.choices[0]
 
-            # Capture any text reasoning
-            if choice.message.content:
-                text = choice.message.content
-                logger.info("Rover thinking: %s", text)
-                events.append({
-                    "source": self.agent_id,
-                    "type": "event",
-                    "name": "thinking",
-                    "payload": {"text": text},
-                })
+        thinking = choice.message.content or None
+        action = None
 
-            # No tool calls — turn is done
-            if not choice.message.tool_calls:
-                break
+        if thinking:
+            logger.info("Rover thinking: %s", thinking)
 
-            # Record assistant message with tool calls in history
-            messages.append(choice.message)
+        if choice.message.tool_calls:
+            tc = choice.message.tool_calls[0]
+            if tc.function.name == "move":
+                args = json.loads(tc.function.arguments) if isinstance(tc.function.arguments, str) else tc.function.arguments
+                action = {"name": "move", "params": args}
 
-            # Execute each tool call
-            for tc in choice.message.tool_calls:
-                result_str, action_event = self._execute_tool(
-                    tc.function.name, tc.function.arguments,
-                )
-                if action_event:
-                    events.append(action_event)
-                messages.append({
-                    "role": "tool",
-                    "name": tc.function.name,
-                    "content": result_str,
-                    "tool_call_id": tc.id,
-                })
-        else:
-            logger.warning("Rover hit max tool rounds (%d)", MAX_TOOL_ROUNDS)
-
-        return events
+        return {"thinking": thinking, "action": action}
 
 
 class MockRoverAgent:
-    """Mock rover that picks a random zone each turn — no LLM calls."""
+    """Mock rover that picks a random valid direction each turn — no LLM calls."""
 
     def __init__(self, agent_id="rover-mock"):
         self.agent_id = agent_id
 
-    def run_turn(self, instruction):
-        events = []
+    def run_turn(self):
         agent = WORLD["agents"][self.agent_id]
-        current = agent["position"]
-        others = [z for z in WORLD["zones"].keys() if z != current]
-        target = random.choice(others)
+        x, y = agent["position"]
+        visited_set = {tuple(p) for p in agent.get("visited", [])}
 
-        events.append({
-            "source": self.agent_id,
-            "type": "event",
-            "name": "thinking",
-            "payload": {"text": f"I'm at {current}. I'll move to {target} to explore."},
-        })
+        valid = []
+        unvisited = []
+        for name, (dx, dy) in DIRECTIONS.items():
+            nx, ny = x + dx, y + dy
+            if 0 <= nx < GRID_W and 0 <= ny < GRID_H:
+                valid.append((name, nx, ny))
+                if (nx, ny) not in visited_set:
+                    unvisited.append((name, nx, ny))
 
-        result = move_agent(self.agent_id, target)
-        if result["ok"]:
-            events.append({
-                "source": self.agent_id,
-                "type": "action",
-                "name": "move",
-                "payload": {"from": result["from"], "to": result["to"]},
-            })
+        candidates = unvisited if unvisited else valid
+        direction, tx, ty = random.choice(candidates)
 
-        return events
+        thinking = f"I'm at ({x}, {y}). I'll move {direction} to ({tx}, {ty})."
+        action = {"name": "move", "params": {"direction": direction}}
+
+        return {"thinking": thinking, "action": action}

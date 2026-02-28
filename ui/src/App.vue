@@ -4,8 +4,17 @@ import { ref, reactive, computed, onMounted, onUnmounted } from 'vue'
 const events = ref([])
 const connected = ref(false)
 const worldState = ref(null)
-const roverPositions = reactive({})
 let ws = null
+
+const GRID_SIZE = 20
+const TILE_SIZE = 20
+const MAP_W = GRID_SIZE * TILE_SIZE
+const MAP_H = GRID_SIZE * TILE_SIZE
+
+const STONE_COLORS = {
+  'core': '#b8962a',
+  'basalt': '#666666',
+}
 
 const AGENT_COLORS = {
   'rover-mock': '#6688cc',
@@ -40,29 +49,35 @@ function batteryPct(id) {
 function agentPosition(id) {
   if (!worldState.value) return '?'
   const a = worldState.value.agents[id]
-  return a ? a.position : '?'
+  if (!a) return '?'
+  return `(${a.position[0]}, ${a.position[1]})`
 }
 
-function updateRoverPositions() {
-  if (!worldState.value) return
-  const zones = worldState.value.zones
-  const agents = worldState.value.agents
-  // count agents per zone for offset
-  const zoneCounts = {}
-  for (const [id, a] of Object.entries(agents)) {
-    const z = a.position
-    if (!zoneCounts[z]) zoneCounts[z] = []
-    zoneCounts[z].push(id)
-  }
-  for (const [id, a] of Object.entries(agents)) {
-    const zone = zones[a.position]
-    if (!zone) continue
-    const peers = zoneCounts[a.position]
-    const idx = peers.indexOf(id)
-    const offsetX = (idx - (peers.length - 1) / 2) * 18
-    roverPositions[id] = { x: zone.x + offsetX, y: zone.y + 20 }
-  }
+function roverTransform(id) {
+  if (!worldState.value) return ''
+  const a = worldState.value.agents[id]
+  if (!a) return ''
+  const cx = a.position[0] * TILE_SIZE + TILE_SIZE / 2
+  const cy = a.position[1] * TILE_SIZE + TILE_SIZE / 2
+  return `translate(${cx}, ${cy})`
 }
+
+function formatMoveEvent(payload) {
+  const f = payload.from
+  const t = payload.to
+  return `(${f[0]},${f[1]}) → (${t[0]},${t[1]})`
+}
+
+// Generate tile data for v-for
+const tiles = computed(() => {
+  const arr = []
+  for (let y = 0; y < GRID_SIZE; y++) {
+    for (let x = 0; x < GRID_SIZE; x++) {
+      arr.push({ x, y, key: `${x}-${y}` })
+    }
+  }
+  return arr
+})
 
 function connect() {
   ws = new WebSocket(`ws://${window.location.host}/ws`)
@@ -75,7 +90,6 @@ function connect() {
     const event = JSON.parse(msg.data)
     if (event.source === 'world' && event.name === 'state') {
       worldState.value = event.payload
-      updateRoverPositions()
     } else {
       events.value.unshift(event)
       if (events.value.length > 200) {
@@ -114,49 +128,40 @@ onUnmounted(() => {
 
     <!-- Map + Agent Panes side by side -->
     <div class="top-row">
-      <!-- 2D World Map -->
+      <!-- 2D Grid Map -->
       <section class="world-map">
         <h2>Surface Map</h2>
-        <svg v-if="worldState" viewBox="0 0 800 420" class="map-svg">
-          <!-- background texture dots -->
-          <circle v-for="i in 60" :key="'bg'+i"
-            :cx="(i * 137) % 780 + 10" :cy="(i * 89) % 400 + 10"
-            :r="0.5 + (i % 3) * 0.4" fill="#1a1510" opacity="0.6" />
+        <svg v-if="worldState"
+          :viewBox="`0 0 ${MAP_W} ${MAP_H}`"
+          class="map-svg">
+          <!-- grid tiles -->
+          <rect v-for="t in tiles" :key="t.key"
+            :x="t.x * TILE_SIZE" :y="t.y * TILE_SIZE"
+            :width="TILE_SIZE" :height="TILE_SIZE"
+            class="grid-tile" />
 
-          <!-- paths between zones -->
-          <line v-for="(p, i) in worldState.paths" :key="'path'+i"
-            :x1="worldState.zones[p[0]].x" :y1="worldState.zones[p[0]].y"
-            :x2="worldState.zones[p[1]].x" :y2="worldState.zones[p[1]].y"
-            stroke="#1a1a24" stroke-width="1" stroke-dasharray="4,4" />
-
-          <!-- zones -->
-          <g v-for="(zone, zid) in worldState.zones" :key="zid">
-            <circle :cx="zone.x" :cy="zone.y" r="24"
-              fill="#0e0e16" stroke="#2a2a34" stroke-width="1.5" />
-            <text :x="zone.x" :y="zone.y - 1" text-anchor="middle"
-              dominant-baseline="central" class="zone-label">{{ zid }}</text>
-            <text :x="zone.x" :y="zone.y + 38" text-anchor="middle"
-              class="zone-name">{{ zone.label }}</text>
-          </g>
+          <!-- stones -->
+          <rect v-for="(s, i) in (worldState.stones || [])" :key="'stone-'+i"
+            :x="s.position[0] * TILE_SIZE + TILE_SIZE/2 - 4"
+            :y="s.position[1] * TILE_SIZE + TILE_SIZE/2 - 4"
+            width="8" height="8"
+            :fill="STONE_COLORS[s.type] || '#666'"
+            opacity="0.85"
+            :transform="`rotate(45, ${s.position[0] * TILE_SIZE + TILE_SIZE/2}, ${s.position[1] * TILE_SIZE + TILE_SIZE/2})`" />
 
           <!-- rover dots -->
-          <g v-for="id in agentIds" :key="'rover-'+id">
-            <circle v-if="roverPositions[id]"
-              :cx="roverPositions[id].x" :cy="roverPositions[id].y"
-              r="7" :fill="agentColor(id)" opacity="0.9">
+          <g v-for="id in agentIds" :key="'rover-'+id"
+            :transform="roverTransform(id)" class="rover-group">
+            <circle r="7" :fill="agentColor(id)" opacity="0.9">
               <animate attributeName="r" values="7;8;7" dur="2s" repeatCount="indefinite" />
             </circle>
             <!-- glow -->
-            <circle v-if="roverPositions[id]"
-              :cx="roverPositions[id].x" :cy="roverPositions[id].y"
-              r="12" fill="none" :stroke="agentColor(id)" stroke-width="1" opacity="0.25">
+            <circle r="12" fill="none" :stroke="agentColor(id)" stroke-width="1" opacity="0.25">
               <animate attributeName="r" values="12;16;12" dur="2s" repeatCount="indefinite" />
               <animate attributeName="opacity" values="0.25;0.08;0.25" dur="2s" repeatCount="indefinite" />
             </circle>
             <!-- label -->
-            <text v-if="roverPositions[id]"
-              :x="roverPositions[id].x" :y="roverPositions[id].y + 18"
-              text-anchor="middle" :fill="agentColor(id)" class="rover-label">{{ id }}</text>
+            <text y="18" text-anchor="middle" :fill="agentColor(id)" class="rover-label">{{ id }}</text>
           </g>
         </svg>
         <div v-else class="empty">Waiting for world state...</div>
@@ -179,7 +184,7 @@ onUnmounted(() => {
               <span class="ae-type" :class="e.type">{{ e.type }}</span>
               <span class="ae-name">{{ e.name }}</span>
               <span v-if="e.name === 'thinking'" class="ae-text">{{ e.payload.text }}</span>
-              <span v-else-if="e.name === 'move'" class="ae-text">{{ e.payload.from }} → {{ e.payload.to }}</span>
+              <span v-else-if="e.name === 'move'" class="ae-text">{{ formatMoveEvent(e.payload) }}</span>
               <span v-else-if="e.payload" class="ae-text">{{ JSON.stringify(e.payload) }}</span>
             </div>
           </div>
@@ -287,22 +292,19 @@ h2 {
   display: block;
 }
 
-.zone-label {
-  font-family: 'Courier New', monospace;
-  font-size: 11px;
-  fill: #667;
-  font-weight: bold;
+.grid-tile {
+  fill: #0e0e16;
+  stroke: #1a1a24;
+  stroke-width: 0.5;
 }
 
-.zone-name {
-  font-family: 'Courier New', monospace;
-  font-size: 8px;
-  fill: #334;
+.rover-group {
+  transition: transform 0.4s ease;
 }
 
 .rover-label {
   font-family: 'Courier New', monospace;
-  font-size: 8px;
+  font-size: 6px;
 }
 
 /* ── Agent Panes ── */
@@ -316,11 +318,10 @@ h2 {
 }
 
 .agent-pane {
-  flex: 1;
   border: 1px solid #1a1a24;
   border-radius: 4px;
   background: #0c0c14;
-  min-height: 0;
+  height: 200px;
   display: flex;
   flex-direction: column;
   overflow: hidden;

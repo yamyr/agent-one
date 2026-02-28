@@ -4,22 +4,24 @@ Mars Mission — Multi-Agent LLM Simulation (Mistral Hackathon)
 
 ## Milestone 0: Scaffold (pre-hackathon)
 
-- [ ] Init repo, venv, project structure
+- [x] Init repo, venv, project structure
 - [ ] Copy/adapt protocol types from Snowball (subset only)
 - [ ] Copy/adapt BaseAgent class (tool framework, streaming, emit helpers)
-- [ ] Decide UI approach (terminal with textual/rich? web? both?)
+- [x] Decide UI approach (terminal with textual/rich? web? both?) → web (Vue 3 + Vite)
 
 ## Milestone 1: Coordinator + Rover (first end-to-end)
 
 **Goal:** send a mission, one agent reasons and acts, world updates.
 
-- [ ] World model: Python dict with zones, rocks, agents, goals, storm level
-- [ ] Coordinator: spawn agent subprocess, read/write JSON stdio
-- [ ] Coordinator: inject world state slice into agent prompts
-- [ ] Coordinator: handle tool calls that mutate world state
-- [ ] Rover agent: subclass BaseAgent, Mars system prompt
-- [ ] Rover tools: `move_to(zone)`, `drill_sample(rock_id)`, `check_battery()`
-- [ ] Test: send "begin mission" -> rover reasons -> executes tool -> world updates
+- [x] World model: Python dict with grid, agents, stones (was: zones, rocks, goals, storm level)
+- [ ] Coordinator: spawn agent subprocess, read/write JSON stdio (using async agent_loop instead)
+- [x] Coordinator: inject world state slice into agent prompts
+- [x] Coordinator: handle tool calls that mutate world state (`execute_action`)
+- [x] Rover agent: RoverAgent (Mistral LLM) + MockRoverAgent (random)
+- [x] Rover tools: `move` (cardinal directions), `check_ground` (auto after move)
+- [x] Rover memory: visited positions tracked, agents prefer unvisited tiles
+- [ ] Rover tools: `drill_sample(rock_id)`
+- [x] Test: agent reasons -> executes tool -> world updates -> broadcast events
 
 **Done when:** you can chat with the rover and watch it move + drill in the world dict.
 
@@ -82,10 +84,11 @@ Mars Mission — Multi-Agent LLM Simulation (Mistral Hackathon)
 
 ## Stretch: Visual UI
 
-- [ ] Web UI with zone map
-- [ ] Agent positions on map, animated movement
+- [x] Web UI with grid map (Vue 3 + Vite, proxied to FastAPI)
+- [x] Agent positions on map, animated movement (SVG with pulsing dots)
+- [x] Stone markers on map (diamond shapes, colored by type)
 - [ ] Goal confidence bars
-- [ ] Event log timeline
+- [x] Event log timeline (per-agent panes + global event log)
 
 ## Dependencies
 
