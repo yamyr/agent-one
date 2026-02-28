@@ -4,13 +4,7 @@ import copy
 import logging
 import random
 
-from .config import settings
-
 logger = logging.getLogger(__name__)
-
-if settings.world_seed:
-    random.seed(settings.world_seed)
-    logger.info("World seed: %s", settings.world_seed)
 
 GRID_W, GRID_H = 20, 20
 
@@ -80,89 +74,70 @@ def _init_revealed(cx, cy):
 
 
 def _expand_revealed(agent, cx, cy):
-    """Add newly visible cells around (cx, cy) to the agent's revealed list.
-
-    Also discovers any stones on newly revealed tiles.
-    """
+    """Add newly visible cells around (cx, cy) to the agent's revealed list."""
     current = {tuple(c) for c in agent.get("revealed", [])}
-    new_cells = set()
     for cell in _cells_in_radius(cx, cy, REVEAL_RADIUS):
         if cell not in current:
             agent.setdefault("revealed", []).append(list(cell))
-            new_cells.add(cell)
-    # Discover stones on newly revealed tiles
-    if new_cells:
-        known = {tuple(s) for s in agent.get("discovered_stones", [])}
-        for stone in WORLD.get("stones", []):
-            sp = tuple(stone["position"])
-            if sp in new_cells and sp not in known:
-                agent.setdefault("discovered_stones", []).append(list(stone["position"]))
 
 
-ROVER_TOOL_DEFS = [
-    {
-        "name": "move",
-        "description": "Move 1-3 tiles in a cardinal direction (north/south/east/west). Costs 2% battery per tile. Ground is auto-scanned after each move.",
-    },
-    {
-        "name": "dig",
-        "description": "Dig at current tile to extract a stone (costs 3x move battery).",
-    },
-    {"name": "pickup", "description": "Pick up an extracted stone at current tile into inventory."},
-]
-
-
-def _make_rover(start_x, start_y):
-    return {
-        "position": [start_x, start_y],
-        "battery": 1.0,
-        "mission": {"objective": "Explore the terrain", "plan": []},
-        "visited": [[start_x, start_y]],
-        "revealed": _init_revealed(start_x, start_y),
-        "inventory": [],
-        "memory": [],
-        "tasks": [],
-        "discovered_stones": [],
-        "type": "rover",
-        "tools": list(ROVER_TOOL_DEFS),
-    }
-
-
-def _build_initial_world():
-    if settings.world_seed:
-        random.seed(settings.world_seed)
-    return {
-        "grid": {"w": GRID_W, "h": GRID_H},
-        "agents": {
-            "station": {
-                "position": [0, 0],
-                "type": "station",
-                "battery": 1.0,
-                "mission": {"objective": "Coordinate Mars mission", "plan": []},
-                "visited": [[0, 0]],
-            },
-            "randy-rover": _make_rover(2, 10),
-            "rover-mistral": _make_rover(2, 12),
+WORLD = {
+    "grid": {"w": GRID_W, "h": GRID_H},
+    "agents": {
+        "station": {
+            "position": [0, 0],
+            "type": "station",
+            "battery": 1.0,
+            "mission": {"objective": "Coordinate Mars mission", "plan": []},
+            "visited": [[0, 0]],
         },
-        "stones": _generate_stones(),
-        "mission": {
-            "status": "running",
-            "target_type": TARGET_STONE_TYPE,
-            "target_count": TARGET_STONE_COUNT,
-            "collected_count": 0,
+        "rover-mock": {
+            "position": [2, 10],
+            "battery": 1.0,
+            "mission": {"objective": "Explore the terrain", "plan": []},
+            "visited": [[2, 10]],
+            "revealed": _init_revealed(2, 10),
+            "inventory": [],
+            "memory": [],
+            "tasks": [],
+            "type": "rover",
+            "tools": [
+                {
+                    "name": "move",
+                    "description": "Move 1-3 tiles in a cardinal direction (north/south/east/west). Costs 2% battery per tile. Ground is auto-scanned after each move.",
+                },
+                {"name": "dig", "description": "Dig at current tile to extract a stone (costs 3x move battery)."},
+                {"name": "pickup", "description": "Pick up an extracted stone at current tile into inventory."},
+            ],
         },
-    }
-
-
-WORLD = _build_initial_world()
-
-
-def reset_world():
-    """Reset WORLD to initial state. Re-seeds RNG if world_seed is set."""
-    fresh = _build_initial_world()
-    WORLD.clear()
-    WORLD.update(fresh)
-    logger.info("World reset")
+        "rover-mistral": {
+            "position": [2, 12],
+            "battery": 1.0,
+            "mission": {"objective": "Explore the terrain", "plan": []},
+            "visited": [[2, 12]],
+            "revealed": _init_revealed(2, 12),
+            "inventory": [],
+            "memory": [],
+            "tasks": [],
+            "type": "rover",
+            "tools": [
+                {
+                    "name": "move",
+                    "description": "Move 1-3 tiles in a cardinal direction (north/south/east/west). Costs 2% battery per tile. Ground is auto-scanned after each move.",
+                },
+                {"name": "dig", "description": "Dig at current tile to extract a stone (costs 3x move battery)."},
+                {"name": "pickup", "description": "Pick up an extracted stone at current tile into inventory."},
+            ],
+        },
+    },
+    "stones": _generate_stones(),
+    "mission": {
+        "status": "running",
+        "target_type": TARGET_STONE_TYPE,
+        "target_count": TARGET_STONE_COUNT,
+        "collected_count": 0,
+    },
+}
 
 
 def check_ground(agent_id):
@@ -228,28 +203,17 @@ def execute_action(agent_id, action_name, params):
             result["ground"] = check_ground(agent_id)
             ground = result["ground"]
             if ground["stone"]:
-                record_memory(
-                    agent_id,
-                    f"Moved {direction} {distance} to ({tx},{ty}), found {ground['stone']['type']} stone",
-                )
+                record_memory(agent_id, f"Moved {direction} {distance} to ({tx},{ty}), found {ground['stone']['type']} stone")
             else:
-                record_memory(
-                    agent_id, f"Moved {direction} {distance} to ({tx},{ty}), empty ground"
-                )
+                record_memory(agent_id, f"Moved {direction} {distance} to ({tx},{ty}), empty ground")
     elif action_name == "dig":
         result = _execute_dig(agent_id, agent)
         if result["ok"]:
-            record_memory(
-                agent_id,
-                f"Dug out {result['stone']['type']} stone at ({result['position'][0]},{result['position'][1]})",
-            )
+            record_memory(agent_id, f"Dug out {result['stone']['type']} stone at ({result['position'][0]},{result['position'][1]})")
     elif action_name == "pickup":
         result = _execute_pickup(agent_id, agent)
         if result["ok"]:
-            record_memory(
-                agent_id,
-                f"Picked up {result['stone']['type']} stone at ({result['position'][0]},{result['position'][1]}), inventory={result['inventory_count']}",
-            )
+            record_memory(agent_id, f"Picked up {result['stone']['type']} stone at ({result['position'][0]},{result['position'][1]}), inventory={result['inventory_count']}")
     else:
         return {"ok": False, "error": f"Unknown action: {action_name}"}
 
@@ -329,9 +293,7 @@ def _execute_charge(agent_id, agent):
 
     old_battery = agent["battery"]
     agent["battery"] = min(1.0, agent["battery"] + CHARGE_RATE)
-    logger.info(
-        "Agent %s charged %.0f%% -> %.0f%%", agent_id, old_battery * 100, agent["battery"] * 100
-    )
+    logger.info("Agent %s charged %.0f%% -> %.0f%%", agent_id, old_battery * 100, agent["battery"] * 100)
     return {"ok": True, "battery_before": old_battery, "battery_after": agent["battery"]}
 
 
@@ -344,10 +306,7 @@ def charge_rover(rover_id):
         return {"ok": False, "error": f"{rover_id} is not a rover"}
     result = _execute_charge(rover_id, agent)
     if result["ok"]:
-        record_memory(
-            rover_id,
-            f"Station charged battery {result['battery_before']:.0%} -> {result['battery_after']:.0%}",
-        )
+        record_memory(rover_id, f"Station charged battery {result['battery_before']:.0%} -> {result['battery_after']:.0%}")
     return result
 
 
@@ -378,12 +337,8 @@ def check_mission_status():
     # Success: enough target stones delivered to station
     if delivered >= mission["target_count"]:
         mission["status"] = "success"
-        logger.info(
-            "Mission SUCCESS: delivered %d/%d %s stones to station",
-            delivered,
-            mission["target_count"],
-            mission["target_type"],
-        )
+        logger.info("Mission SUCCESS: delivered %d/%d %s stones to station",
+                     delivered, mission["target_count"], mission["target_type"])
         return {"status": "success", "collected": collected, "delivered": delivered}
 
     # Failure: all rovers have zero battery and none are at the station
@@ -439,6 +394,7 @@ def update_tasks(agent_id):
     mission = WORLD["mission"]
     target_type = mission["target_type"]
     inventory = agent.get("inventory", [])
+    revealed_set = {tuple(c) for c in agent.get("revealed", [])}
     tasks = []
 
     # Already collected target stone → return to station
@@ -463,12 +419,11 @@ def update_tasks(agent_id):
         agent["tasks"] = tasks
         return
 
-    # Discovered stones → navigate to nearest target type first
-    discovered_set = {tuple(s) for s in agent.get("discovered_stones", [])}
+    # Known stones on revealed tiles → navigate to nearest target type first
     known_stones = []
     for stone in WORLD.get("stones", []):
         sp = tuple(stone["position"])
-        if sp in discovered_set:
+        if sp in revealed_set:
             dist = abs(sp[0] - x) + abs(sp[1] - y)
             known_stones.append((dist, stone))
     known_stones.sort(key=lambda t: t[0])

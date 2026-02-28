@@ -14,7 +14,7 @@ from .config import settings
 from .db import init_db, close_db
 from .station import StationAgent
 from .views import router as views_router
-from .world import execute_action, get_snapshot, reset_world, WORLD, charge_rover
+from .world import execute_action, get_snapshot, WORLD, charge_rover
 
 logging.basicConfig(
     level=logging.INFO,
@@ -28,7 +28,6 @@ logger = logging.getLogger(__name__)
 
 station = StationAgent()
 simulation_paused = False
-_agent_tasks = []
 
 
 async def _trigger_station(event):
@@ -153,11 +152,11 @@ async def agent_loop(agent, interval):
         await asyncio.sleep(interval)
 
 
-async def _start_simulation():
-    """Start station mission definition and agent loops."""
-    global simulation_paused
-    simulation_paused = False
+@asynccontextmanager
+async def lifespan(app):
+    init_db()
 
+    # Station defines initial missions at startup
     try:
         station_events = await asyncio.to_thread(station.define_mission)
         for event in station_events:
@@ -173,30 +172,17 @@ async def _start_simulation():
     except Exception:
         logger.exception("Station startup failed")
 
-    _agent_tasks.clear()
-    _agent_tasks.append(asyncio.create_task(agent_loop(MockRoverAgent(), interval=2)))
-    _agent_tasks.append(asyncio.create_task(agent_loop(RoverAgent(), interval=2)))
-
-
-def _stop_simulation():
-    """Cancel all running agent loops."""
-    for task in _agent_tasks:
-        task.cancel()
-    _agent_tasks.clear()
-
-
-@asynccontextmanager
-async def lifespan(app):
-    init_db()
-    await _start_simulation()
+    mock_task = asyncio.create_task(agent_loop(MockRoverAgent(), interval=2))
+    mistral_task = asyncio.create_task(agent_loop(RoverAgent(), interval=2))
     yield
-    _stop_simulation()
+    mock_task.cancel()
+    mistral_task.cancel()
     close_db()
 
 
 app = FastAPI(
     title="Mars Mission API",
-    version="0.1.0",  # x-release-please-version
+    version="0.1.0",
     lifespan=lifespan,
 )
 
@@ -233,14 +219,6 @@ def resume_simulation():
 @app.get("/simulation/status")
 def simulation_status():
     return {"paused": simulation_paused}
-
-
-@app.post("/simulation/reset")
-async def reset_simulation():
-    _stop_simulation()
-    reset_world()
-    await _start_simulation()
-    return {"reset": True}
 
 
 # Serve Vue static files (must be after all API routes)

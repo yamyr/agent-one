@@ -7,15 +7,7 @@ import random
 from mistralai import Mistral
 
 from .config import settings
-from .world import (
-    WORLD,
-    GRID_W,
-    GRID_H,
-    DIRECTIONS,
-    MAX_MOVE_DISTANCE,
-    check_ground,
-    _direction_hint,
-)
+from .world import WORLD, GRID_W, GRID_H, DIRECTIONS, MAX_MOVE_DISTANCE, check_ground, _direction_hint
 
 logger = logging.getLogger(__name__)
 
@@ -68,7 +60,7 @@ ROVER_TOOLS = [MOVE_TOOL, DIG_TOOL, PICKUP_TOOL]
 class RoverAgent:
     """Rover agent that reasons via Mistral. Returns action dict, does not execute."""
 
-    def __init__(self, agent_id="rover-mistral", model="magistral-medium-latest"):
+    def __init__(self, agent_id="rover-mistral", model="mistral-small-latest"):
         self.agent_id = agent_id
         self.model = model
         self._client = None
@@ -184,9 +176,7 @@ class RoverAgent:
                 dist = abs(sp[0] - x) + abs(sp[1] - y)
                 status = "extracted" if stone.get("extracted") else "buried"
                 hint = _direction_hint(sp[0] - x, sp[1] - y)
-                visible_stones.append(
-                    f"{stone['type']} ({status}) at ({sp[0]},{sp[1]}) — {hint}, {dist} tiles"
-                )
+                visible_stones.append(f"{stone['type']} ({status}) at ({sp[0]},{sp[1]}) — {hint}, {dist} tiles")
 
         # Environment
         parts.append(
@@ -252,7 +242,7 @@ class RoverAgent:
 class MockRoverAgent:
     """Mock rover that explores, collects stones, and returns to station — no LLM calls."""
 
-    def __init__(self, agent_id="randy-rover"):
+    def __init__(self, agent_id="rover-mock"):
         self.agent_id = agent_id
 
     def run_turn(self):
@@ -264,7 +254,7 @@ class MockRoverAgent:
         context = (
             f"Mock rover at ({x},{y}), battery={agent['battery']:.0%}, "
             f"visited={len(agent.get('visited', []))}, "
-            f'mission="{agent["mission"]["objective"]}"'
+            f"mission=\"{agent['mission']['objective']}\""
         )
         agent["last_context"] = context
 
@@ -295,13 +285,7 @@ class MockRoverAgent:
                 direction = "north"
                 distance = 1
             thinking = f"I'm at ({x}, {y}). Carrying target stone, heading to station at ({sp[0]},{sp[1]})."
-            return {
-                "thinking": thinking,
-                "action": {
-                    "name": "move",
-                    "params": {"direction": direction, "distance": distance},
-                },
-            }
+            return {"thinking": thinking, "action": {"name": "move", "params": {"direction": direction, "distance": distance}}}
 
         # Default: explore unvisited tiles
         visited_set = {tuple(p) for p in agent.get("visited", [])}

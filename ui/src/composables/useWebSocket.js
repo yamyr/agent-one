@@ -1,6 +1,6 @@
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 
-export function useWebSocket({ onConnect } = {}) {
+export function useWebSocket() {
   const events = ref([])
   const connected = ref(false)
   const worldState = ref(null)
@@ -27,9 +27,6 @@ export function useWebSocket({ onConnect } = {}) {
 
     ws.onopen = () => {
       connected.value = true
-      events.value = []
-      worldState.value = null
-      if (onConnect) onConnect()
     }
 
     ws.onmessage = (msg) => {

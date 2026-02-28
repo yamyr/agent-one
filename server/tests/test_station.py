@@ -34,7 +34,7 @@ class TestStationDefine(unittest.TestCase):
 
         tool_calls = [
             _mock_tool_call(
-                "assign_mission", {"agent_id": "randy-rover", "objective": "Explore north sector"}
+                "assign_mission", {"agent_id": "rover-mock", "objective": "Explore north sector"}
             ),
         ]
         mock_client.chat.complete.return_value = _mock_client_response(
@@ -48,7 +48,7 @@ class TestStationDefine(unittest.TestCase):
         self.assertEqual(events[0]["name"], "thinking")
         self.assertEqual(events[0]["source"], "station")
         self.assertEqual(events[1]["name"], "assign_mission")
-        self.assertEqual(events[1]["payload"]["agent_id"], "randy-rover")
+        self.assertEqual(events[1]["payload"]["agent_id"], "rover-mock")
         self.assertEqual(events[1]["payload"]["objective"], "Explore north sector")
 
     @patch("app.station.settings")
@@ -93,7 +93,7 @@ class TestStationHandleEvent(unittest.TestCase):
         )
 
         event = {
-            "source": "randy-rover",
+            "source": "rover-mock",
             "type": "event",
             "name": "check",
             "payload": {"stone": {"type": "basalt"}},
@@ -108,21 +108,21 @@ class TestStationHandleEvent(unittest.TestCase):
 
 class TestExecuteToolCalls(unittest.TestCase):
     def setUp(self):
-        self._orig_mission = WORLD["agents"]["randy-rover"]["mission"].copy()
+        self._orig_mission = WORLD["agents"]["rover-mock"]["mission"].copy()
 
     def tearDown(self):
-        WORLD["agents"]["randy-rover"]["mission"] = self._orig_mission
+        WORLD["agents"]["rover-mock"]["mission"] = self._orig_mission
 
     def test_assign_mission_tool_call(self):
         tool_calls = [
-            _mock_tool_call("assign_mission", {"agent_id": "randy-rover", "objective": "Go north"})
+            _mock_tool_call("assign_mission", {"agent_id": "rover-mock", "objective": "Go north"})
         ]
         events = _execute_tool_calls(tool_calls)
 
         self.assertEqual(len(events), 1)
         self.assertEqual(events[0]["name"], "assign_mission")
         self.assertTrue(events[0]["payload"]["ok"])
-        self.assertEqual(WORLD["agents"]["randy-rover"]["mission"]["objective"], "Go north")
+        self.assertEqual(WORLD["agents"]["rover-mock"]["mission"]["objective"], "Go north")
 
     def test_broadcast_alert_tool_call(self):
         tool_calls = [_mock_tool_call("broadcast_alert", {"message": "Storm incoming"})]
@@ -136,7 +136,7 @@ class TestExecuteToolCalls(unittest.TestCase):
 class TestBuildWorldSummary(unittest.TestCase):
     def test_summary_contains_rovers(self):
         summary = _build_world_summary()
-        self.assertIn("randy-rover", summary)
+        self.assertIn("rover-mock", summary)
         self.assertIn("rover-mistral", summary)
 
     def test_summary_excludes_station(self):

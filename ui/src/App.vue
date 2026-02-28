@@ -8,15 +8,10 @@ import MissionBar from './components/MissionBar.vue'
 import EventLog from './components/EventLog.vue'
 import AgentDetailModal from './components/AgentDetailModal.vue'
 
+const { events, connected, worldState, agentIds, agentEvents } = useWebSocket()
+
 const selectedAgent = ref(null)
 const paused = ref(false)
-
-function onWsConnect() {
-  paused.value = false
-  fetch('/api/simulation/reset', { method: 'POST' })
-}
-
-const { events, connected, worldState, agentIds, agentEvents } = useWebSocket({ onConnect: onWsConnect })
 
 async function togglePause() {
   const endpoint = paused.value ? '/api/simulation/resume' : '/api/simulation/pause'

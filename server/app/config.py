@@ -24,8 +24,5 @@ class Settings(BaseSettings):
     # Mistral
     mistral_api_key: str = ""
 
-    # World generation seed (empty = random)
-    world_seed: str = ""
-
 
 settings = Settings()
