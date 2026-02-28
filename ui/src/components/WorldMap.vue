@@ -250,6 +250,46 @@ function onMouseUp() {
   dragging.value = false
 }
 
+// Agent trail data: last N visited positions per mobile agent
+const TRAIL_LENGTH = 20
+
+const agentTrails = computed(() => {
+  if (!props.worldState) return []
+  const trails = []
+  for (const id of props.agentIds) {
+    const a = props.worldState.agents[id]
+    if (!a || a.type === 'station') continue
+    const visited = a.visited || []
+    if (visited.length < 2) continue
+    // Take last TRAIL_LENGTH positions (most recent at end)
+    const recent = visited.slice(-TRAIL_LENGTH)
+    trails.push({ id, positions: recent, color: agentColor(id) })
+  }
+  return trails
+})
+
+function trailSegments(trail) {
+  const segs = []
+  const positions = trail.positions
+  const total = positions.length
+  for (let i = 0; i < total - 1; i++) {
+    const from = worldToScreen(positions[i][0], positions[i][1])
+    const to = worldToScreen(positions[i + 1][0], positions[i + 1][1])
+    // Opacity fades: oldest = 0.05, newest = 0.4
+    const t = i / (total - 1)
+    const opacity = 0.05 + t * 0.35
+    segs.push({
+      key: `${trail.id}-${i}`,
+      x1: from.sx,
+      y1: from.sy,
+      x2: to.sx,
+      y2: to.sy,
+      opacity,
+    })
+  }
+  return segs
+}
+
 function panCamera(dx, dy) {
   targetCamX.value += dx
   targetCamY.value += dy
@@ -364,6 +404,25 @@ defineExpose({ camX, camY, panCamera })
             stroke-width="0.5"
           />
         </g>
+      </template>
+
+      <!-- agent movement trails -->
+      <template
+        v-for="trail in agentTrails"
+        :key="'trail-'+trail.id"
+      >
+        <line
+          v-for="seg in trailSegments(trail)"
+          :key="seg.key"
+          :x1="seg.x1"
+          :y1="seg.y1"
+          :x2="seg.x2"
+          :y2="seg.y2"
+          :stroke="trail.color"
+          :stroke-opacity="seg.opacity"
+          stroke-width="1.5"
+          stroke-linecap="round"
+        />
       </template>
 
       <!-- station markers (square) -->
