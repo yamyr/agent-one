@@ -1,6 +1,6 @@
 <script setup>
 import { computed, ref, watch, onMounted, onUnmounted } from 'vue'
-import { TILE_SIZE, VIEWPORT_W, VIEWPORT_H, VEIN_COLORS, VEIN_SIZES, SOLAR_PANEL_COLOR, SOLAR_PANEL_DEPLETED_COLOR, agentColor, revealRadius } from '../constants.js'
+import { TILE_SIZE, VIEWPORT_W, VIEWPORT_H, VEIN_COLORS, VEIN_SIZES, SOLAR_PANEL_COLOR, SOLAR_PANEL_DEPLETED_COLOR, STRUCTURE_COLORS, STRUCTURE_LABELS, agentColor, revealRadius } from '../constants.js'
 import { usePreferences } from '../composables/usePreferences.js'
 
 const props = defineProps({
@@ -370,6 +370,36 @@ function panelTooltip(p) {
   return `Solar Panel ${p.depleted ? '(depleted)' : '(active)'}\nPosition: ${pos}`
 }
 
+function isStructureVisible(s) {
+  const [wx, wy] = s.position
+  return wx >= camX.value && wx < camX.value + visibleW.value &&
+         wy >= camY.value && wy < camY.value + visibleH.value
+}
+
+function structureScreenX(s) {
+  return (s.position[0] - camX.value) * TILE_SIZE + 2
+}
+
+function structureScreenY(s) {
+  return (visibleH.value - 1 - (s.position[1] - camY.value)) * TILE_SIZE + 2
+}
+
+function structureTooltip(s) {
+  const label = STRUCTURE_LABELS[s.type] || s.type
+  const status = s.explored ? 'Explored' : 'Unexplored'
+  const pos = `(${s.position[0]}, ${s.position[1]})`
+  return `${label} (${status})\nPosition: ${pos}`
+}
+
+function structureColor(s) {
+  const base = STRUCTURE_COLORS[s.type] || '#888888'
+  return base
+}
+
+function structureOpacity(s) {
+  return s.explored ? 0.85 : 0.45
+}
+
 function roverInventory(id) {
   if (!props.worldState) return []
   const a = props.worldState.agents[id]
@@ -560,6 +590,52 @@ defineExpose({ camX, camY, visibleW, visibleH, panCamera, navigateTo })
         >
           <title>{{ stoneTooltip(s) }}</title>
         </rect>
+      </template>
+
+      <!-- abandoned structures -->
+      <template
+        v-for="(s, i) in (worldState.structures || [])"
+        :key="'struct-'+i"
+      >
+        <g v-if="isStructureVisible(s)">
+          <title>{{ structureTooltip(s) }}</title>
+          <!-- Buildings: sharp rectangles -->
+          <rect
+            v-if="s.category === 'building'"
+            :x="structureScreenX(s)"
+            :y="structureScreenY(s)"
+            :width="TILE_SIZE - 4"
+            :height="TILE_SIZE - 4"
+            :fill="structureColor(s)"
+            :opacity="structureOpacity(s)"
+            rx="1"
+            stroke="rgba(255,255,255,0.3)"
+            stroke-width="0.5"
+          />
+          <!-- Vehicles: rounded shapes -->
+          <rect
+            v-else
+            :x="structureScreenX(s)"
+            :y="structureScreenY(s)"
+            :width="TILE_SIZE - 4"
+            :height="TILE_SIZE - 4"
+            :fill="structureColor(s)"
+            :opacity="structureOpacity(s)"
+            rx="4"
+            stroke="rgba(255,255,255,0.2)"
+            stroke-width="0.5"
+          />
+          <!-- Unexplored indicator: ? mark -->
+          <text
+            v-if="!s.explored"
+            :x="structureScreenX(s) + (TILE_SIZE - 4) / 2"
+            :y="structureScreenY(s) + (TILE_SIZE - 4) / 2 + 3"
+            text-anchor="middle"
+            fill="rgba(255,255,255,0.6)"
+            font-size="8"
+            font-family="monospace"
+          >?</text>
+        </g>
       </template>
 
       <!-- solar panels -->

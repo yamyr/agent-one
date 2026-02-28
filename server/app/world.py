@@ -7,7 +7,7 @@ import random
 
 from .config import settings
 from .models import RoverAgentState, RoverWorldView, RoverComputed, RoverContext
-from .models import AgentMission, InventoryItem, StoneInfo
+from .models import AgentMission, InventoryItem, StoneInfo, StructureInfo
 from .models import RoverSummary, StationContext
 
 logger = logging.getLogger(__name__)
@@ -84,6 +84,42 @@ MAX_SOLAR_PANELS = 2
 STONE_PROBABILITY = 0.015
 CORE_PROBABILITY = 0.3
 
+# --- Abandoned structures ---
+STRUCTURE_TYPES = [
+    {
+        "type": "refinery",
+        "category": "building",
+        "description": "An abandoned refinery capable of extracting valuable materials from basalt",
+        "contents": {"processing_capacity": 50},
+    },
+    {
+        "type": "solar_panel_structure",
+        "category": "building",
+        "description": "A large solar panel array that provides passive charging to nearby rovers",
+        "contents": {"charge_rate": 0.01, "charge_interval": 2, "charge_radius": 1},
+    },
+    {
+        "type": "accumulator",
+        "category": "building",
+        "description": "A power accumulator that increases base capacity and recharges nearby rovers",
+        "contents": {"capacity_bonus": 0.20, "recharge_rate": 0.01, "recharge_interval": 5},
+    },
+    {
+        "type": "broken_hauler",
+        "category": "vehicle",
+        "description": "A broken vehicle hauler once used to transport materials across the surface",
+        "contents": {"salvageable_parts": ["wheels", "chassis"]},
+    },
+    {
+        "type": "broken_manipulator",
+        "category": "vehicle",
+        "description": "A broken construction manipulator used to build buildings and infrastructure",
+        "contents": {"salvageable_parts": ["arm", "actuator", "controller"]},
+    },
+]
+STRUCTURE_SPAWN_RADIUS = 10  # max Manhattan distance from base (0,0)
+BATTERY_COST_INVESTIGATE = 2 / FUEL_CAPACITY_ROVER  # 2 fuel units
+BATTERY_COST_USE_REFINERY = 5 / FUEL_CAPACITY_ROVER  # 5 fuel units
 
 def _random_free_pos(occupied, rng=None, cx=0, cy=0):
     """Pick a random position within a chunk area not in `occupied`."""
@@ -95,6 +131,56 @@ def _random_free_pos(occupied, rng=None, cx=0, cy=0):
         if (x, y) not in occupied:
             return x, y
 
+
+def _spawn_abandoned_structures(rng=None):
+    """Spawn one of each structure type within STRUCTURE_SPAWN_RADIUS of base (0,0).
+
+    Uses deterministic RNG so the same world_seed always produces the same layout.
+    Avoids (0,0) (station), existing stones, and previously placed structures.
+    """
+    r = rng or random
+    occupied = set(AGENT_STARTS)  # block station tile
+    # Collect existing stone positions to avoid overlap
+    for s in WORLD.get("stones", []):
+        occupied.add(tuple(s["position"]))
+
+    structures = []
+    for template in STRUCTURE_TYPES:
+        # Find a free position within spawn radius
+        for _ in range(200):  # safety limit
+            x = r.randint(-STRUCTURE_SPAWN_RADIUS, STRUCTURE_SPAWN_RADIUS)
+            y = r.randint(-STRUCTURE_SPAWN_RADIUS, STRUCTURE_SPAWN_RADIUS)
+            if abs(x) + abs(y) > STRUCTURE_SPAWN_RADIUS:
+                continue
+            if (x, y) in occupied:
+                continue
+            occupied.add((x, y))
+            structures.append({
+                "type": template["type"],
+                "category": template["category"],
+                "position": [x, y],
+                "explored": False,
+                "active": False,
+                "description": template["description"],
+                "contents": dict(template["contents"]),
+            })
+            break
+    WORLD.setdefault("structures", []).extend(structures)
+    logger.info("Spawned %d abandoned structures within %d tiles of base", len(structures), STRUCTURE_SPAWN_RADIUS)
+    return structures
+
+
+def _find_structure_at(x, y):
+    """Find a structure at the given position, or None."""
+    for s in WORLD.get("structures", []):
+        if s["position"] == [x, y]:
+            return s
+    return None
+
+
+def _get_structure_positions():
+    """Return set of (x, y) tuples for all structure positions."""
+    return {tuple(s["position"]) for s in WORLD.get("structures", [])}
 
 # --------------- Chunk-based procedural generation ---------------
 
@@ -320,6 +406,7 @@ def _build_initial_world():
         "chunks": {},
         "solar_panels": [],
         "drone_scans": [],
+        "structures": [],
         "tick": 0,
         "bounds": {"min_x": -3, "max_x": 3, "min_y": -3, "max_y": 3},
         "mission": {
@@ -338,7 +425,8 @@ def _init_world_chunks():
     for cx in range(-1, 2):
         for cy in range(-1, 2):
             _ensure_chunk(cx, cy)
-
+    # Spawn abandoned structures near base after chunks exist
+    _spawn_abandoned_structures()
 
 WORLD = _build_initial_world()
 _init_world_chunks()
@@ -381,6 +469,9 @@ class World:
     def get_drone_scans(self) -> list:
         return self._state.get("drone_scans", [])
 
+    def get_structures(self) -> list:
+        return self._state.get("structures", [])
+
     def get_tick(self) -> int:
         return self._state["tick"]
 
@@ -414,6 +505,7 @@ def reset_world():
 def next_tick():
     """Increment and return the current tick number."""
     WORLD["tick"] += 1
+    apply_structure_passive_effects()
     return WORLD["tick"]
 
 
@@ -452,6 +544,17 @@ def move_agent(agent_id, x, y):
         return {"ok": False, "error": f"Too far: {dist} tiles (max {max_dist})"}
     if dx != 0 and dy != 0:
         return {"ok": False, "error": f"Not a straight line: ({ox}, {oy}) -> ({x}, {y})"}
+
+    # Check for obstacles (structures) along the movement path
+    structure_positions = _get_structure_positions()
+    step_dx = (1 if dx > 0 else -1) if dx != 0 else 0
+    step_dy = (1 if dy > 0 else -1) if dy != 0 else 0
+    for step in range(1, dist + 1):
+        check_x, check_y = ox + step_dx * step, oy + step_dy * step
+        if (check_x, check_y) in structure_positions:
+            struct = _find_structure_at(check_x, check_y)
+            label = struct["type"].replace("_", " ") if struct else "structure"
+            return {"ok": False, "error": f"Path blocked by {label} at ({check_x}, {check_y})"}
 
     # Ensure chunk exists at destination
     _ensure_chunk(*_chunk_key(x, y))
@@ -549,6 +652,14 @@ def execute_action(agent_id, action_name, params):
         result = _execute_notify(agent_id, agent, params)
         if result["ok"]:
             record_memory(agent_id, f"Notified station: {result['message']}")
+    elif action_name == "investigate_structure":
+        if is_drone:
+            return {"ok": False, "error": "Drones cannot investigate structures"}
+        result = _execute_investigate_structure(agent_id, agent, params)
+    elif action_name == "use_refinery":
+        if is_drone:
+            return {"ok": False, "error": "Drones cannot use the refinery"}
+        result = _execute_use_refinery(agent_id, agent)
     else:
         return {"ok": False, "error": f"Unknown action: {action_name}"}
 
@@ -812,6 +923,152 @@ def _nearest_solar_panel(x, y):
     return best
 
 
+# --- Abandoned structure interactions ---
+
+
+def _execute_investigate_structure(agent_id, agent, params):
+    """Investigate an adjacent structure to reveal its details."""
+    if agent["battery"] < BATTERY_COST_INVESTIGATE:
+        return {"ok": False, "error": "Not enough battery to investigate"}
+
+    x, y = agent["position"]
+    # Find adjacent structure (Manhattan distance 1)
+    target = None
+    for s in WORLD.get("structures", []):
+        sx, sy = s["position"]
+        if abs(sx - x) + abs(sy - y) <= 1:
+            target = s
+            break
+
+    if target is None:
+        return {"ok": False, "error": "No structure within reach (must be adjacent, 1 tile)"}
+
+    if target["explored"]:
+        return {"ok": False, "error": f"{target['type'].replace('_', ' ').title()} already investigated"}
+
+    agent["battery"] = max(0.0, agent["battery"] - BATTERY_COST_INVESTIGATE)
+    target["explored"] = True
+    target["active"] = True
+    logger.info(
+        "Agent %s investigated %s at (%d,%d)",
+        agent_id, target["type"], target["position"][0], target["position"][1],
+    )
+    record_memory(
+        agent_id,
+        f"Investigated {target['type'].replace('_', ' ')} at ({target['position'][0]},{target['position'][1]}): {target['description']}",
+    )
+    return {
+        "ok": True,
+        "structure": {
+            "type": target["type"],
+            "category": target["category"],
+            "position": target["position"],
+            "description": target["description"],
+            "contents": target["contents"],
+        },
+    }
+
+
+def _execute_use_refinery(agent_id, agent):
+    """Use the refinery to process basalt from rover inventory into refined materials."""
+    if agent["battery"] < BATTERY_COST_USE_REFINERY:
+        return {"ok": False, "error": "Not enough battery to use refinery"}
+
+    x, y = agent["position"]
+    # Find adjacent active refinery
+    refinery = None
+    for s in WORLD.get("structures", []):
+        if s["type"] != "refinery":
+            continue
+        sx, sy = s["position"]
+        if abs(sx - x) + abs(sy - y) <= 1 and s.get("active"):
+            refinery = s
+            break
+
+    if refinery is None:
+        return {"ok": False, "error": "No active refinery within reach (must investigate first and be adjacent)"}
+
+    inventory = agent.get("inventory", [])
+    basalt_items = [i for i in inventory if i.get("type") == "basalt_vein"]
+    if not basalt_items:
+        return {"ok": False, "error": "No basalt in inventory to refine"}
+
+    # Process the first basalt item — refining doubles its effective quantity
+    item = basalt_items[0]
+    original_qty = item.get("quantity", 0)
+    bonus = int(original_qty * 0.5)  # +50% bonus from refining
+    item["quantity"] = original_qty + bonus
+    item["refined"] = True
+
+    agent["battery"] = max(0.0, agent["battery"] - BATTERY_COST_USE_REFINERY)
+    logger.info(
+        "Agent %s refined basalt at refinery: %d -> %d (bonus +%d)",
+        agent_id, original_qty, item["quantity"], bonus,
+    )
+    record_memory(
+        agent_id,
+        f"Refined basalt at refinery: {original_qty} -> {item['quantity']} units (+{bonus} bonus)",
+    )
+    return {
+        "ok": True,
+        "original_quantity": original_qty,
+        "refined_quantity": item["quantity"],
+        "bonus": bonus,
+    }
+
+
+def apply_structure_passive_effects():
+    """Apply passive effects from active structures. Called each simulation tick.
+
+    - Solar Panel Structure: +1% battery per 2 ticks to rovers within 1 tile.
+    - Accumulator: +1% battery per 5 ticks to rovers within range.
+    """
+    tick = WORLD.get("tick", 0)
+    for structure in WORLD.get("structures", []):
+        if not structure.get("active"):
+            continue
+
+        sx, sy = structure["position"]
+
+        if structure["type"] == "solar_panel_structure":
+            # +1% per 2 ticks to rovers within 1 tile (Manhattan)
+            interval = structure["contents"].get("charge_interval", 2)
+            if tick % interval != 0:
+                continue
+            charge = structure["contents"].get("charge_rate", 0.01)
+            radius = structure["contents"].get("charge_radius", 1)
+            for agent in WORLD["agents"].values():
+                if agent.get("type") not in ("rover", "drone"):
+                    continue
+                ax, ay = agent["position"]
+                if abs(ax - sx) + abs(ay - sy) <= radius:
+                    old = agent["battery"]
+                    agent["battery"] = min(1.0, agent["battery"] + charge)
+                    if agent["battery"] > old:
+                        logger.debug(
+                            "Solar panel structure at (%d,%d) charged agent at (%d,%d): %.0f%% -> %.0f%%",
+                            sx, sy, ax, ay, old * 100, agent["battery"] * 100,
+                        )
+
+        elif structure["type"] == "accumulator":
+            # +1% per 5 ticks to rovers nearby (within 2 tiles)
+            interval = structure["contents"].get("recharge_interval", 5)
+            if tick % interval != 0:
+                continue
+            charge = structure["contents"].get("recharge_rate", 0.01)
+            for agent in WORLD["agents"].values():
+                if agent.get("type") not in ("rover", "drone"):
+                    continue
+                ax, ay = agent["position"]
+                if abs(ax - sx) + abs(ay - sy) <= 2:
+                    old = agent["battery"]
+                    agent["battery"] = min(1.0, agent["battery"] + charge)
+                    if agent["battery"] > old:
+                        logger.debug(
+                            "Accumulator at (%d,%d) recharged agent at (%d,%d): %.0f%% -> %.0f%%",
+                            sx, sy, ax, ay, old * 100, agent["battery"] * 100,
+                        )
+
 def check_mission_status():
     """Update mission collected_quantity and detect success/failure.
 
@@ -1064,6 +1321,29 @@ def _update_rover_tasks(agent_id, agent):
                 f"Navigate to drone-scanned hotspot at ({hx},{hy}) — {hint}, {dist} tiles, concentration={conc:.2f}"
             )
 
+    # Adjacent structures → investigate or use
+    for structure in WORLD.get("structures", []):
+        sp = tuple(structure["position"])
+        dist = abs(sp[0] - x) + abs(sp[1] - y)
+        if dist <= 1:
+            label = structure["type"].replace("_", " ").title()
+            if not structure.get("explored"):
+                tasks.append(f"Investigate {label} at ({sp[0]},{sp[1]})")
+            elif structure["type"] == "refinery" and structure.get("active"):
+                basalt_in_inv = any(i.get("type") == "basalt_vein" and not i.get("refined") for i in inventory)
+                if basalt_in_inv:
+                    tasks.append(f"Use Refinery at ({sp[0]},{sp[1]}) to refine basalt")
+
+    # Visible unexplored structures on revealed tiles — suggest navigation
+    for structure in WORLD.get("structures", []):
+        sp = tuple(structure["position"])
+        if sp in revealed_set and not structure.get("explored"):
+            dist = abs(sp[0] - x) + abs(sp[1] - y)
+            if dist > 1:
+                hint = direction_hint(sp[0] - x, sp[1] - y)
+                label = structure["type"].replace("_", " ").title()
+                tasks.append(f"Navigate to {label} at ({sp[0]},{sp[1]}) — {hint}, {dist} tiles")
+
     if not tasks:
         tasks.append("Explore unvisited tiles to find veins")
 
@@ -1156,6 +1436,17 @@ def observe_rover(agent_id):
                 label += f" qty={qty_info}"
             visible_stones.append(f"{label} ({status}) at ({sp[0]},{sp[1]}) — {hint}, {dist} tiles")
 
+    # Visible structures on revealed tiles
+    visible_structures = []
+    for structure in WORLD.get("structures", []):
+        sp = tuple(structure["position"])
+        if sp in revealed_set:
+            dist = abs(sp[0] - x) + abs(sp[1] - y)
+            hint = direction_hint(sp[0] - x, sp[1] - y)
+            status = "explored" if structure.get("explored") else "unexplored"
+            label = structure["type"].replace("_", " ").title()
+            visible_structures.append(f"{label} ({status}) at ({sp[0]},{sp[1]}) — {hint}, {dist} tiles")
+
     # Mission info
     world_mission = WORLD.get("mission", {})
 
@@ -1183,6 +1474,7 @@ def observe_rover(agent_id):
             stone_line=stone_line,
             stone_here=stone_here,
             visible_stones=visible_stones,
+            visible_structures=visible_structures,
         ),
     )
 
@@ -1252,6 +1544,12 @@ def get_snapshot():
             s.pop("_true_quantity", None)
             visible.append(s)
     snap["stones"] = visible
+    # Filter structures to only those on revealed cells
+    visible_structures = []
+    for s in snap.get("structures", []):
+        if tuple(s["position"]) in revealed:
+            visible_structures.append(s)
+    snap["structures"] = visible_structures
     # Ensure bounds are present
     if "bounds" not in snap:
         snap["bounds"] = {"min_x": 0, "max_x": GRID_W - 1, "min_y": 0, "max_y": GRID_H - 1}
