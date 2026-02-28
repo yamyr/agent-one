@@ -121,6 +121,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Fixed
+
+- **Station LLM error handling** ([#93](https://github.com/mhack-agent-one/agent-one/issues/93)): `StationAgent._call_llm` now wraps the Mistral API call in try/except, returning a safe default (`{thinking: None, actions: [], context_text: ""}`) on failure instead of crashing the simulation
+
 ### Added (UI Polish Round 3 — Phases 3–8)
 
 - **Persisted zoom preference**: Zoom level saved to `localStorage` via `usePreferences` composable; survives page refresh

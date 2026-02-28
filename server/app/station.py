@@ -154,7 +154,11 @@ class StationAgent:
         return SYSTEM_PROMPT + "\n== Current world state ==\n" + _build_world_summary(context)
 
     def _call_llm(self, user_message, context: StationContext):
-        """Single LLM call with tools. Returns {thinking, actions} dict."""
+        """Single LLM call with tools. Returns {thinking, actions} dict.
+
+        Wraps the Mistral API call in try/except so the station agent
+        degrades gracefully on API failures instead of crashing.
+        """
         client = self._get_client()
         ctx_text = self._build_context(context)
         messages = [
@@ -162,22 +166,26 @@ class StationAgent:
             {"role": "user", "content": user_message},
         ]
         logger.info("Station LLM call: %s", user_message[:80])
-        response = client.chat.complete(
-            model=self.model,
-            messages=messages,
-            tools=STATION_TOOLS,
-        )
-        choice = response.choices[0]
-        thinking = choice.message.content or None
-        actions = []
+        try:
+            response = client.chat.complete(
+                model=self.model,
+                messages=messages,
+                tools=STATION_TOOLS,
+            )
+            choice = response.choices[0]
+            thinking = choice.message.content or None
+            actions = []
 
-        if thinking:
-            logger.info("Station thinking: %s", thinking)
+            if thinking:
+                logger.info("Station thinking: %s", thinking)
 
-        if choice.message.tool_calls:
-            actions = _parse_tool_calls(choice.message.tool_calls)
+            if choice.message.tool_calls:
+                actions = _parse_tool_calls(choice.message.tool_calls)
 
-        return {"thinking": thinking, "actions": actions, "context_text": ctx_text}
+            return {"thinking": thinking, "actions": actions, "context_text": ctx_text}
+        except Exception:
+            logger.exception("Station LLM call failed: %s", user_message[:80])
+            return {"thinking": None, "actions": [], "context_text": ""}
 
     def define_mission(self, context: StationContext):
         """Called at startup to define initial missions for rovers."""
