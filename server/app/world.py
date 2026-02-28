@@ -357,6 +357,55 @@ WORLD = _build_initial_world()
 _init_world_chunks()
 
 
+class World:
+    """Instance-based wrapper around the world state dict.
+
+    Enables multi-simulation and thread-safe access (future).
+    During migration, wraps the module-level WORLD dict.
+    """
+
+    def __init__(self, state: dict | None = None):
+        self._state = state if state is not None else _build_initial_world()
+        if state is None:
+            _init_world_chunks()
+
+    # --- Reads ---
+    def get_agent(self, agent_id: str) -> dict:
+        return self._state["agents"][agent_id]
+
+    def get_agents(self) -> dict:
+        return self._state["agents"]
+
+    def get_mission(self) -> dict:
+        return self._state["mission"]
+
+    def get_stones(self) -> list:
+        return self._state.get("stones", [])
+
+    def get_solar_panels(self) -> list:
+        return self._state.get("solar_panels", [])
+
+    def get_drone_scans(self) -> list:
+        return self._state.get("drone_scans", [])
+
+    # --- Setters ---
+    def set_agent_model(self, agent_id: str, model: str):
+        self._state["agents"][agent_id]["model"] = model
+
+    def set_agent_last_context(self, agent_id: str, context: str):
+        self._state["agents"][agent_id]["last_context"] = context
+
+    def set_pending_commands(self, agent_id: str, commands: list | None):
+        if commands:
+            self._state["agents"][agent_id]["pending_commands"] = commands
+        else:
+            self._state["agents"][agent_id].pop("pending_commands", None)
+
+
+# Module-level singleton wrapping the global WORLD dict
+world = World(WORLD)
+
+
 def reset_world():
     """Reset WORLD to initial state. Re-seeds RNG if world_seed is set."""
     fresh = _build_initial_world()
@@ -699,18 +748,15 @@ charge_rover = charge_agent
 
 
 def set_agent_model(agent_id: str, model: str):
-    WORLD["agents"][agent_id]["model"] = model
+    world.set_agent_model(agent_id, model)
 
 
 def set_agent_last_context(agent_id: str, context: str):
-    WORLD["agents"][agent_id]["last_context"] = context
+    world.set_agent_last_context(agent_id, context)
 
 
 def set_pending_commands(agent_id: str, commands: list | None):
-    if commands:
-        WORLD["agents"][agent_id]["pending_commands"] = commands
-    else:
-        WORLD["agents"][agent_id].pop("pending_commands", None)
+    world.set_pending_commands(agent_id, commands)
 
 
 def _execute_deploy_solar_panel(agent_id):

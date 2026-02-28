@@ -15,13 +15,14 @@ from .base_agent import BaseAgent
 from .broadcast import broadcaster
 from .config import settings
 from .protocol import make_message
-from .world import WORLD, GRID_W, GRID_H, DIRECTIONS, MAX_MOVE_DISTANCE, MAX_MOVE_DISTANCE_DRONE
+from .world import World, world as default_world
+from .world import GRID_W, GRID_H, DIRECTIONS, MAX_MOVE_DISTANCE, MAX_MOVE_DISTANCE_DRONE
 from .world import FUEL_CAPACITY_ROVER, FUEL_CAPACITY_DRONE, DRONE_REVEAL_RADIUS
 from .world import BATTERY_COST_MOVE, BATTERY_COST_MOVE_DRONE, BATTERY_COST_DIG
 from .world import BATTERY_COST_ANALYZE, BATTERY_COST_SCAN, BATTERY_COST_NOTIFY
 from .world import MAX_INVENTORY_ROVER
 from .world import check_ground, direction_hint
-from .world import set_agent_model, set_agent_last_context, set_pending_commands
+from .world import set_agent_model, set_pending_commands
 from .world import execute_action, get_snapshot, charge_agent, next_tick, all_agents_at_station
 
 logger = logging.getLogger(__name__)
@@ -112,10 +113,11 @@ ROVER_TOOLS = [
 class MistralRoverReasoner:
     """Rover reasoner that decides via Mistral LLM. Returns action dict, does not execute."""
 
-    def __init__(self, agent_id="rover-mistral", model="mistral-small-latest"):
+    def __init__(self, agent_id="rover-mistral", model="mistral-small-latest", world: World | None = None):
         self.agent_id = agent_id
         self.model = model
         self._client = None
+        self._world = world or default_world
 
     def _get_client(self):
         if self._client is None:
@@ -126,14 +128,14 @@ class MistralRoverReasoner:
 
     def _build_context(self):
         """Assemble LLM context: identity, state, environment, memory."""
-        agent = WORLD["agents"][self.agent_id]
+        agent = self._world.get_agent(self.agent_id)
         x, y = agent["position"]
         mission = agent["mission"]
         battery = agent["battery"]
         inventory = agent.get("inventory", [])
         memory = agent.get("memory", [])
 
-        station = WORLD["agents"].get("station")
+        station = self._world.get_agents().get("station")
         station_pos = station["position"] if station else [0, 0]
         dist_to_station = abs(x - station_pos[0]) + abs(y - station_pos[1])
         moves_on_battery = int(battery / BATTERY_COST_MOVE)
@@ -158,7 +160,7 @@ class MistralRoverReasoner:
             stone_line = "none"
 
         # Mission target
-        world_mission = WORLD.get("mission", {})
+        world_mission = self._world.get_mission()
         target_quantity = world_mission.get("target_quantity", 100)
         collected_qty = world_mission.get("collected_quantity", 0)
 
@@ -232,7 +234,7 @@ class MistralRoverReasoner:
 
         # Nearby solar panels
         nearby_panels = []
-        for panel in WORLD.get("solar_panels", []):
+        for panel in self._world.get_solar_panels():
             px, py = panel["position"]
             pd = abs(px - x) + abs(py - y)
             if pd <= 10:
@@ -245,7 +247,7 @@ class MistralRoverReasoner:
         # Visible veins (on revealed tiles)
         revealed_set = {tuple(c) for c in agent.get("revealed", [])}
         visible_stones = []
-        for stone in WORLD.get("stones", []):
+        for stone in self._world.get_stones():
             sp = tuple(stone["position"])
             if sp in revealed_set and list(sp) != [x, y]:
                 dist = abs(sp[0] - x) + abs(sp[1] - y)
@@ -303,7 +305,7 @@ class MistralRoverReasoner:
         try:
             client = self._get_client()
             context = self._build_context()
-            set_agent_last_context(self.agent_id, context)
+            self._world.set_agent_last_context(self.agent_id, context)
 
             messages = [
                 {"role": "system", "content": context},
@@ -358,7 +360,7 @@ class MistralRoverReasoner:
             return self._fallback_turn(f"LLM unavailable ({type(exc).__name__})")
 
     def _fallback_turn(self, reason):
-        agent = WORLD["agents"][self.agent_id]
+        agent = self._world.get_agent(self.agent_id)
         x, y = agent["position"]
         # Default: explore unvisited tiles (inline fallback — no mock rover)
         visited_set = {tuple(p) for p in agent.get("visited", [])}
@@ -427,11 +429,12 @@ DRONE_TOOLS = [DRONE_MOVE_TOOL, SCAN_TOOL]
 class DroneAgent:
     """Drone scout agent powered by Mistral LLM. Moves fast, scans for basalt vein deposits."""
 
-    def __init__(self, agent_id="drone-mistral", model="mistral-small-latest"):
+    def __init__(self, agent_id="drone-mistral", model="mistral-small-latest", world: World | None = None):
         self.agent_id = agent_id
         self.model = model
         self._client = None
-        self._mock_fallback = MockDroneAgent(agent_id=agent_id)
+        self._world = world or default_world
+        self._mock_fallback = MockDroneAgent(agent_id=agent_id, world=self._world)
 
     def _get_client(self):
         if self._client is None:
@@ -442,13 +445,13 @@ class DroneAgent:
 
     def _build_context(self):
         """Assemble LLM context for the drone scout."""
-        agent = WORLD["agents"][self.agent_id]
+        agent = self._world.get_agent(self.agent_id)
         x, y = agent["position"]
         mission = agent["mission"]
         battery = agent["battery"]
         memory = agent.get("memory", [])
 
-        station = WORLD["agents"].get("station")
+        station = self._world.get_agents().get("station")
         station_pos = station["position"] if station else [0, 0]
         dist_to_station = abs(x - station_pos[0]) + abs(y - station_pos[1])
         moves_on_battery = int(battery / BATTERY_COST_MOVE_DRONE)
@@ -460,7 +463,7 @@ class DroneAgent:
             if 0 <= nx < GRID_W and 0 <= ny < GRID_H and (nx, ny) not in visited_set:
                 unvisited_dirs.append(name)
 
-        scanned_positions = {tuple(s["position"]) for s in WORLD.get("drone_scans", [])}
+        scanned_positions = {tuple(s["position"]) for s in self._world.get_drone_scans()}
         total_tiles = GRID_W * GRID_H
         coverage = len(scanned_positions) / total_tiles * 100
 
@@ -512,7 +515,7 @@ class DroneAgent:
             f"Battery: {battery:.0%} ({moves_on_battery} moves remaining, {FUEL_CAPACITY_DRONE} fuel capacity)\n"
             f"Distance to station: {dist_to_station} tiles\n"
             f"Tiles visited: {len(agent.get('visited', []))}\n"
-            f"Scans performed: {len(WORLD.get('drone_scans', []))}"
+            f"Scans performed: {len(self._world.get_drone_scans())}"
         )
 
         parts.append(
@@ -523,7 +526,7 @@ class DroneAgent:
         )
 
         hot_scans = []
-        for scan in WORLD.get("drone_scans", [])[-5:]:
+        for scan in self._world.get_drone_scans()[-5:]:
             if scan["peak"] > 0.2:
                 hot_scans.append(
                     f"  - ({scan['position'][0]},{scan['position'][1]}): peak={scan['peak']:.2f}"
@@ -545,7 +548,7 @@ class DroneAgent:
         try:
             client = self._get_client()
             context = self._build_context()
-            set_agent_last_context(self.agent_id, context)
+            self._world.set_agent_last_context(self.agent_id, context)
 
             messages = [
                 {"role": "system", "content": context},
@@ -605,23 +608,24 @@ class DroneAgent:
 class MockDroneAgent:
     """Mock drone that systematically scans the map — no LLM calls."""
 
-    def __init__(self, agent_id="drone-mistral"):
+    def __init__(self, agent_id="drone-mistral", world: World | None = None):
         self.agent_id = agent_id
+        self._world = world or default_world
 
     def run_turn(self):
-        agent = WORLD["agents"][self.agent_id]
+        agent = self._world.get_agent(self.agent_id)
         x, y = agent["position"]
 
         context = (
             f"Mock drone at ({x},{y}), battery={agent['battery']:.0%}, "
-            f"scans={len(WORLD.get('drone_scans', []))}"
+            f"scans={len(self._world.get_drone_scans())}"
         )
-        set_agent_last_context(self.agent_id, context)
+        self._world.set_agent_last_context(self.agent_id, context)
 
         # Check for recall command — override everything, head to station
         for cmd in agent.get("pending_commands", []):
             if cmd["name"] == "recall":
-                station = WORLD["agents"].get("station")
+                station = self._world.get_agents().get("station")
                 sp = station["position"] if station else [0, 0]
                 dx, dy = sp[0] - x, sp[1] - y
                 if dx == 0 and dy == 0:
@@ -647,7 +651,7 @@ class MockDroneAgent:
                 }
 
         # Battery safety — mock agent's own reasoning (not engine logic)
-        station = WORLD["agents"].get("station")
+        station = self._world.get_agents().get("station")
         sp = station["position"] if station else [0, 0]
         dist = abs(x - sp[0]) + abs(y - sp[1])
         cost_to_return = dist * BATTERY_COST_MOVE_DRONE
@@ -674,7 +678,7 @@ class MockDroneAgent:
             }
 
         # Scan if current position not yet scanned
-        scanned_positions = {tuple(s["position"]) for s in WORLD.get("drone_scans", [])}
+        scanned_positions = {tuple(s["position"]) for s in self._world.get_drone_scans()}
         if (x, y) not in scanned_positions:
             thinking = f"I'm at ({x}, {y}). Scanning area for concentration readings."
             return {"thinking": thinking, "action": {"name": "scan", "params": {}}}
@@ -738,9 +742,10 @@ class RoverLoop(BaseAgent):
     """Generic rover tick: inject commands → reason → execute → broadcast."""
 
     _reasoner: MistralRoverReasoner
+    _world: World
 
     async def tick(self, host) -> None:
-        mission_status = WORLD["mission"]["status"]
+        mission_status = self._world.get_mission()["status"]
 
         # Inject pending commands from inbox into WORLD for reasoner to read
         pending = host.drain_inbox(self.agent_id)
@@ -749,11 +754,11 @@ class RoverLoop(BaseAgent):
             pending = [
                 {"name": "recall", "payload": {"reason": "Mission aborted — return to station"}}
             ]
-        set_pending_commands(self.agent_id, pending if pending else None)
+        self._world.set_pending_commands(self.agent_id, pending if pending else None)
 
         # If aborted and already at station, stop this agent's loop
-        rover = WORLD["agents"].get(self.agent_id)
-        station_agent = WORLD["agents"].get("station")
+        rover = self._world.get_agents().get(self.agent_id)
+        station_agent = self._world.get_agents().get("station")
         if (
             mission_status == "aborted"
             and rover
@@ -819,7 +824,7 @@ class RoverLoop(BaseAgent):
         await broadcaster.send(make_message("world", "event", "state", get_snapshot()).to_dict())
 
         # Auto-charge rover when it arrives at station
-        rover = WORLD["agents"].get(self.agent_id)
+        rover = self._world.get_agents().get(self.agent_id)
         if (
             rover
             and station_agent
@@ -840,9 +845,10 @@ class RoverLoop(BaseAgent):
 class RoverMistralLoop(RoverLoop):
     """Rover loop wired to MistralRoverReasoner."""
 
-    def __init__(self, interval: float = 3.0):
+    def __init__(self, interval: float = 3.0, world: World | None = None):
         super().__init__(agent_id="rover-mistral", interval=interval)
-        self._reasoner = MistralRoverReasoner(agent_id=self.agent_id)
+        self._world = world or default_world
+        self._reasoner = MistralRoverReasoner(agent_id=self.agent_id, world=self._world)
         set_agent_model(self.agent_id, self._reasoner.model)
 
 
@@ -850,11 +856,12 @@ class DroneLoop(BaseAgent):
     """Generic drone tick: reason → execute → broadcast."""
 
     _reasoner: DroneAgent | MockDroneAgent
+    _world: World
 
     async def tick(self, host) -> None:
-        mission_status = WORLD["mission"]["status"]
-        drone = WORLD["agents"].get(self.agent_id)
-        station_agent = WORLD["agents"].get("station")
+        mission_status = self._world.get_mission()["status"]
+        drone = self._world.get_agents().get(self.agent_id)
+        station_agent = self._world.get_agents().get("station")
 
         # If aborted and at station, stop this agent
         if (
@@ -868,7 +875,7 @@ class DroneLoop(BaseAgent):
 
         # During abort, force recall so drone heads to station
         if mission_status == "aborted":
-            set_pending_commands(self.agent_id, [
+            self._world.set_pending_commands(self.agent_id, [
                 {"name": "recall", "payload": {"reason": "Mission aborted — return to station"}}
             ])
 
@@ -906,6 +913,7 @@ class DroneLoop(BaseAgent):
         await broadcaster.send(make_message("world", "event", "state", get_snapshot()).to_dict())
 
         # Auto-charge drone when at station
+        drone = self._world.get_agents().get(self.agent_id)
         if (
             drone
             and station_agent
@@ -926,7 +934,8 @@ class DroneLoop(BaseAgent):
 class DroneMistralLoop(DroneLoop):
     """Drone loop wired to DroneAgent (Mistral)."""
 
-    def __init__(self, interval: float = 2.0):
+    def __init__(self, interval: float = 2.0, world: World | None = None):
         super().__init__(agent_id="drone-mistral", interval=interval)
-        self._reasoner = DroneAgent(agent_id=self.agent_id)
+        self._world = world or default_world
+        self._reasoner = DroneAgent(agent_id=self.agent_id, world=self._world)
         set_agent_model(self.agent_id, self._reasoner.model)
