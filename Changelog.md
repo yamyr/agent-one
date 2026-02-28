@@ -21,9 +21,37 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **Pydantic models**: `StoneInfo` and `InventoryItem` gained `grade` and `quantity` fields; `RoverWorldView` uses `target_quantity`/`collected_quantity`
 - **Test coverage**: 278 tests passing — added `TestVeinGradeDistribution` (5 tests) validating exponential rarity, updated all stone-related test classes for vein data structures
 
+### Added (Solar Panels)
+
+- **Solar panel system**: Rovers carry 2 deployable solar panels (`MAX_SOLAR_PANELS=2`). Deploy with `deploy_solar_panel` action (costs 1 fuel), recharge with `use_solar_battery` (gains 25% battery). Panels render on the map as gold rectangles (grey when depleted).
+- **Solar panel tools**: `DEPLOY_SOLAR_PANEL_TOOL` and `USE_SOLAR_BATTERY_TOOL` added to rover LLM tool list.
+- **Solar panel context**: Rover LLM prompt includes panels remaining and nearby panel status.
+- **Solar panel rendering**: WorldMap.vue renders active/depleted panels with grid lines.
+- **`_nearest_solar_panel` helper**: Low-battery task hints suggest nearby active panels as alternative to station return.
+
+### Changed (Remove Mock Rover)
+
+- **Removed `rover-mock` agent entirely**: `MockRoverReasoner`, `MockRoverAgent`, `RoverMockLoop` classes deleted from `agent.py`. No more mock rover in `_build_initial_world`, `AGENT_MAP`, `active_agents` config, or `AGENT_COLORS`.
+- **`MistralRoverReasoner._fallback_turn`**: Now uses inline explore logic (random unvisited direction) instead of delegating to `MockRoverReasoner`.
+- **`charge_rover` → `charge_agent`**: Renamed to accept any non-station agent (drone included). `charge_rover` kept as backward-compat alias.
+- **Station prompt**: Updated to reference single rover `rover-mistral` instead of two rovers.
+
+### Changed (Mission Return Logic)
+
+- **Mission fulfillment check**: `_update_rover_tasks` now checks quantity-based fulfillment and instructs rover to return to station immediately with emoji prefix.
+- **Rover LLM prompt**: Added "CRITICAL: Once you have collected enough basalt, STOP exploring and RETURN TO STATION IMMEDIATELY."
+- **Mission indicator**: LLM context shows mission target met status when collected quantity meets target.
+
+### Changed (UI Improvements)
+
+- **Chronological event log**: `AgentPane.vue` now shows ALL events (thinking + actions) chronologically, not just thinking events. Actions show move coordinates or result text.
+- **CSS refinements**: `.ae-type.think` colored `#668`, `.ae-text.action-text` colored `#7a9a7a`.
+
 ### Lessons Learned
 
 - When spawning agent teams with file-editing permissions, coordinate edits carefully — concurrent writes to the same file cause "file modified since read" conflicts. Assign file ownership per agent to avoid collisions.
+- When replacing a mock with real agent, test setUp methods that previously initialized two agents need careful deduplication.
+- Mission state (`collected_quantity`) must be reset in test setUp to avoid cross-test contamination with new mission-fulfillment logic.
 
 ### Changed (Battery & Fuel Rebalance)
 

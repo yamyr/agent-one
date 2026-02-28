@@ -1,6 +1,6 @@
 <script setup>
 import { computed, ref, watch } from 'vue'
-import { TILE_SIZE, MAP_W, MAP_H, VIEWPORT_W, VIEWPORT_H, VEIN_COLORS, VEIN_SIZES, agentColor, revealRadius } from '../constants.js'
+import { TILE_SIZE, MAP_W, MAP_H, VIEWPORT_W, VIEWPORT_H, VEIN_COLORS, VEIN_SIZES, SOLAR_PANEL_COLOR, SOLAR_PANEL_DEPLETED_COLOR, agentColor, revealRadius } from '../constants.js'
 
 const props = defineProps({
   worldState: {
@@ -149,6 +149,20 @@ function veinHasGlow(s) {
   return g === 'rich' || g === 'pristine'
 }
 
+function isPanelVisible(p) {
+  const [wx, wy] = p.position
+  return wx >= camX.value && wx < camX.value + VIEWPORT_W &&
+         wy >= camY.value && wy < camY.value + VIEWPORT_H
+}
+
+function panelScreenX(p) {
+  return (p.position[0] - camX.value) * TILE_SIZE + 2
+}
+
+function panelScreenY(p) {
+  return (VIEWPORT_H - 1 - (p.position[1] - camY.value)) * TILE_SIZE + 2
+}
+
 // Drag-to-pan
 function onMouseDown(e) {
   dragging.value = true
@@ -236,6 +250,37 @@ defineExpose({ camX, camY })
           :transform="stoneRotateCenter(s)"
           :filter="veinHasGlow(s) ? 'url(#vein-glow)' : undefined"
         />
+      </template>
+
+      <!-- solar panels -->
+      <template v-for="(p, i) in (worldState.solar_panels || [])" :key="'panel-'+i">
+        <g v-if="isPanelVisible(p)">
+          <rect
+            :x="panelScreenX(p)"
+            :y="panelScreenY(p)"
+            :width="TILE_SIZE - 4"
+            :height="TILE_SIZE - 4"
+            :fill="p.depleted ? SOLAR_PANEL_DEPLETED_COLOR : SOLAR_PANEL_COLOR"
+            opacity="0.7"
+            rx="1"
+          />
+          <line
+            :x1="panelScreenX(p) + (TILE_SIZE - 4) / 2"
+            :y1="panelScreenY(p)"
+            :x2="panelScreenX(p) + (TILE_SIZE - 4) / 2"
+            :y2="panelScreenY(p) + TILE_SIZE - 4"
+            :stroke="p.depleted ? '#333' : '#aa8020'"
+            stroke-width="0.5"
+          />
+          <line
+            :x1="panelScreenX(p)"
+            :y1="panelScreenY(p) + (TILE_SIZE - 4) / 2"
+            :x2="panelScreenX(p) + TILE_SIZE - 4"
+            :y2="panelScreenY(p) + (TILE_SIZE - 4) / 2"
+            :stroke="p.depleted ? '#333' : '#aa8020'"
+            stroke-width="0.5"
+          />
+        </g>
       </template>
 
       <!-- station markers (square) -->

@@ -21,7 +21,7 @@ ASSIGN_MISSION_TOOL = {
             "properties": {
                 "agent_id": {
                     "type": "string",
-                    "description": "The rover agent to assign (e.g. 'rover-mock', 'rover-mistral').",
+                    "description": "The rover agent to assign (e.g. 'rover-mistral').",
                 },
                 "objective": {
                     "type": "string",
@@ -61,7 +61,7 @@ CHARGE_ROVER_TOOL = {
             "properties": {
                 "rover_id": {
                     "type": "string",
-                    "description": "The rover agent to charge (e.g. 'rover-mock', 'rover-mistral').",
+                    "description": "The rover agent to charge (e.g. 'rover-mistral').",
                 },
             },
             "required": ["rover_id"],
@@ -75,7 +75,7 @@ SYSTEM_PROMPT = (
     "You are the Mars base station. You coordinate the Mars mission.\n"
     "Your role is to assign missions to rover agents, respond to field reports, "
     "and recharge rovers when they return to the station.\n"
-    "You have two rovers available: 'rover-mock' and 'rover-mistral'.\n"
+    "You have one rover available: 'rover-mistral' and one drone: 'drone-mistral'.\n"
     "The mission goal is to collect basalt from veins. Each vein has a grade "
     "(low/medium/high/rich/pristine) that determines basalt quantity.\n"
     "Rovers must deliver enough basalt to the station to meet the target quantity.\n"

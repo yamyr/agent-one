@@ -29,10 +29,12 @@ export const VEIN_SIZES = {
 
 export const AGENT_COLORS = {
   'station': '#44cc88',
-  'rover-mock': '#6688cc',
   'rover-mistral': '#e06030',
   'drone-mistral': '#cc44cc',
 }
+
+export const SOLAR_PANEL_COLOR = '#f0c040'
+export const SOLAR_PANEL_DEPLETED_COLOR = '#555555'
 
 export function agentColor(id) {
   return AGENT_COLORS[id] || '#6c6'
