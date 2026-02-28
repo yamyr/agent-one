@@ -1,6 +1,6 @@
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 
-export function useWebSocket({ onConnect } = {}) {
+export function useWebSocket({ onConnect, onEvent } = {}) {
   const events = ref([])
   const connected = ref(false)
   const worldState = ref(null)
@@ -49,6 +49,7 @@ export function useWebSocket({ onConnect } = {}) {
         if (events.value.length > 200) {
           events.value.length = 200
         }
+        if (onEvent) onEvent(event)
       }
     }
 

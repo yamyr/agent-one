@@ -2,6 +2,7 @@
 import { ref, computed } from 'vue'
 import { useWebSocket } from './composables/useWebSocket.js'
 import { useKeyboard } from './composables/useKeyboard.js'
+import { useToasts } from './composables/useToasts.js'
 import { agentColor } from './constants.js'
 import AppHeader from './components/AppHeader.vue'
 import WorldMap from './components/WorldMap.vue'
@@ -12,6 +13,7 @@ import EventLog from './components/EventLog.vue'
 import AgentDetailModal from './components/AgentDetailModal.vue'
 import NarrationPlayer from './components/NarrationPlayer.vue'
 import StatsBar from './components/StatsBar.vue'
+import ToastOverlay from './components/ToastOverlay.vue'
 
 const selectedAgent = ref(null)
 const paused = ref(false)
@@ -63,7 +65,29 @@ async function resetSimulation() {
   }
 }
 
-const { events, connected, worldState, agentIds, agentEvents, narration, narrationChunk } = useWebSocket({ onConnect: onWsConnect })
+const { toasts, addToast, dismiss: dismissToast } = useToasts()
+
+function onSimEvent(event) {
+  switch (event.name) {
+    case 'mission_success':
+      addToast(`Mission complete — ${event.payload?.collected_quantity ?? '?'} collected`, { type: 'success', duration: 6000 })
+      break
+    case 'mission_aborted':
+      addToast(`Mission aborted — ${event.payload?.reason || 'unknown'}`, { type: 'error', duration: 6000 })
+      break
+    case 'alert':
+      addToast(`${event.source}: ${event.payload?.message || 'Alert'}`, { type: 'warning' })
+      break
+    case 'analyze':
+      if (event.payload?.stone)
+        addToast(`${event.source}: found ${event.payload.stone.grade} vein`, { type: 'info' })
+      break
+    default:
+      break
+  }
+}
+
+const { events, connected, worldState, agentIds, agentEvents, narration, narrationChunk } = useWebSocket({ onConnect: onWsConnect, onEvent: onSimEvent })
 
 async function togglePause() {
   const endpoint = paused.value ? '/api/simulation/resume' : '/api/simulation/pause'
@@ -193,6 +217,11 @@ useKeyboard({
         @select-agent="selectAgent"
       />
     </div>
+
+    <ToastOverlay
+      :toasts="toasts"
+      @dismiss="dismissToast"
+    />
 
     <Transition name="modal">
       <AgentDetailModal
