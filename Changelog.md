@@ -6,6 +6,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- **ElevenLabs AI Narration**: Real-time narration of Mars mission events via ElevenLabs TTS
+  - `server/app/narrator.py` — narration engine with event filtering (drama weights 1-3), Mistral LLM text generation ("David Attenborough meets space podcaster" persona), ElevenLabs TTS audio conversion, async event batching, and rate limiting
+  - `ui/src/components/NarrationPlayer.vue` — audio player with base64 MP3 playback queue, skip/mute controls, pulsing mic icon, responsive layout
+  - WebSocket `narration` event type (`{source: "narrator", type: "narration", payload: {text, audio, format}}`) for real-time audio delivery
+  - `/narration/toggle` POST and `/narration/status` GET endpoints for runtime control
+  - `ELEVENLABS_API_KEY`, `NARRATION_ENABLED`, `NARRATION_VOICE_ID`, `NARRATION_MIN_INTERVAL_SECONDS` config settings
+  - Narrator hooks into simulation lifecycle: starts/stops/resets with simulation, feeds on all broadcast events
+
+### Changed
+
+
 ### Changed
 
 - Removed `check_ground` from rover actions — ground is now auto-scanned after every move

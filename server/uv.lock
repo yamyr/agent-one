@@ -328,6 +328,23 @@ wheels = [
 ]
 
 [[package]]
+name = "elevenlabs"
+version = "2.37.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "httpx" },
+    { name = "pydantic" },
+    { name = "pydantic-core" },
+    { name = "requests" },
+    { name = "typing-extensions" },
+    { name = "websockets" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/07/5d/5401fe7d2f319b5ff410a37336e88bba3fde619005fba1e92cf6e801a6da/elevenlabs-2.37.0.tar.gz", hash = "sha256:95f99039c5a377d91f5a1b32e1a708196ed441d71394844862f8f3e69d7ae27b", size = 517816, upload-time = "2026-02-27T21:35:07.065Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/d4/c0/5bb719891241d5614d6e881457f617fcbf381551c1d8254419fddd117806/elevenlabs-2.37.0-py3-none-any.whl", hash = "sha256:8b65d54b47e7b3025d2b03b9ce86d3d02a11ea171f3b0efc3d0dc8cfcd42d3ff", size = 1397708, upload-time = "2026-02-27T21:35:05.228Z" },
+]
+
+[[package]]
 name = "eval-type-backport"
 version = "0.3.1"
 source = { registry = "https://pypi.org/simple" }
@@ -571,6 +588,7 @@ name = "mars"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [
+    { name = "elevenlabs" },
     { name = "fastapi" },
     { name = "mistralai" },
     { name = "pydantic-settings" },
@@ -589,6 +607,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "elevenlabs", specifier = ">=1.0.0" },
     { name = "fastapi", specifier = ">=0.115.0" },
     { name = "mistralai", specifier = ">=1.0.0" },
     { name = "pydantic-settings", specifier = ">=2.0.0" },
