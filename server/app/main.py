@@ -183,11 +183,16 @@ async def _start_simulation():
         "rover-mock": lambda: MockRoverAgent(),
         "rover-mistral": lambda: RoverAgent(),
     }
+    interval_map = {
+        "rover-mock": settings.agent_turn_interval_seconds,
+        "rover-mistral": settings.llm_turn_interval_seconds,
+    }
     for name in active:
         factory = agent_map.get(name)
         if factory:
-            _agent_tasks.append(asyncio.create_task(agent_loop(factory(), interval=2)))
-            logger.info("Started agent loop: %s", name)
+            interval = interval_map.get(name, settings.agent_turn_interval_seconds)
+            _agent_tasks.append(asyncio.create_task(agent_loop(factory(), interval=interval)))
+            logger.info("Started agent loop: %s (interval=%.1fs)", name, interval)
         else:
             logger.warning("Unknown agent in ACTIVE_AGENTS: %s", name)
 
