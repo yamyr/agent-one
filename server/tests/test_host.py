@@ -62,6 +62,8 @@ class TestHostInbox(unittest.TestCase):
         host = _make_host()
         # Should not raise, just log warning
         host.send_command("nonexistent", {"name": "recall", "payload": {}})
+        # Verify no inbox was created for the unknown agent
+        self.assertNotIn("nonexistent", host._inboxes)
 
     def test_drain_unknown_agent(self):
         host = _make_host()
