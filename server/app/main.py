@@ -12,6 +12,7 @@ from .agent import MockRoverAgent, RoverAgent
 from .broadcast import broadcaster
 from .config import settings
 from .db import init_db, close_db
+from .station import StationAgent
 from .views import router as views_router
 from .world import execute_action, get_snapshot
 
@@ -23,6 +24,25 @@ logging.basicConfig(
 )
 
 logger = logging.getLogger(__name__)
+
+
+station = StationAgent()
+
+
+async def _trigger_station(event):
+    """Feed an event to the station agent and broadcast its response."""
+    try:
+        station_events = await asyncio.to_thread(station.handle_event, event)
+        for se in station_events:
+            await broadcaster.send(se)
+        await broadcaster.send({
+            "source": "world",
+            "type": "event",
+            "name": "state",
+            "payload": get_snapshot(),
+        })
+    except Exception:
+        logger.exception("Station trigger error")
 
 
 async def agent_loop(agent, interval):
@@ -70,6 +90,12 @@ async def agent_loop(agent, interval):
                 "name": "state",
                 "payload": get_snapshot(),
             })
+
+            # Trigger station on stone-found events
+            for event in events:
+                if event["name"] == "check":
+                    await _trigger_station(event)
+
         except Exception:
             logger.exception("Agent loop error (%s)", agent.agent_id)
         await asyncio.sleep(interval)
@@ -78,6 +104,21 @@ async def agent_loop(agent, interval):
 @asynccontextmanager
 async def lifespan(app):
     init_db()
+
+    # Station defines initial missions at startup
+    try:
+        station_events = await asyncio.to_thread(station.define_mission)
+        for event in station_events:
+            await broadcaster.send(event)
+        await broadcaster.send({
+            "source": "world",
+            "type": "event",
+            "name": "state",
+            "payload": get_snapshot(),
+        })
+    except Exception:
+        logger.exception("Station startup failed")
+
     mock_task = asyncio.create_task(agent_loop(MockRoverAgent(), interval=10))
     mistral_task = asyncio.create_task(agent_loop(RoverAgent(), interval=20))
     yield

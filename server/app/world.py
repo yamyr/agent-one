@@ -17,7 +17,7 @@ DIRECTIONS = {
 
 BATTERY_COST_MOVE = 0.02
 
-AGENT_STARTS = {(2, 10), (2, 12)}
+AGENT_STARTS = {(0, 0), (2, 10), (2, 12)}
 STONE_TYPES = ["core", "basalt"]
 
 
@@ -39,6 +39,13 @@ def _generate_stones():
 WORLD = {
     "grid": {"w": GRID_W, "h": GRID_H},
     "agents": {
+        "station": {
+            "position": [0, 0],
+            "type": "station",
+            "battery": 1.0,
+            "mission": {"objective": "Coordinate Mars mission", "plan": []},
+            "visited": [[0, 0]],
+        },
         "rover-mock": {
             "position": [2, 10],
             "battery": 1.0,
@@ -122,6 +129,16 @@ def execute_action(agent_id, action_name, params):
         return result
 
     return {"ok": False, "error": f"Unknown action: {action_name}"}
+
+
+def assign_mission(agent_id, objective):
+    """Set a new mission objective for the given agent."""
+    agent = WORLD["agents"].get(agent_id)
+    if agent is None:
+        return {"ok": False, "error": f"Unknown agent: {agent_id}"}
+    agent["mission"]["objective"] = objective
+    logger.info("Mission assigned to %s: %s", agent_id, objective)
+    return {"ok": True, "agent_id": agent_id, "objective": objective}
 
 
 def get_snapshot():

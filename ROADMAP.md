@@ -9,51 +9,26 @@ Mars Mission — Multi-Agent LLM Simulation (Mistral Hackathon)
 - [ ] Copy/adapt BaseAgent class (tool framework, streaming, emit helpers)
 - [x] Decide UI approach (terminal with textual/rich? web? both?) → web (Vue 3 + Vite)
 
-## Milestone 1: Coordinator + Rover (first end-to-end)
+## Milestone 1: Rover picks up a stone (first simulation)
 
-**Goal:** send a mission, one agent reasons and acts, world updates.
+**Goal:** rover explores, finds a stone, picks it up. First complete mission loop.
 
-- [x] World model: Python dict with grid, agents, stones (was: zones, rocks, goals, storm level)
-- [ ] Coordinator: spawn agent subprocess, read/write JSON stdio (using async agent_loop instead)
-- [x] Coordinator: inject world state slice into agent prompts
-- [x] Coordinator: handle tool calls that mutate world state (`execute_action`)
+- [x] World model: Python dict with grid, agents, stones
+- [x] Async agent loop (no subprocesses)
+- [x] Inject world state into agent prompts
+- [x] Handle tool calls that mutate world state (`execute_action`)
 - [x] Rover agent: RoverAgent (Mistral LLM) + MockRoverAgent (random)
 - [x] Rover tools: `move` (cardinal directions), `check_ground` (auto after move)
 - [x] Rover memory: visited positions tracked, agents prefer unvisited tiles
-- [ ] Rover tools: `drill_sample(rock_id)`
-- [x] Test: agent reasons -> executes tool -> world updates -> broadcast events
+- [ ] Rover tool: `pick_up` — pick up stone at current position
+- [ ] Agent inventory: `carrying` field on agent state
+- [ ] Mission success: rover has a stone in inventory
 
-**Done when:** you can chat with the rover and watch it move + drill in the world dict.
+**Done when:** rover explores the grid, lands on a stone, picks it up.
 
-## Milestone 2: Drone + Action Piping
+## Milestone 2: Station Agent
 
-**Goal:** two agents running concurrently, communicating through the coordinator.
-
-- [ ] Drone agent: system prompt, scan tools
-- [ ] Drone tools: `scan_area(zones)`, `map_route(from, to)`
-- [ ] Drone emits Action with probabilistic rock map
-- [ ] Coordinator: route Actions from drone -> rover as Send
-- [ ] Rover receives drone findings, uses them in reasoning
-- [ ] Both agents active simultaneously
-
-**Done when:** drone scans, rover uses scan data to pick a rock, all streamed live.
-
-## Milestone 3: External Events + Human-in-the-loop
-
-**Goal:** dynamic scenario with human decisions.
-
-- [ ] Event system: coordinator fires timed events (storm, terrain shift)
-- [ ] Events broadcast to agents as Steer messages with updated world state
-- [ ] Agents react to events (rover reassesses, drone adjusts scan priority)
-- [ ] Rover emits UiRequest::Confirm before high-risk moves
-- [ ] Coordinator presents Confirm/Select to human, routes UiResponse back
-- [ ] Human can steer agents with free-text input
-
-**Done when:** storm arrives, rover asks human "cross hazard zone?", human decides, agents adapt.
-
-## Milestone 4: Station Agent + Goal Tracking
-
-**Goal:** full 3-agent setup with visible progress.
+**Goal:** base station agent monitors and supports the rover.
 
 - [ ] Station agent: power management, telemetry monitoring
 - [ ] Station tools: `allocate_power(agent, amount)`, `broadcast_alert(message)`
@@ -61,7 +36,32 @@ Mars Mission — Multi-Agent LLM Simulation (Mistral Hackathon)
 - [ ] Goal confidence tracking: updates after each drill, visible in UI
 - [ ] Mission completion: goal threshold reached -> mission success message
 
-**Done when:** 3 agents collaborating, goals progressing, mission completes.
+**Done when:** station monitors rover, manages power, mission completes.
+
+## Milestone 3: Drone + Action Piping
+
+**Goal:** two field agents running concurrently, communicating through the coordinator.
+
+- [ ] Drone agent: system prompt, scan tools
+- [ ] Drone tools: `scan_area(zones)`, `map_route(from, to)`
+- [ ] Drone emits Action with probabilistic rock map
+- [ ] Coordinator: route Actions from drone -> rover
+- [ ] Rover receives drone findings, uses them in reasoning
+- [ ] All agents active simultaneously
+
+**Done when:** drone scans, rover uses scan data to pick a rock, all streamed live.
+
+## Milestone 4: External Events + Human-in-the-loop
+
+**Goal:** dynamic scenario with human decisions.
+
+- [ ] Event system: coordinator fires timed events (storm, terrain shift)
+- [ ] Events broadcast to agents with updated world state
+- [ ] Agents react to events (rover reassesses, drone adjusts scan priority)
+- [ ] Rover emits UiRequest::Confirm before high-risk moves
+- [ ] Human can steer agents with free-text input
+
+**Done when:** storm arrives, rover asks human "cross hazard zone?", human decides, agents adapt.
 
 ## Milestone 5: Demo Script + Polish
 

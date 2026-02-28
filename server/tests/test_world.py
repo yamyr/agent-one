@@ -1,7 +1,7 @@
 import unittest
 
 from app.world import WORLD, move_agent, execute_action, get_snapshot, check_ground
-from app.world import BATTERY_COST_MOVE, GRID_W, GRID_H, AGENT_STARTS
+from app.world import BATTERY_COST_MOVE, GRID_W, GRID_H, AGENT_STARTS, assign_mission
 
 
 class TestMoveAgent(unittest.TestCase):
@@ -215,3 +215,44 @@ class TestCheckGround(unittest.TestCase):
         self.assertTrue(result["ok"])
         self.assertIn("ground", result)
         self.assertIsNone(result["ground"]["stone"])
+
+
+class TestAssignMission(unittest.TestCase):
+
+    def setUp(self):
+        self._orig = WORLD["agents"]["rover-mock"]["mission"].copy()
+
+    def tearDown(self):
+        WORLD["agents"]["rover-mock"]["mission"] = self._orig
+
+    def test_assign_mission_success(self):
+        result = assign_mission("rover-mock", "Go to north edge")
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["agent_id"], "rover-mock")
+        self.assertEqual(result["objective"], "Go to north edge")
+        self.assertEqual(WORLD["agents"]["rover-mock"]["mission"]["objective"], "Go to north edge")
+
+    def test_assign_mission_unknown_agent(self):
+        result = assign_mission("rover-99", "Go anywhere")
+        self.assertFalse(result["ok"])
+        self.assertIn("Unknown agent", result["error"])
+
+    def test_assign_mission_preserves_plan(self):
+        WORLD["agents"]["rover-mock"]["mission"]["plan"] = ["step1"]
+        assign_mission("rover-mock", "New objective")
+        self.assertEqual(WORLD["agents"]["rover-mock"]["mission"]["plan"], ["step1"])
+
+
+class TestStationInWorld(unittest.TestCase):
+
+    def test_station_in_snapshot(self):
+        snap = get_snapshot()
+        self.assertIn("station", snap["agents"])
+        station = snap["agents"]["station"]
+        self.assertEqual(station["type"], "station")
+        self.assertEqual(station["position"], [0, 0])
+        self.assertIn("mission", station)
+        self.assertIn("battery", station)
+
+    def test_station_start_in_agent_starts(self):
+        self.assertIn((0, 0), AGENT_STARTS)
