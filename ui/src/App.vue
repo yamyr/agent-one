@@ -1,6 +1,7 @@
 <script setup>
 import { ref, computed } from 'vue'
 import { useWebSocket } from './composables/useWebSocket.js'
+import { useKeyboard } from './composables/useKeyboard.js'
 import { agentColor } from './constants.js'
 import AppHeader from './components/AppHeader.vue'
 import WorldMap from './components/WorldMap.vue'
@@ -98,6 +99,24 @@ function setFollowAgent(id) {
 function onUnfollow() {
   followAgent.value = null
 }
+
+// Keyboard shortcuts
+useKeyboard({
+  onTogglePause: () => togglePause(),
+  onPanCamera: (dx, dy) => {
+    if (worldMapRef.value) {
+      worldMapRef.value.panCamera(dx, dy)
+      followAgent.value = null
+    }
+  },
+  onFollowAgent: (idx) => {
+    if (mobileAgents.value[idx]) {
+      setFollowAgent(mobileAgents.value[idx])
+    }
+  },
+  onFreeCamera: () => { followAgent.value = null },
+  onCloseModal: () => { selectedAgent.value = null },
+})
 </script>
 
 <template>
