@@ -113,7 +113,9 @@ ROVER_TOOLS = [
 class MistralRoverReasoner:
     """Rover reasoner that decides via Mistral LLM. Returns action dict, does not execute."""
 
-    def __init__(self, agent_id="rover-mistral", model="mistral-small-latest", world: World | None = None):
+    def __init__(
+        self, agent_id="rover-mistral", model="mistral-small-latest", world: World | None = None
+    ):
         self.agent_id = agent_id
         self.model = model
         self._client = None
@@ -429,7 +431,9 @@ DRONE_TOOLS = [DRONE_MOVE_TOOL, SCAN_TOOL]
 class DroneAgent:
     """Drone scout agent powered by Mistral LLM. Moves fast, scans for basalt vein deposits."""
 
-    def __init__(self, agent_id="drone-mistral", model="mistral-small-latest", world: World | None = None):
+    def __init__(
+        self, agent_id="drone-mistral", model="mistral-small-latest", world: World | None = None
+    ):
         self.agent_id = agent_id
         self.model = model
         self._client = None
@@ -835,7 +839,7 @@ class RoverLoop(BaseAgent):
                 charge_msg = make_message(
                     source="station",
                     type="action",
-                    name="charge_rover",
+                    name="charge_agent",
                     payload=charge_result,
                 )
                 await host.broadcast(charge_msg.to_dict())
@@ -872,9 +876,10 @@ class DroneLoop(BaseAgent):
 
         # During abort, force recall so drone heads to station
         if mission_status == "aborted":
-            self._world.set_pending_commands(self.agent_id, [
-                {"name": "recall", "payload": {"reason": "Mission aborted — return to station"}}
-            ])
+            self._world.set_pending_commands(
+                self.agent_id,
+                [{"name": "recall", "payload": {"reason": "Mission aborted — return to station"}}],
+            )
 
         turn = await asyncio.to_thread(self._reasoner.run_turn)
         next_tick()
@@ -922,7 +927,7 @@ class DroneLoop(BaseAgent):
                 charge_msg = make_message(
                     source="station",
                     type="action",
-                    name="charge_rover",
+                    name="charge_agent",
                     payload=charge_result,
                 )
                 await host.broadcast(charge_msg.to_dict())

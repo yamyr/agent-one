@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [Unreleased]
+
+### Fixed
+
+* **agent:** rename `charge_rover` event to `charge_agent` in both RoverLoop and DroneLoop for consistent naming ([#68](https://github.com/mhack-agent-one/agent-one/issues/68))
+* **narrator:** update charge event references from `charge_rover` to `charge_agent` in drama weights, event matching, and narration text
+
 ## [0.2.0](https://github.com/mhack-agent-one/agent-one/compare/v0.1.0...v0.2.0) (2026-02-28)
 
 
