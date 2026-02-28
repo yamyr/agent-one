@@ -130,6 +130,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **Toast timer management**: Dedup resets dismiss timer; evicted toasts clean up their timers
 - **EventLog skeleton state**: 6 pulsing skeleton rows with staggered animation delays shown before WebSocket data arrives
 
+### Fixed
+
+- **AgentDetailModal crash when agent.mission is null (#89)**: Added optional chaining to `agent.mission?.objective` with fallback text to prevent crash when agent has no mission assigned
+
 ### Fixed (Zoom Scaling)
 
 - **Dynamic viewport tile count**: WorldMap zoom now scales tile count proportionally — zooming out (0.7x) renders ~29×29 tiles, zooming in (2.2x) renders ~10×10 tiles, instead of fixed 20×20

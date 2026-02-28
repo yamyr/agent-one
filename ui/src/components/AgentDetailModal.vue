@@ -65,7 +65,7 @@ function batteryPct() {
             Mission
           </div>
           <div class="modal-value">
-            {{ agent.mission.objective }}
+            {{ agent.mission?.objective || 'No mission assigned' }}
           </div>
         </div>
         <div
