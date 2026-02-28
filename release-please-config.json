@@ -8,7 +8,11 @@
       "include-component-in-tag": false,
       "pull-request-title-pattern": "chore: release ${version}",
       "extra-files": [
-        "server/pyproject.toml",
+        {
+          "type": "toml",
+          "path": "server/pyproject.toml",
+          "jsonpath": "$.project.version"
+        },
         "server/app/main.py",
         "ui/package.json",
         "ui/package-lock.json"

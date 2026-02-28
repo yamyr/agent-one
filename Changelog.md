@@ -36,3 +36,4 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Added Release Please annotation to FastAPI app version in `server/app/main.py` to prevent version drift across releases
 - Updated rover task planning in `server/app/world.py` to keep revealed-tile filtering lint-clean in CI
 - Applied Ruff formatting to `server/app/world.py` and `server/tests/test_world.py` to keep merge-ref CI formatting checks green
+- Fixed Release Please TOML version path in `release-please-config.json` so `server/pyproject.toml` bumps on every release
