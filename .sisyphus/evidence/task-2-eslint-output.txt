@@ -1,0 +1,26 @@
+ESLint Config Verification Output
+===================================
+Date: 2026-02-28
+Command: npx eslint . (run from ui/ directory)
+Config: ui/eslint.config.js (ESLint 9 flat config)
+
+Result: Config loaded successfully. ESLint produced meaningful output.
+
+Summary: 95 problems (4 errors, 91 warnings)
+- 4 errors: no-undef for browser globals (window, WebSocket, setTimeout)
+- 91 warnings: vue/max-attributes-per-line, vue/html-indent, vue/first-attribute-linebreak, etc.
+- 70 warnings potentially fixable with --fix
+
+Full output:
+-----------
+
+/Users/Vernes/agent-one/ui/src/App.vue
+   68:17  error    'window' is not defined                                                        no-undef
+   69:12  error    'WebSocket' is not defined                                                     no-undef
+   69:35  error    'window' is not defined                                                        no-undef
+   90:5   error    'setTimeout' is not defined                                                    no-undef
+  111:28  warning  ':class' should be on a new line                                               vue/max-attributes-per-line
+  [... 91 warnings omitted for brevity - all vue template formatting rules ...]
+
+✖ 95 problems (4 errors, 91 warnings)
+  0 errors and 70 warnings potentially fixable with the `--fix` option.

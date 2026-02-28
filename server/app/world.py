@@ -91,7 +91,7 @@ WORLD = {
             "mission": {"objective": "Coordinate Mars mission", "plan": []},
             "visited": [[0, 0]],
         },
-        "rover-mock": {
+        "randy-rover": {
             "position": [2, 10],
             "battery": 1.0,
             "mission": {"objective": "Explore the terrain", "plan": []},
@@ -106,8 +106,14 @@ WORLD = {
                     "name": "move",
                     "description": "Move 1-3 tiles in a cardinal direction (north/south/east/west). Costs 2% battery per tile. Ground is auto-scanned after each move.",
                 },
-                {"name": "dig", "description": "Dig at current tile to extract a stone (costs 3x move battery)."},
-                {"name": "pickup", "description": "Pick up an extracted stone at current tile into inventory."},
+                {
+                    "name": "dig",
+                    "description": "Dig at current tile to extract a stone (costs 3x move battery).",
+                },
+                {
+                    "name": "pickup",
+                    "description": "Pick up an extracted stone at current tile into inventory.",
+                },
             ],
         },
         "rover-mistral": {
@@ -125,8 +131,14 @@ WORLD = {
                     "name": "move",
                     "description": "Move 1-3 tiles in a cardinal direction (north/south/east/west). Costs 2% battery per tile. Ground is auto-scanned after each move.",
                 },
-                {"name": "dig", "description": "Dig at current tile to extract a stone (costs 3x move battery)."},
-                {"name": "pickup", "description": "Pick up an extracted stone at current tile into inventory."},
+                {
+                    "name": "dig",
+                    "description": "Dig at current tile to extract a stone (costs 3x move battery).",
+                },
+                {
+                    "name": "pickup",
+                    "description": "Pick up an extracted stone at current tile into inventory.",
+                },
             ],
         },
     },
@@ -203,17 +215,28 @@ def execute_action(agent_id, action_name, params):
             result["ground"] = check_ground(agent_id)
             ground = result["ground"]
             if ground["stone"]:
-                record_memory(agent_id, f"Moved {direction} {distance} to ({tx},{ty}), found {ground['stone']['type']} stone")
+                record_memory(
+                    agent_id,
+                    f"Moved {direction} {distance} to ({tx},{ty}), found {ground['stone']['type']} stone",
+                )
             else:
-                record_memory(agent_id, f"Moved {direction} {distance} to ({tx},{ty}), empty ground")
+                record_memory(
+                    agent_id, f"Moved {direction} {distance} to ({tx},{ty}), empty ground"
+                )
     elif action_name == "dig":
         result = _execute_dig(agent_id, agent)
         if result["ok"]:
-            record_memory(agent_id, f"Dug out {result['stone']['type']} stone at ({result['position'][0]},{result['position'][1]})")
+            record_memory(
+                agent_id,
+                f"Dug out {result['stone']['type']} stone at ({result['position'][0]},{result['position'][1]})",
+            )
     elif action_name == "pickup":
         result = _execute_pickup(agent_id, agent)
         if result["ok"]:
-            record_memory(agent_id, f"Picked up {result['stone']['type']} stone at ({result['position'][0]},{result['position'][1]}), inventory={result['inventory_count']}")
+            record_memory(
+                agent_id,
+                f"Picked up {result['stone']['type']} stone at ({result['position'][0]},{result['position'][1]}), inventory={result['inventory_count']}",
+            )
     else:
         return {"ok": False, "error": f"Unknown action: {action_name}"}
 
@@ -293,7 +316,9 @@ def _execute_charge(agent_id, agent):
 
     old_battery = agent["battery"]
     agent["battery"] = min(1.0, agent["battery"] + CHARGE_RATE)
-    logger.info("Agent %s charged %.0f%% -> %.0f%%", agent_id, old_battery * 100, agent["battery"] * 100)
+    logger.info(
+        "Agent %s charged %.0f%% -> %.0f%%", agent_id, old_battery * 100, agent["battery"] * 100
+    )
     return {"ok": True, "battery_before": old_battery, "battery_after": agent["battery"]}
 
 
@@ -306,7 +331,10 @@ def charge_rover(rover_id):
         return {"ok": False, "error": f"{rover_id} is not a rover"}
     result = _execute_charge(rover_id, agent)
     if result["ok"]:
-        record_memory(rover_id, f"Station charged battery {result['battery_before']:.0%} -> {result['battery_after']:.0%}")
+        record_memory(
+            rover_id,
+            f"Station charged battery {result['battery_before']:.0%} -> {result['battery_after']:.0%}",
+        )
     return result
 
 
@@ -337,8 +365,12 @@ def check_mission_status():
     # Success: enough target stones delivered to station
     if delivered >= mission["target_count"]:
         mission["status"] = "success"
-        logger.info("Mission SUCCESS: delivered %d/%d %s stones to station",
-                     delivered, mission["target_count"], mission["target_type"])
+        logger.info(
+            "Mission SUCCESS: delivered %d/%d %s stones to station",
+            delivered,
+            mission["target_count"],
+            mission["target_type"],
+        )
         return {"status": "success", "collected": collected, "delivered": delivered}
 
     # Failure: all rovers have zero battery and none are at the station
