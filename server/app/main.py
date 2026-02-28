@@ -14,7 +14,7 @@ from .config import settings
 from .db import init_db, close_db
 from .station import StationAgent
 from .views import router as views_router
-from .world import execute_action, get_snapshot, WORLD
+from .world import execute_action, get_snapshot, WORLD, charge_rover
 
 logging.basicConfig(
     level=logging.INFO,
@@ -121,6 +121,26 @@ async def agent_loop(agent, interval):
                     "payload": get_snapshot(),
                 }
             )
+
+            # Auto-charge rover when it arrives at station
+            rover = WORLD["agents"].get(agent.agent_id)
+            station_agent = WORLD["agents"].get("station")
+            if (
+                rover
+                and station_agent
+                and rover["position"] == station_agent["position"]
+                and rover["battery"] < 1.0
+            ):
+                charge_result = charge_rover(agent.agent_id)
+                if charge_result["ok"]:
+                    await broadcaster.send(
+                        {
+                            "source": "station",
+                            "type": "action",
+                            "name": "charge_rover",
+                            "payload": charge_result,
+                        }
+                    )
 
             # Trigger station on stone-found events
             for event in events:
