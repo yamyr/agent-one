@@ -30,7 +30,7 @@ BATTERY_COST_ANALYZE_GROUND = 0.03
 CHARGE_RATE = 0.20
 MAX_MOVE_DISTANCE = 3
 
-AGENT_STARTS = {(0, 0), (2, 10), (2, 12)}
+AGENT_STARTS = {(0, 0)}
 STONE_TYPES = ["core", "basalt"]
 REVEAL_RADIUS = 5
 TARGET_STONE_TYPE = "core"
@@ -215,8 +215,8 @@ def _build_initial_world():
                 "mission": {"objective": "Coordinate Mars mission", "plan": []},
                 "visited": [[0, 0]],
             },
-            "rover-mock": _make_rover(2, 10),
-            "rover-mistral": _make_rover(2, 12),
+            "rover-mock": _make_rover(0, 0),
+            "rover-mistral": _make_rover(0, 0),
         },
         "stones": stones,
         "concentration_map": _compute_concentration_map(core_positions),
