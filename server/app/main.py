@@ -34,12 +34,14 @@ async def agent_loop(agent, interval):
             events = await asyncio.to_thread(agent.run_turn, INSTRUCTION)
             for event in events:
                 await broadcaster.send(event)
-            await broadcaster.send({
-                "source": "world",
-                "type": "event",
-                "name": "state",
-                "payload": get_snapshot(),
-            })
+            await broadcaster.send(
+                {
+                    "source": "world",
+                    "type": "event",
+                    "name": "state",
+                    "payload": get_snapshot(),
+                }
+            )
         except Exception:
             logger.exception("Agent loop error (%s)", agent.agent_id)
         await asyncio.sleep(interval)

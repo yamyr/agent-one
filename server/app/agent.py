@@ -101,12 +101,14 @@ class RoverAgent:
             if choice.message.content:
                 text = choice.message.content
                 logger.info("Rover thinking: %s", text)
-                events.append({
-                    "source": self.agent_id,
-                    "type": "event",
-                    "name": "thinking",
-                    "payload": {"text": text},
-                })
+                events.append(
+                    {
+                        "source": self.agent_id,
+                        "type": "event",
+                        "name": "thinking",
+                        "payload": {"text": text},
+                    }
+                )
 
             # No tool calls — turn is done
             if not choice.message.tool_calls:
@@ -118,16 +120,19 @@ class RoverAgent:
             # Execute each tool call
             for tc in choice.message.tool_calls:
                 result_str, action_event = self._execute_tool(
-                    tc.function.name, tc.function.arguments,
+                    tc.function.name,
+                    tc.function.arguments,
                 )
                 if action_event:
                     events.append(action_event)
-                messages.append({
-                    "role": "tool",
-                    "name": tc.function.name,
-                    "content": result_str,
-                    "tool_call_id": tc.id,
-                })
+                messages.append(
+                    {
+                        "role": "tool",
+                        "name": tc.function.name,
+                        "content": result_str,
+                        "tool_call_id": tc.id,
+                    }
+                )
         else:
             logger.warning("Rover hit max tool rounds (%d)", MAX_TOOL_ROUNDS)
 
@@ -147,20 +152,24 @@ class MockRoverAgent:
         others = [z for z in WORLD["zones"].keys() if z != current]
         target = random.choice(others)
 
-        events.append({
-            "source": self.agent_id,
-            "type": "event",
-            "name": "thinking",
-            "payload": {"text": f"I'm at {current}. I'll move to {target} to explore."},
-        })
+        events.append(
+            {
+                "source": self.agent_id,
+                "type": "event",
+                "name": "thinking",
+                "payload": {"text": f"I'm at {current}. I'll move to {target} to explore."},
+            }
+        )
 
         result = move_agent(self.agent_id, target)
         if result["ok"]:
-            events.append({
-                "source": self.agent_id,
-                "type": "action",
-                "name": "move",
-                "payload": {"from": result["from"], "to": result["to"]},
-            })
+            events.append(
+                {
+                    "source": self.agent_id,
+                    "type": "action",
+                    "name": "move",
+                    "payload": {"from": result["from"], "to": result["to"]},
+                }
+            )
 
         return events

@@ -6,6 +6,7 @@ RecordID notes:
 - RecordID.id: str          (e.g., "abc123")
 - str(RecordID) -> "table_name:id"
 """
+
 from __future__ import annotations
 
 from typing import Generator

@@ -4,7 +4,6 @@ from app.world import WORLD, move_agent, get_snapshot
 
 
 class TestMoveAgent(unittest.TestCase):
-
     def setUp(self):
         # Reset rover position before each test
         WORLD["agents"]["rover-mock"]["position"] = "Z01"

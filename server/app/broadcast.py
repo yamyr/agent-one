@@ -1,4 +1,5 @@
 """WebSocket broadcast manager for streaming simulation events to all connected clients."""
+
 from __future__ import annotations
 
 import json
