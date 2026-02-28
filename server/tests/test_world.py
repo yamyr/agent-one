@@ -158,6 +158,22 @@ class TestExecuteAction(unittest.TestCase):
         self.assertIn([12, 10], visited)
         self.assertIn([13, 10], visited)
 
+    def test_execute_move_no_battery(self):
+        """Move should fail when battery is too low."""
+        WORLD["agents"]["rover-mock"]["battery"] = 0.0
+        result = execute_action("rover-mock", "move", {"direction": "east"})
+        self.assertFalse(result["ok"])
+        self.assertIn("Not enough battery", result["error"])
+        self.assertEqual(WORLD["agents"]["rover-mock"]["position"], [2, 10])
+
+    def test_execute_move_insufficient_battery_multi(self):
+        """Multi-tile move should fail when battery < cost for full distance."""
+        WORLD["agents"]["rover-mock"]["battery"] = 0.03  # enough for 1 tile, not 3
+        result = execute_action("rover-mock", "move", {"direction": "east", "distance": 3})
+        self.assertFalse(result["ok"])
+        self.assertIn("Not enough battery", result["error"])
+        self.assertEqual(WORLD["agents"]["rover-mock"]["position"], [2, 10])
+
     def test_mission_in_snapshot(self):
         snap = get_snapshot()
         agent = snap["agents"]["rover-mock"]
