@@ -80,8 +80,8 @@ const tiles = computed(() => {
   const vh = visibleH.value
   for (let dy = 0; dy < vh; dy++) {
     for (let dx = 0; dx < vw; dx++) {
-      const x = camX.value + dx
-      const y = camY.value + vh - 1 - dy  // flip Y for SVG
+      const x = Math.floor(camX.value) + dx
+      const y = Math.floor(camY.value) + vh - 1 - dy  // flip Y for SVG
       arr.push({ x, y, sx: dx * TILE_SIZE, sy: dy * TILE_SIZE, key: `${x}-${y}` })
     }
   }
