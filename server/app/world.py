@@ -1,9 +1,11 @@
 """In-memory world state for the Mars simulation."""
 
 import copy
+import hashlib
 import logging
 import math
 import random
+import struct
 
 from .config import settings
 
@@ -13,7 +15,10 @@ if settings.world_seed:
     random.seed(settings.world_seed)
     logger.info("World seed: %s", settings.world_seed)
 
+# Legacy — kept for backward compat in tests; no longer enforced as boundary
 GRID_W, GRID_H = 20, 20
+
+CHUNK_SIZE = 16
 
 DIRECTIONS = {
     "north": (0, 1),
@@ -23,145 +28,225 @@ DIRECTIONS = {
 }
 
 BATTERY_COST_MOVE = 0.02
+BATTERY_COST_MOVE_DRONE = 0.01
 BATTERY_COST_DIG = 0.06
 BATTERY_COST_PICKUP = 0.02
 BATTERY_COST_ANALYZE = 0.03
 BATTERY_COST_ANALYZE_GROUND = 0.03
+BATTERY_COST_SCAN = 0.02
 CHARGE_RATE = 0.20
 MAX_MOVE_DISTANCE = 3
+MAX_MOVE_DISTANCE_DRONE = 6
 
 AGENT_STARTS = {(0, 0)}
 STONE_TYPES = ["core", "basalt"]
-REVEAL_RADIUS = 5
+ROVER_REVEAL_RADIUS = 3
+DRONE_REVEAL_RADIUS = 6
+REVEAL_RADIUS = ROVER_REVEAL_RADIUS  # legacy alias
 TARGET_STONE_TYPE = "core"
 TARGET_STONE_COUNT = 1
 MEMORY_MAX = 8
+BATTERY_SAFETY_MARGIN = 0.06  # 6% safety buffer above minimum needed
 
 
-def _random_free_pos(occupied):
-    """Pick a random grid position not in `occupied`."""
+def _battery_to_reach_station(agent):
+    """Calculate battery cost needed to return to station from current position."""
+    station = WORLD.get("agents", {}).get("station")
+    sp = station["position"] if station else [0, 0]
+    x, y = agent["position"]
+    dist = abs(x - sp[0]) + abs(y - sp[1])
+    cost_per_tile = BATTERY_COST_MOVE_DRONE if agent.get("type") == "drone" else BATTERY_COST_MOVE
+    return dist * cost_per_tile
+
+
+def must_return_to_base(agent):
+    """Check if agent must immediately return to base to avoid stranding.
+
+    Returns True if battery is at or below the cost to reach station + safety margin.
+    """
+    if agent.get("type") == "station":
+        return False
+    station = WORLD.get("agents", {}).get("station")
+    if station and agent["position"] == station["position"]:
+        return False  # already at station
+    cost = _battery_to_reach_station(agent)
+    return agent["battery"] <= cost + BATTERY_SAFETY_MARGIN
+
+
+def _random_free_pos(occupied, rng=None, cx=0, cy=0):
+    """Pick a random position within a chunk area not in `occupied`."""
+    r = rng or random
+    x0, y0 = cx * CHUNK_SIZE, cy * CHUNK_SIZE
     while True:
-        x = random.randint(0, GRID_W - 1)
-        y = random.randint(0, GRID_H - 1)
+        x = r.randint(x0, x0 + CHUNK_SIZE - 1)
+        y = r.randint(y0, y0 + CHUNK_SIZE - 1)
         if (x, y) not in occupied:
             return x, y
 
 
-def _generate_stones():
-    """Place 5-8 stones with clustered core placement via preferential attachment.
+# --------------- Chunk-based procedural generation ---------------
 
-    Returns (stones, core_positions) tuple.
-    All stones start with type='unknown' and a hidden '_true_type'.
-    """
-    count = random.randint(5, 8)
+
+def _chunk_seed(cx, cy):
+    """Deterministic seed for chunk (cx, cy)."""
+    base = settings.world_seed or 42
+    return int(hashlib.sha256(f"{base}:{cx}:{cy}".encode()).hexdigest()[:8], 16)
+
+
+def _chunk_key(x, y):
+    """Return the chunk coordinate for a world tile (x, y)."""
+    return (
+        x // CHUNK_SIZE if x >= 0 else -(-x - 1) // CHUNK_SIZE - 1,
+        y // CHUNK_SIZE if y >= 0 else -(-y - 1) // CHUNK_SIZE - 1,
+    )
+
+
+def _ensure_chunk(cx, cy):
+    """Generate and cache chunk (cx, cy) if not already present."""
+    chunks = WORLD.setdefault("chunks", {})
+    key = (cx, cy)
+    if key in chunks:
+        return chunks[key]
+
+    rng = random.Random(_chunk_seed(cx, cy))
+    x0, y0 = cx * CHUNK_SIZE, cy * CHUNK_SIZE
+
+    # Concentration: seeded hash-based pseudo-noise
+    conc = {}
+    for dy in range(CHUNK_SIZE):
+        for dx in range(CHUNK_SIZE):
+            wx, wy = x0 + dx, y0 + dy
+            conc[(wx, wy)] = _noise_concentration(wx, wy)
+
+    # Stones: origin chunk guaranteed ≥1 core, others 0-2 stones
     stones = []
-    occupied = set(AGENT_STARTS)
-    core_positions = []
+    is_origin = cx == 0 and cy == 0
+    occupied = set(AGENT_STARTS) if is_origin else set()
+    num_stones = rng.randint(1, 3) if is_origin else rng.randint(0, 2)
 
-    # Phase 1: guarantee at least one core stone (random placement)
-    for _ in range(TARGET_STONE_COUNT):
-        x, y = _random_free_pos(occupied)
-        occupied.add((x, y))
-        core_positions.append((x, y))
+    for i in range(num_stones):
+        is_core = (i == 0 and is_origin) or rng.random() < 0.3
+        sx, sy = _random_free_pos(occupied, rng, cx, cy)
+        occupied.add((sx, sy))
         stones.append(
             {
-                "position": [x, y],
+                "position": [sx, sy],
                 "type": "unknown",
-                "_true_type": "core",
+                "_true_type": "core" if is_core else "basalt",
                 "extracted": False,
                 "analyzed": False,
             }
         )
 
-    # Phase 2: fill the rest
-    while len(stones) < count:
-        is_core = random.random() < 0.3
-        if is_core and core_positions:
-            # Preferential attachment: bias toward existing cores
-            candidates = [
-                (x, y) for x in range(GRID_W) for y in range(GRID_H) if (x, y) not in occupied
-            ]
-            if candidates:
-                weights = []
-                for cx, cy in candidates:
-                    w = sum(1.0 / (1 + abs(cx - px) + abs(cy - py)) for px, py in core_positions)
-                    weights.append(w)
-                ((x, y),) = random.choices(candidates, weights=weights, k=1)
-            else:
-                x, y = _random_free_pos(occupied)
-            occupied.add((x, y))
-            core_positions.append((x, y))
-            stones.append(
-                {
-                    "position": [x, y],
-                    "type": "unknown",
-                    "_true_type": "core",
-                    "extracted": False,
-                    "analyzed": False,
-                }
-            )
-        else:
-            x, y = _random_free_pos(occupied)
-            occupied.add((x, y))
-            stones.append(
-                {
-                    "position": [x, y],
-                    "type": "unknown",
-                    "_true_type": "basalt",
-                    "extracted": False,
-                    "analyzed": False,
-                }
-            )
+    # Register stones in the global list
+    WORLD.setdefault("stones", []).extend(stones)
+    # Merge concentration into global map
+    WORLD.setdefault("concentration_map", {}).update(conc)
 
-    return stones, core_positions
+    chunk_data = {"generated": True, "stone_count": len(stones)}
+    chunks[key] = chunk_data
+    logger.info("Generated chunk (%d,%d) with %d stones", cx, cy, len(stones))
+    return chunk_data
 
 
-def _compute_concentration_map(core_positions):
-    """Compute a concentration map based on proximity to core stone positions.
+def _noise_concentration(x, y):
+    """Deterministic noise value 0.0-1.0 for world tile (x, y).
 
-    For each cell, concentration = sum(exp(-d^2 / sigma^2)) for each core,
-    where d = manhattan distance. Normalized so max = 1.0.
+    Uses layered hash-based noise at multiple frequencies to create
+    natural-looking concentration fields. Core stones later boost
+    nearby values via _boost_concentration_near_cores().
     """
-    sigma = 4.0
-    conc = {}
-    for x in range(GRID_W):
-        for y in range(GRID_H):
-            val = sum(
-                math.exp(-((abs(x - px) + abs(y - py)) ** 2) / (sigma**2))
-                for px, py in core_positions
-            )
-            conc[(x, y)] = val
+    base_seed = settings.world_seed or 42
+    val = 0.0
+    amp = 1.0
+    total_amp = 0.0
+    for octave in range(3):
+        freq = 1 << octave  # 1, 2, 4
+        h = hashlib.md5(f"{base_seed}:{x * freq}:{y * freq}:{octave}".encode()).digest()
+        n = struct.unpack("<H", h[:2])[0] / 65535.0
+        val += n * amp
+        total_amp += amp
+        amp *= 0.5
+    raw = val / total_amp  # 0.0-1.0
+    return round(raw * 0.4, 4)  # base noise is low; cores boost it
 
-    max_val = max(conc.values()) if conc else 1.0
-    if max_val > 0:
-        for key in conc:
-            conc[key] /= max_val
-    return conc
+
+def _boost_concentration_near_cores():
+    """After stones are placed, boost concentration near core positions."""
+    sigma = 4.0
+    core_positions = []
+    for s in WORLD.get("stones", []):
+        if s.get("_true_type") == "core":
+            core_positions.append(tuple(s["position"]))
+    if not core_positions:
+        return
+    conc = WORLD.setdefault("concentration_map", {})
+    boosted = set()
+    for px, py in core_positions:
+        for dx in range(-8, 9):
+            for dy in range(-8, 9):
+                cell = (px + dx, py + dy)
+                if cell in boosted:
+                    continue
+                d = abs(dx) + abs(dy)
+                boost = math.exp(-(d**2) / (sigma**2))
+                if cell in conc:
+                    conc[cell] = min(1.0, conc[cell] + boost * 0.6)
+                else:
+                    conc[cell] = round(boost * 0.6, 4)
+                boosted.add(cell)
+
+
+def get_concentration(x, y):
+    """Get concentration at (x, y), generating the chunk if needed."""
+    cx, cy = _chunk_key(x, y)
+    _ensure_chunk(cx, cy)
+    return WORLD.get("concentration_map", {}).get((x, y), 0.0)
 
 
 def _cells_in_radius(cx, cy, radius):
-    """Return set of (x, y) tuples within Manhattan distance `radius` of (cx, cy), clamped to grid."""
+    """Return set of (x, y) tuples within Manhattan distance `radius` of (cx, cy)."""
     cells = set()
     for dy in range(-radius, radius + 1):
         for dx in range(-radius, radius + 1):
             if abs(dx) + abs(dy) <= radius:
-                x, y = cx + dx, cy + dy
-                if 0 <= x < GRID_W and 0 <= y < GRID_H:
-                    cells.add((x, y))
+                cells.add((cx + dx, cy + dy))
     return cells
 
 
-def _init_revealed(cx, cy):
+def _reveal_radius_for(agent):
+    """Return the reveal radius for an agent based on its type."""
+    return DRONE_REVEAL_RADIUS if agent.get("type") == "drone" else ROVER_REVEAL_RADIUS
+
+
+def _init_revealed(cx, cy, radius=ROVER_REVEAL_RADIUS):
     """Build initial revealed set for an agent starting at (cx, cy)."""
-    return [[x, y] for x, y in sorted(_cells_in_radius(cx, cy, REVEAL_RADIUS))]
+    return [[x, y] for x, y in sorted(_cells_in_radius(cx, cy, radius))]
 
 
 def _expand_revealed(agent, cx, cy):
     """Add newly visible cells around (cx, cy) to the agent's revealed list."""
+    radius = _reveal_radius_for(agent)
     current = {tuple(c) for c in agent.get("revealed", [])}
-    for cell in _cells_in_radius(cx, cy, REVEAL_RADIUS):
+    # Ensure chunks exist for all cells in reveal radius
+    chunks_needed = set()
+    for cell in _cells_in_radius(cx, cy, radius):
+        chunks_needed.add(_chunk_key(cell[0], cell[1]))
+    for ck in chunks_needed:
+        _ensure_chunk(*ck)
+    for cell in _cells_in_radius(cx, cy, radius):
         if cell not in current:
             agent.setdefault("revealed", []).append(list(cell))
+            _update_bounds(cell[0], cell[1])
+
+
+def _update_bounds(x, y):
+    """Expand world bounds to include (x, y)."""
+    bounds = WORLD.setdefault("bounds", {"min_x": 0, "max_x": 0, "min_y": 0, "max_y": 0})
+    bounds["min_x"] = min(bounds["min_x"], x)
+    bounds["max_x"] = max(bounds["max_x"], x)
+    bounds["min_y"] = min(bounds["min_y"], y)
+    bounds["max_y"] = max(bounds["max_y"], y)
 
 
 _ROVER_TOOL_DEFS = [
@@ -185,6 +270,34 @@ _ROVER_TOOL_DEFS = [
 ]
 
 
+_DRONE_TOOL_DEFS = [
+    {
+        "name": "move",
+        "description": "Fly 1-6 tiles in a cardinal direction (north/south/east/west). Costs 1% battery per tile.",
+    },
+    {
+        "name": "scan",
+        "description": "Scan the area below and around the drone to sample concentration readings. Returns probability values for surrounding tiles indicating likelihood of precious stone deposits. Costs 2% battery.",
+    },
+]
+
+
+def _make_drone(start_x, start_y):
+    return {
+        "position": [start_x, start_y],
+        "battery": 1.0,
+        "mission": {"objective": "Scout terrain for precious stone deposits", "plan": []},
+        "visited": [[start_x, start_y]],
+        "revealed": _init_revealed(start_x, start_y, DRONE_REVEAL_RADIUS),
+        "inventory": [],
+        "memory": [],
+        "tasks": [],
+        "type": "drone",
+        "ground_readings": {},
+        "tools": list(_DRONE_TOOL_DEFS),
+    }
+
+
 def _make_rover(start_x, start_y):
     return {
         "position": [start_x, start_y],
@@ -204,9 +317,8 @@ def _make_rover(start_x, start_y):
 def _build_initial_world():
     if settings.world_seed:
         random.seed(settings.world_seed)
-    stones, core_positions = _generate_stones()
-    return {
-        "grid": {"w": GRID_W, "h": GRID_H},
+    world = {
+        "grid": {"w": GRID_W, "h": GRID_H},  # kept for legacy compat; viewport is dynamic
         "agents": {
             "station": {
                 "position": [0, 0],
@@ -217,10 +329,14 @@ def _build_initial_world():
             },
             "rover-mock": _make_rover(0, 0),
             "rover-mistral": _make_rover(0, 0),
+            "drone-mistral": _make_drone(0, 0),
         },
-        "stones": stones,
-        "concentration_map": _compute_concentration_map(core_positions),
+        "stones": [],
+        "chunks": {},
+        "concentration_map": {},
+        "drone_scans": [],
         "tick": 0,
+        "bounds": {"min_x": -3, "max_x": 3, "min_y": -3, "max_y": 3},
         "mission": {
             "status": "running",
             "target_type": TARGET_STONE_TYPE,
@@ -228,9 +344,20 @@ def _build_initial_world():
             "collected_count": 0,
         },
     }
+    return world
+
+
+def _init_world_chunks():
+    """Generate starting chunks around origin after WORLD is initialized."""
+    # Generate the origin chunk and immediate neighbors
+    for cx in range(-1, 2):
+        for cy in range(-1, 2):
+            _ensure_chunk(cx, cy)
+    _boost_concentration_near_cores()
 
 
 WORLD = _build_initial_world()
+_init_world_chunks()
 
 
 def reset_world():
@@ -238,6 +365,7 @@ def reset_world():
     fresh = _build_initial_world()
     WORLD.clear()
     WORLD.update(fresh)
+    _init_world_chunks()
     logger.info("World reset")
 
 
@@ -260,23 +388,26 @@ def check_ground(agent_id):
 
 
 def move_agent(agent_id, x, y):
-    """Move an agent to target (x, y). Must be a straight cardinal line, up to MAX_MOVE_DISTANCE tiles."""
+    """Move an agent to target (x, y). Must be a straight cardinal line, respecting per-agent max distance."""
     agent = WORLD["agents"].get(agent_id)
     if agent is None:
         return {"ok": False, "error": f"Unknown agent: {agent_id}"}
 
-    if not (0 <= x < GRID_W and 0 <= y < GRID_H):
-        return {"ok": False, "error": f"Out of bounds: ({x}, {y})"}
+    max_dist = MAX_MOVE_DISTANCE_DRONE if agent.get("type") == "drone" else MAX_MOVE_DISTANCE
 
     ox, oy = agent["position"]
     dx, dy = x - ox, y - oy
     dist = abs(dx) + abs(dy)
     if dist == 0:
         return {"ok": False, "error": f"Already at ({x}, {y})"}
-    if dist > MAX_MOVE_DISTANCE:
-        return {"ok": False, "error": f"Too far: {dist} tiles (max {MAX_MOVE_DISTANCE})"}
+    if dist > max_dist:
+        return {"ok": False, "error": f"Too far: {dist} tiles (max {max_dist})"}
     if dx != 0 and dy != 0:
         return {"ok": False, "error": f"Not a straight line: ({ox}, {oy}) -> ({x}, {y})"}
+
+    # Ensure chunk exists at destination
+    _ensure_chunk(*_chunk_key(x, y))
+    _update_bounds(x, y)
 
     agent["position"] = [x, y]
     logger.info("Agent %s moved (%d,%d) -> (%d,%d)", agent_id, ox, oy, x, y)
@@ -289,14 +420,18 @@ def execute_action(agent_id, action_name, params):
     if agent is None:
         return {"ok": False, "error": f"Unknown agent: {agent_id}"}
 
+    is_drone = agent.get("type") == "drone"
+
     if action_name == "move":
         direction = params.get("direction")
         delta = DIRECTIONS.get(direction)
         if delta is None:
             return {"ok": False, "error": f"Invalid direction: {direction}"}
-        distance = max(1, min(MAX_MOVE_DISTANCE, int(params.get("distance", 1))))
+        max_dist = MAX_MOVE_DISTANCE_DRONE if is_drone else MAX_MOVE_DISTANCE
+        move_cost = BATTERY_COST_MOVE_DRONE if is_drone else BATTERY_COST_MOVE
+        distance = max(1, min(max_dist, int(params.get("distance", 1))))
 
-        cost = BATTERY_COST_MOVE * distance
+        cost = move_cost * distance
         if agent["battery"] < cost:
             record_memory(
                 agent_id,
@@ -311,7 +446,7 @@ def execute_action(agent_id, action_name, params):
         tx, ty = ox + delta[0] * distance, oy + delta[1] * distance
         result = move_agent(agent_id, tx, ty)
         if result["ok"]:
-            agent["battery"] = max(0.0, agent["battery"] - BATTERY_COST_MOVE * distance)
+            agent["battery"] = max(0.0, agent["battery"] - move_cost * distance)
             # Mark all intermediate + destination tiles as visited/revealed
             for step in range(1, distance + 1):
                 sx, sy = ox + delta[0] * step, oy + delta[1] * step
@@ -330,6 +465,8 @@ def execute_action(agent_id, action_name, params):
                     agent_id, f"Moved {direction} {distance} to ({tx},{ty}), empty ground"
                 )
     elif action_name == "analyze":
+        if is_drone:
+            return {"ok": False, "error": "Drones cannot analyze stones"}
         result = _execute_analyze(agent_id, agent)
         if result["ok"]:
             record_memory(
@@ -344,6 +481,8 @@ def execute_action(agent_id, action_name, params):
                 f"Ground concentration at ({result['position'][0]},{result['position'][1]}): {result['concentration']:.3f}",
             )
     elif action_name == "dig":
+        if is_drone:
+            return {"ok": False, "error": "Drones cannot dig"}
         result = _execute_dig(agent_id, agent)
         if result["ok"]:
             record_memory(
@@ -351,11 +490,20 @@ def execute_action(agent_id, action_name, params):
                 f"Dug out {result['stone']['type']} stone at ({result['position'][0]},{result['position'][1]})",
             )
     elif action_name == "pickup":
+        if is_drone:
+            return {"ok": False, "error": "Drones cannot pick up stones"}
         result = _execute_pickup(agent_id, agent)
         if result["ok"]:
             record_memory(
                 agent_id,
                 f"Picked up {result['stone']['type']} stone at ({result['position'][0]},{result['position'][1]}), inventory={result['inventory_count']}",
+            )
+    elif action_name == "scan":
+        result = _execute_scan(agent_id, agent)
+        if result["ok"]:
+            record_memory(
+                agent_id,
+                f"Scanned area around ({result['position'][0]},{result['position'][1]}), peak concentration={result['peak']:.3f}",
             )
     else:
         return {"ok": False, "error": f"Unknown action: {action_name}"}
@@ -406,13 +554,40 @@ def _execute_analyze_ground(agent_id, agent):
 
     x, y = agent["position"]
     agent["battery"] = max(0.0, agent["battery"] - BATTERY_COST_ANALYZE_GROUND)
-    concentration = WORLD.get("concentration_map", {}).get((x, y), 0.0)
+    concentration = get_concentration(x, y)
     readings = agent.setdefault("ground_readings", {})
     readings[f"{x},{y}"] = concentration
     logger.info(
         "Agent %s analyzed ground at (%d,%d), concentration=%.2f", agent_id, x, y, concentration
     )
     return {"ok": True, "position": [x, y], "concentration": round(concentration, 3)}
+
+
+def _execute_scan(agent_id, agent):
+    """Drone aerial scan: sample concentration map around current position."""
+    if agent["battery"] < BATTERY_COST_SCAN:
+        return {"ok": False, "error": "Not enough battery to scan"}
+
+    x, y = agent["position"]
+    agent["battery"] = max(0.0, agent["battery"] - BATTERY_COST_SCAN)
+    scan_radius = DRONE_REVEAL_RADIUS
+    readings = {}
+    peak = 0.0
+    for cell in _cells_in_radius(x, y, scan_radius):
+        val = get_concentration(cell[0], cell[1])
+        readings[f"{cell[0]},{cell[1]}"] = round(val, 3)
+        if val > peak:
+            peak = val
+
+    scan_entry = {
+        "position": [x, y],
+        "readings": readings,
+        "peak": round(peak, 3),
+        "scanner": agent_id,
+    }
+    WORLD.setdefault("drone_scans", []).append(scan_entry)
+    logger.info("Agent %s scanned at (%d,%d), peak=%.3f", agent_id, x, y, peak)
+    return {"ok": True, "position": [x, y], "readings": readings, "peak": round(peak, 3)}
 
 
 def _execute_dig(agent_id, agent):
@@ -584,12 +759,88 @@ def update_tasks(agent_id):
     agent = WORLD["agents"].get(agent_id)
     if agent is None:
         return
+    if agent.get("type") == "drone":
+        _update_drone_tasks(agent_id, agent)
+    else:
+        _update_rover_tasks(agent_id, agent)
+
+
+def _update_drone_tasks(agent_id, agent):
+    """Recompute tasks for a drone — scan unscanned areas, explore the map."""
+    x, y = agent["position"]
+    _ = {tuple(c) for c in agent.get("visited", [])}  # reserved for future use
+    tasks = []
+
+    # CRITICAL: battery safety — must return to base if battery is low
+    if must_return_to_base(agent):
+        station = WORLD["agents"].get("station")
+        sp = station["position"] if station else [0, 0]
+        if [x, y] != [sp[0], sp[1]]:
+            cost = _battery_to_reach_station(agent)
+            tasks.append(
+                f"⚠️ LOW BATTERY ({agent['battery']:.0%}) — RETURN TO STATION at ({sp[0]},{sp[1]}) immediately! "
+                f"Need {cost:.0%} to get back."
+            )
+            agent["tasks"] = tasks
+            return
+
+    # Check if current area has been scanned already
+    scanned_positions = {tuple(s["position"]) for s in WORLD.get("drone_scans", [])}
+    if (x, y) not in scanned_positions:
+        tasks.append(f"Scan area at current position ({x},{y})")
+
+    # Find nearest unscanned region within a search radius around the drone
+    search_radius = 30
+    best_target = None
+    best_dist = float("inf")
+    for gx in range(x - search_radius, x + search_radius + 1):
+        for gy in range(y - search_radius, y + search_radius + 1):
+            if (gx, gy) in scanned_positions:
+                continue
+            min_scan_dist = min(
+                (abs(gx - sp[0]) + abs(gy - sp[1]) for sp in scanned_positions),
+                default=search_radius * 2,
+            )
+            if min_scan_dist < DRONE_REVEAL_RADIUS:
+                continue
+            d = abs(gx - x) + abs(gy - y)
+            if d < best_dist:
+                best_dist = d
+                best_target = (gx, gy)
+
+    if best_target and best_dist > 0:
+        hint = _direction_hint(best_target[0] - x, best_target[1] - y)
+        tasks.append(
+            f"Fly to unscanned area at ({best_target[0]},{best_target[1]}) — {hint}, {best_dist} tiles"
+        )
+
+    if not tasks:
+        tasks.append("All areas scanned — patrol for new readings")
+
+    agent["tasks"] = tasks
+
+
+def _update_rover_tasks(agent_id, agent):
+    """Recompute short-term tasks for a rover based on current world state."""
     x, y = agent["position"]
     mission = WORLD["mission"]
     target_type = mission["target_type"]
     inventory = agent.get("inventory", [])
     revealed_set = {tuple(c) for c in agent.get("revealed", [])}
     tasks = []
+
+    # CRITICAL: battery safety — must return to base if battery is low
+    if must_return_to_base(agent):
+        station = WORLD["agents"].get("station")
+        sp = station["position"] if station else [0, 0]
+        if [x, y] != sp:
+            cost = _battery_to_reach_station(agent)
+            tasks.append(
+                f"⚠️ LOW BATTERY ({agent['battery']:.0%}) — RETURN TO STATION at ({sp[0]},{sp[1]}) immediately! "
+                f"Need {cost:.0%} to get back."
+            )
+            agent["tasks"] = tasks
+            return
 
     # Already collected target stone → return to station
     has_target = any(s["type"] == target_type for s in inventory)
@@ -622,7 +873,6 @@ def update_tasks(agent_id):
         sp = tuple(stone["position"])
         if sp in revealed_set:
             dist = abs(sp[0] - x) + abs(sp[1] - y)
-            # Priority: 0=unknown (might be core), 1=known target, 2=known basalt
             if stone["type"] == "unknown":
                 priority = 0
             elif stone["type"] == target_type:
@@ -639,10 +889,36 @@ def update_tasks(agent_id):
         label = stone["type"] if stone["type"] != "unknown" else "unknown"
         tasks.append(f"Navigate to {label} stone at ({sx},{sy}) — {hint}, {dist} tiles")
 
+    # Check drone scan hotspots — navigate toward high-concentration areas
+    if not tasks:
+        best_hotspot = _best_drone_hotspot(x, y, revealed_set)
+        if best_hotspot:
+            hx, hy, conc = best_hotspot
+            hint = _direction_hint(hx - x, hy - y)
+            dist = abs(hx - x) + abs(hy - y)
+            tasks.append(
+                f"Navigate to drone-scanned hotspot at ({hx},{hy}) — {hint}, {dist} tiles, concentration={conc:.2f}"
+            )
+
     if not tasks:
         tasks.append("Explore unvisited tiles to find stones")
 
     agent["tasks"] = tasks
+
+
+def _best_drone_hotspot(rx, ry, revealed_set):
+    """Find the highest-concentration unvisited cell from drone scans."""
+    best = None
+    best_conc = 0.15  # minimum threshold to consider
+    for scan in WORLD.get("drone_scans", []):
+        for key, conc in scan.get("readings", {}).items():
+            cx, cy = map(int, key.split(","))
+            if (cx, cy) in revealed_set:
+                continue  # rover already sees this area
+            if conc > best_conc:
+                best_conc = conc
+                best = (cx, cy, conc)
+    return best
 
 
 def assign_mission(agent_id, objective):
@@ -658,6 +934,8 @@ def assign_mission(agent_id, objective):
 def get_snapshot():
     """Return a deep copy of the current world state, filtered by fog-of-war."""
     snap = copy.deepcopy(WORLD)
+    # Remove internal chunk data
+    snap.pop("chunks", None)
     # Build union of all agents' revealed cells
     revealed = set()
     for agent in snap["agents"].values():
@@ -674,4 +952,7 @@ def get_snapshot():
     conc = snap.get("concentration_map")
     if conc and isinstance(conc, dict):
         snap["concentration_map"] = {f"{k[0]},{k[1]}": v for k, v in conc.items()}
+    # Ensure bounds are present
+    if "bounds" not in snap:
+        snap["bounds"] = {"min_x": 0, "max_x": GRID_W - 1, "min_y": 0, "max_y": GRID_H - 1}
     return snap

@@ -4,7 +4,9 @@ from app.world import WORLD, move_agent, execute_action, get_snapshot, check_gro
 from app.world import check_mission_status, charge_rover
 from app.world import BATTERY_COST_MOVE, BATTERY_COST_DIG, BATTERY_COST_PICKUP
 from app.world import BATTERY_COST_ANALYZE, BATTERY_COST_ANALYZE_GROUND
-from app.world import CHARGE_RATE, REVEAL_RADIUS, GRID_W, GRID_H, AGENT_STARTS
+from app.world import BATTERY_COST_SCAN, BATTERY_COST_MOVE_DRONE
+from app.world import CHARGE_RATE, REVEAL_RADIUS, ROVER_REVEAL_RADIUS, DRONE_REVEAL_RADIUS
+from app.world import AGENT_STARTS
 from app.world import assign_mission, _cells_in_radius, record_memory, MEMORY_MAX
 from app.world import update_tasks, _direction_hint
 
@@ -23,17 +25,19 @@ class TestMoveAgent(unittest.TestCase):
         self.assertEqual(result["to"], [3, 10])
         self.assertEqual(WORLD["agents"]["rover-mock"]["position"], [3, 10])
 
-    def test_move_out_of_bounds_negative(self):
+    def test_move_negative_coords_allowed(self):
+        """Infinite grid: negative coordinates are valid."""
         WORLD["agents"]["rover-mock"]["position"] = [0, 10]
         result = move_agent("rover-mock", -1, 10)
-        self.assertFalse(result["ok"])
-        self.assertIn("Out of bounds", result["error"])
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["to"], [-1, 10])
 
-    def test_move_out_of_bounds_over(self):
+    def test_move_beyond_old_bounds_allowed(self):
+        """Infinite grid: moving beyond old 20x20 bounds is valid."""
         WORLD["agents"]["rover-mock"]["position"] = [19, 10]
         result = move_agent("rover-mock", 20, 10)
-        self.assertFalse(result["ok"])
-        self.assertIn("Out of bounds", result["error"])
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["to"], [20, 10])
 
     def test_move_too_far(self):
         result = move_agent("rover-mock", 6, 10)
@@ -110,11 +114,12 @@ class TestExecuteAction(unittest.TestCase):
         self.assertTrue(result["ok"])
         self.assertAlmostEqual(WORLD["agents"]["rover-mock"]["battery"], 1.0 - BATTERY_COST_MOVE)
 
-    def test_execute_move_failed_no_drain(self):
+    def test_execute_move_negative_ok(self):
+        """Infinite grid: moving to negative coords succeeds."""
         WORLD["agents"]["rover-mock"]["position"] = [0, 10]
         result = execute_action("rover-mock", "move", {"direction": "west"})
-        self.assertFalse(result["ok"])
-        self.assertEqual(WORLD["agents"]["rover-mock"]["battery"], 1.0)
+        self.assertTrue(result["ok"])
+        self.assertEqual(WORLD["agents"]["rover-mock"]["position"], [-1, 10])
 
     def test_execute_move_invalid_direction(self):
         result = execute_action("rover-mock", "move", {"direction": "up"})
@@ -186,9 +191,9 @@ class TestExecuteAction(unittest.TestCase):
 
 class TestStones(unittest.TestCase):
     def test_stones_generated(self):
+        """With chunk system, initial chunks generate multiple stones."""
         stones = WORLD["stones"]
-        self.assertGreaterEqual(len(stones), 5)
-        self.assertLessEqual(len(stones), 8)
+        self.assertGreaterEqual(len(stones), 1)  # at least origin chunk's core
 
     def test_guaranteed_core_stones(self):
         core_count = sum(1 for s in WORLD["stones"] if s["_true_type"] == "core")
@@ -213,13 +218,12 @@ class TestStones(unittest.TestCase):
             self.assertFalse(stone["extracted"])
             self.assertFalse(stone["analyzed"])
 
-    def test_stones_in_bounds(self):
+    def test_stones_have_valid_positions(self):
+        """Stones should have integer coordinate positions (no bounds requirement)."""
         for stone in WORLD["stones"]:
             x, y = stone["position"]
-            self.assertGreaterEqual(x, 0)
-            self.assertLess(x, GRID_W)
-            self.assertGreaterEqual(y, 0)
-            self.assertLess(y, GRID_H)
+            self.assertIsInstance(x, int)
+            self.assertIsInstance(y, int)
 
     def test_stones_avoid_agent_starts(self):
         for stone in WORLD["stones"]:
@@ -235,8 +239,10 @@ class TestStones(unittest.TestCase):
         self.assertIn("concentration_map", WORLD)
         conc = WORLD["concentration_map"]
         self.assertGreater(len(conc), 0)
-        # Max value should be 1.0 (normalized)
-        self.assertAlmostEqual(max(conc.values()), 1.0)
+        # Values should be between 0 and 1
+        for v in conc.values():
+            self.assertGreaterEqual(v, 0.0)
+            self.assertLessEqual(v, 1.0)
 
     def test_concentration_map_serialized_in_snapshot(self):
         snap = get_snapshot()
@@ -759,6 +765,10 @@ class TestFogOfWar(unittest.TestCase):
         ]
         # Give rover-mistral an empty revealed so it doesn't interfere
         WORLD["agents"]["rover-mistral"]["revealed"] = []
+        # Give drone an empty revealed so it doesn't interfere
+        if "drone-mistral" in WORLD["agents"]:
+            self._original_drone_revealed = WORLD["agents"]["drone-mistral"].get("revealed", [])
+            WORLD["agents"]["drone-mistral"]["revealed"] = []
         self._original_stones = WORLD.get("stones", [])
 
     def tearDown(self):
@@ -767,6 +777,8 @@ class TestFogOfWar(unittest.TestCase):
         WORLD["agents"]["rover-mistral"]["revealed"] = WORLD["agents"]["rover-mistral"].get(
             "revealed", []
         )
+        if "drone-mistral" in WORLD["agents"]:
+            WORLD["agents"]["drone-mistral"]["revealed"] = self._original_drone_revealed
 
     def test_initial_revealed_cells_count(self):
         revealed = WORLD["agents"]["rover-mock"]["revealed"]
@@ -856,7 +868,7 @@ class TestFogOfWar(unittest.TestCase):
         # Stone beyond reveal radius — not visible at start, visible after moving east
         WORLD["stones"] = [
             {
-                "position": [16, 10],
+                "position": [14, 10],
                 "type": "unknown",
                 "_true_type": "basalt",
                 "extracted": False,
@@ -870,14 +882,14 @@ class TestFogOfWar(unittest.TestCase):
         self.assertEqual(len(snap_after["stones"]), 1)
 
     def test_cells_in_radius_at_corner(self):
+        """Infinite grid: cells_in_radius at origin includes negative coords."""
         cells = _cells_in_radius(0, 0, REVEAL_RADIUS)
-        # All cells should be in bounds
-        for x, y in cells:
-            self.assertGreaterEqual(x, 0)
-            self.assertGreaterEqual(y, 0)
-        # Corner has fewer cells than center
+        # Should include negative coords now (no clamping)
+        has_negative = any(x < 0 or y < 0 for x, y in cells)
+        self.assertTrue(has_negative)
+        # Full diamond at center and corner should be the same size
         center_cells = _cells_in_radius(10, 10, REVEAL_RADIUS)
-        self.assertLess(len(cells), len(center_cells))
+        self.assertEqual(len(cells), len(center_cells))
 
     def test_revealed_in_snapshot(self):
         snap = get_snapshot()
@@ -1271,3 +1283,171 @@ class TestUpdateTasks(unittest.TestCase):
         tasks = WORLD["agents"]["rover-mock"]["tasks"]
         self.assertEqual(len(tasks), 1)
         self.assertIn("Return to station", tasks[0])
+
+
+class TestDrone(unittest.TestCase):
+    """Tests for drone agent: creation, scan action, movement, reveal radius."""
+
+    def setUp(self):
+        self.drone = WORLD["agents"].get("drone-mistral")
+        if self.drone:
+            self.drone["position"] = [10, 10]
+            self.drone["battery"] = 1.0
+            self.drone["visited"] = [[10, 10]]
+            self.drone["memory"] = []
+        self._original_stones = list(WORLD.get("stones", []))
+        WORLD.setdefault("drone_scans", []).clear()
+
+    def tearDown(self):
+        WORLD["stones"] = self._original_stones
+
+    def test_drone_exists_in_world(self):
+        self.assertIn("drone-mistral", WORLD["agents"])
+        self.assertEqual(WORLD["agents"]["drone-mistral"]["type"], "drone")
+
+    def test_drone_reveal_radius_larger(self):
+        self.assertGreater(DRONE_REVEAL_RADIUS, ROVER_REVEAL_RADIUS)
+
+    def test_drone_initial_revealed_larger_than_rover(self):
+        drone_revealed = len(_cells_in_radius(0, 0, DRONE_REVEAL_RADIUS))
+        rover_revealed = len(_cells_in_radius(0, 0, ROVER_REVEAL_RADIUS))
+        self.assertGreater(drone_revealed, rover_revealed)
+
+    def test_scan_action(self):
+        result = execute_action("drone-mistral", "scan", {})
+        self.assertTrue(result["ok"])
+        self.assertIn("readings", result)
+        self.assertIn("peak", result)
+        self.assertEqual(len(WORLD["drone_scans"]), 1)
+
+    def test_scan_battery_cost(self):
+        before = self.drone["battery"]
+        execute_action("drone-mistral", "scan", {})
+        self.assertAlmostEqual(self.drone["battery"], before - BATTERY_COST_SCAN)
+
+    def test_scan_no_battery(self):
+        self.drone["battery"] = 0.0
+        result = execute_action("drone-mistral", "scan", {})
+        self.assertFalse(result["ok"])
+
+    def test_drone_move_max_distance(self):
+        result = execute_action("drone-mistral", "move", {"direction": "east", "distance": 6})
+        self.assertTrue(result["ok"])
+        self.assertEqual(self.drone["position"], [16, 10])
+
+    def test_drone_move_exceeds_max(self):
+        result = execute_action("drone-mistral", "move", {"direction": "east", "distance": 7})
+        # Should be clamped to MAX_MOVE_DISTANCE_DRONE=6
+        self.assertTrue(result["ok"])
+        self.assertEqual(self.drone["position"], [16, 10])
+
+    def test_drone_move_battery_cost_lower(self):
+        before = self.drone["battery"]
+        execute_action("drone-mistral", "move", {"direction": "east", "distance": 1})
+        self.assertAlmostEqual(self.drone["battery"], before - BATTERY_COST_MOVE_DRONE)
+
+    def test_drone_cannot_dig(self):
+        WORLD["stones"] = [
+            {
+                "position": [10, 10],
+                "type": "core",
+                "_true_type": "core",
+                "analyzed": True,
+                "extracted": False,
+            }
+        ]
+        result = execute_action("drone-mistral", "dig", {})
+        self.assertFalse(result["ok"])
+
+    def test_drone_tasks_scan_first(self):
+        update_tasks("drone-mistral")
+        tasks = self.drone["tasks"]
+        self.assertTrue(any("Scan" in t or "scan" in t.lower() for t in tasks))
+
+    def test_rover_tasks_use_drone_scans(self):
+        """Rover should suggest navigating to drone-scanned hotspot."""
+        WORLD["stones"] = []
+        WORLD["agents"]["rover-mock"]["position"] = [0, 0]
+        WORLD["agents"]["rover-mock"]["visited"] = [[0, 0]]
+        WORLD["agents"]["rover-mock"]["revealed"] = [
+            [x, y] for x, y in sorted(_cells_in_radius(0, 0, ROVER_REVEAL_RADIUS))
+        ]
+        WORLD["agents"]["rover-mock"]["inventory"] = []
+        # Add a high-concentration drone scan far from rover
+        WORLD["drone_scans"] = [
+            {
+                "position": [15, 15],
+                "readings": {"15,15": 0.9, "14,15": 0.7},
+                "peak": 0.9,
+                "scanner": "drone-mistral",
+            }
+        ]
+        update_tasks("rover-mock")
+        tasks = WORLD["agents"]["rover-mock"]["tasks"]
+        self.assertTrue(any("hotspot" in t for t in tasks))
+
+
+class TestChunkSystem(unittest.TestCase):
+    """Tests for infinite grid chunk-based procedural generation."""
+
+    def test_chunk_generated_on_move(self):
+        """Moving to a far tile generates the chunk."""
+        WORLD["agents"]["rover-mock"]["position"] = [30, 30]
+        WORLD["agents"]["rover-mock"]["battery"] = 1.0
+        result = move_agent("rover-mock", 31, 30)
+        self.assertTrue(result["ok"])
+        # Chunk containing (31, 30) should exist
+        from app.world import _chunk_key
+
+        ck = _chunk_key(31, 30)
+        self.assertIn(ck, WORLD["chunks"])
+
+    def test_chunk_deterministic(self):
+        """Same chunk coords always produce same concentration."""
+        from app.world import _ensure_chunk, get_concentration, CHUNK_SIZE
+
+        # Generate chunk (5, 5)
+        _ensure_chunk(5, 5)
+        val1 = get_concentration(5 * CHUNK_SIZE, 5 * CHUNK_SIZE)
+        # Re-generating should return cached (same) value
+        val2 = get_concentration(5 * CHUNK_SIZE, 5 * CHUNK_SIZE)
+        self.assertEqual(val1, val2)
+
+    def test_negative_coords_work(self):
+        """Agents can move to and exist at negative coordinates."""
+        WORLD["agents"]["rover-mock"]["position"] = [-5, -5]
+        WORLD["agents"]["rover-mock"]["battery"] = 1.0
+        result = move_agent("rover-mock", -6, -5)
+        self.assertTrue(result["ok"])
+        self.assertEqual(WORLD["agents"]["rover-mock"]["position"], [-6, -5])
+
+    def test_bounds_tracking(self):
+        """World bounds update when agents move."""
+        WORLD["agents"]["rover-mock"]["position"] = [50, 50]
+        WORLD["agents"]["rover-mock"]["battery"] = 1.0
+        move_agent("rover-mock", 51, 50)
+        bounds = WORLD["bounds"]
+        self.assertGreaterEqual(bounds["max_x"], 51)
+
+    def test_origin_chunk_has_core(self):
+        """Origin chunk should have at least one core stone."""
+        core_stones = [s for s in WORLD["stones"] if s.get("_true_type") == "core"]
+        self.assertGreaterEqual(len(core_stones), 1)
+
+    def test_get_concentration_lazy(self):
+        """get_concentration generates chunk on demand."""
+        from app.world import get_concentration, _chunk_key
+
+        # Access a far-away cell
+        val = get_concentration(100, 100)
+        self.assertIsInstance(val, float)
+        self.assertGreaterEqual(val, 0.0)
+        ck = _chunk_key(100, 100)
+        self.assertIn(ck, WORLD["chunks"])
+
+    def test_snapshot_includes_bounds(self):
+        """Snapshot should include world bounds."""
+        snap = get_snapshot()
+        self.assertIn("bounds", snap)
+        self.assertIn("min_x", snap["bounds"])
+        self.assertIn("max_x", snap["bounds"])

@@ -1,9 +1,13 @@
 export const GRID_SIZE = 20
 export const TILE_SIZE = 20
-export const MAP_W = GRID_SIZE * TILE_SIZE
-export const MAP_H = GRID_SIZE * TILE_SIZE
+export const VIEWPORT_W = 20
+export const VIEWPORT_H = 20
+export const MAP_W = VIEWPORT_W * TILE_SIZE
+export const MAP_H = VIEWPORT_H * TILE_SIZE
 
-export const REVEAL_RADIUS = 5
+export const ROVER_REVEAL_RADIUS = 3
+export const DRONE_REVEAL_RADIUS = 6
+export const REVEAL_RADIUS = ROVER_REVEAL_RADIUS  // legacy alias
 
 export const STONE_COLORS = {
   'core': '#b8962a',
@@ -15,10 +19,16 @@ export const AGENT_COLORS = {
   'station': '#44cc88',
   'rover-mock': '#6688cc',
   'rover-mistral': '#e06030',
+  'drone-mistral': '#cc44cc',
 }
 
 export function agentColor(id) {
   return AGENT_COLORS[id] || '#6c6'
+}
+
+export function revealRadius(id) {
+  if (id && id.startsWith('drone')) return DRONE_REVEAL_RADIUS
+  return ROVER_REVEAL_RADIUS
 }
 
 export function formatMoveEvent(payload) {

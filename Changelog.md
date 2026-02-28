@@ -33,6 +33,43 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **Infinite Grid with Viewport & Minimap**: World is no longer a fixed 20×20 grid
+  - Chunk-based procedural generation: 16×16 tile chunks generated lazily as agents explore
+  - Seeded/deterministic world: each chunk uses `sha256(world_seed:cx:cy)` for consistent generation
+  - No boundaries: agents can move to any integer coordinate (negative included)
+  - Per-chunk stone placement with origin chunk guaranteed ≥1 core stone
+  - Hash-based noise concentration map with core-proximity boosting
+  - Explored bounds tracking in `WORLD["bounds"]`
+  - **Viewport camera**: 20×20 tile viewport that pans over the infinite world
+  - **Auto-follow**: Camera tracks most recently moved agent by default
+  - **Drag-to-pan**: Click-drag to manually navigate; double-click to re-enable auto-follow
+  - **MiniMap component**: Reduced-scale overview of all explored terrain with viewport rectangle overlay and click-to-navigate
+  - 7 new chunk system tests (149 total pass)
+
+- **Entity Follow Selector**: UI controls to select which agent the camera tracks
+  - Follow buttons for each mobile agent (rovers, drone) plus "Free" camera mode
+  - Buttons styled with agent colors, highlight when active
+  - Drag-to-pan automatically switches to free camera mode
+  - No auto-follow by default — user chooses which entity to track
+
+- **Battery Safety Return-to-Base**: Critical safety feature ensuring agents never strand
+  - `must_return_to_base()` function calculates Manhattan distance to station × move cost + 6% safety margin
+  - Battery check is the FIRST priority in both `_update_rover_tasks` and `_update_drone_tasks`
+  - Overrides ALL other tasks (exploration, stone collection, scanning) when battery is critical
+  - MockRoverAgent and MockDroneAgent enforce return-to-base at agent level (hard override)
+  - Task system generates urgent "⚠️ LOW BATTERY" messages for LLM agents
+
+- **Drone Scout Agent**: Aerial drone entity that scouts terrain for precious stone deposits
+  - `DroneAgent` (LLM-powered via Mistral) + `MockDroneAgent` (deterministic fallback) in `agent.py`
+  - Drone flies 1-6 tiles per move at 1% battery/tile (rovers: 1-3 tiles at 2%)
+  - `scan` action: samples concentration map around drone position, returns probability readings
+  - `drone_scans` shared memory: rovers read scan results and navigate toward high-concentration hotspots
+  - Drone is a pure scout — cannot dig, analyze, or pick up stones
+  - Per-agent reveal radius: `ROVER_REVEAL_RADIUS=3`, `DRONE_REVEAL_RADIUS=6`
+  - Per-agent max move distance: rovers 3 tiles, drone 6 tiles
+  - Purple triangle marker on UI map with larger dashed visibility circle
+  - 12 new drone unit tests (142 total pass)
+
 - **GitHub → Discord webhook notifications**: New workflow `.github/workflows/discord-git-notify.yml` sends PR and main-branch push events to Discord channels
   - Separate jobs for PR events (opened/reopened/synchronize/ready_for_review/closed/merged) and pushes to `main`
   - Channel routing via secrets: `DISCORD_WEBHOOK_URL` (default fallback), `DISCORD_WEBHOOK_URL_PR` (optional PR channel), `DISCORD_WEBHOOK_URL_MAIN` (optional main channel)

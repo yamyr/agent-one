@@ -1,6 +1,6 @@
 import unittest
 
-from app.world import WORLD, GRID_W, GRID_H
+from app.world import WORLD
 from app.agent import MockRoverAgent
 
 
@@ -40,17 +40,19 @@ class TestMockRoverAgent(unittest.TestCase):
         self.assertEqual(WORLD["agents"]["rover-mock"]["position"], pos_before)
 
     def test_run_turn_at_corner(self):
+        """With infinite grid, all 4 directions are valid from any position."""
         WORLD["agents"]["rover-mock"]["position"] = [0, 0]
         agent = MockRoverAgent()
         turn = agent.run_turn()
-        self.assertIn(turn["action"]["params"]["direction"], ["north", "east"])
+        self.assertIn(turn["action"]["params"]["direction"], ["north", "south", "east", "west"])
 
     def test_run_turn_at_bottom_right(self):
-        WORLD["agents"]["rover-mock"]["position"] = [GRID_W - 1, GRID_H - 1]
-        WORLD["agents"]["rover-mock"]["visited"] = [[GRID_W - 1, GRID_H - 1]]
+        """With infinite grid, all 4 directions are valid from any position."""
+        WORLD["agents"]["rover-mock"]["position"] = [19, 19]
+        WORLD["agents"]["rover-mock"]["visited"] = [[19, 19]]
         agent = MockRoverAgent()
         turn = agent.run_turn()
-        self.assertIn(turn["action"]["params"]["direction"], ["south", "west"])
+        self.assertIn(turn["action"]["params"]["direction"], ["north", "south", "east", "west"])
 
     def test_mock_prefers_unvisited(self):
         WORLD["agents"]["rover-mock"]["position"] = [10, 10]

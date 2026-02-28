@@ -1,8 +1,10 @@
 <script setup>
-import { ref } from 'vue'
+import { ref, computed } from 'vue'
 import { useWebSocket } from './composables/useWebSocket.js'
+import { agentColor } from './constants.js'
 import AppHeader from './components/AppHeader.vue'
 import WorldMap from './components/WorldMap.vue'
+import MiniMap from './components/MiniMap.vue'
 import AgentPanes from './components/AgentPanes.vue'
 import MissionBar from './components/MissionBar.vue'
 import EventLog from './components/EventLog.vue'
@@ -11,7 +13,20 @@ import NarrationPlayer from './components/NarrationPlayer.vue'
 
 const selectedAgent = ref(null)
 const paused = ref(false)
-const narrationEnabled = ref(false)
+const narrationEnabled = ref(true)
+const worldMapRef = ref(null)
+const followAgent = ref(null)  // which agent the camera follows (null = free camera)
+const camXVal = computed(() => worldMapRef.value?.camX ?? -10)
+const camYVal = computed(() => worldMapRef.value?.camY ?? -10)
+
+const mobileAgents = computed(() => {
+  if (!agentIds.value) return []
+  return agentIds.value.filter(id => {
+    if (!worldState.value) return false
+    const a = worldState.value.agents[id]
+    return a && a.type !== 'station'
+  })
+})
 
 
 async function onWsConnect() {
@@ -63,6 +78,22 @@ function agentData(id) {
   if (!worldState.value) return null
   return worldState.value.agents[id] || null
 }
+
+function onMinimapNavigate(x, y) {
+  if (worldMapRef.value) {
+    worldMapRef.value.camX = x
+    worldMapRef.value.camY = y
+    followAgent.value = null
+  }
+}
+
+function setFollowAgent(id) {
+  followAgent.value = followAgent.value === id ? null : id
+}
+
+function onUnfollow() {
+  followAgent.value = null
+}
 </script>
 
 <template>
@@ -85,10 +116,36 @@ function agentData(id) {
 
     <div class="top-row">
       <div class="left-col">
+        <!-- Entity follow selector -->
+        <div class="follow-bar">
+          <span class="follow-label">Follow:</span>
+          <button
+            v-for="id in mobileAgents"
+            :key="id"
+            :class="['follow-btn', { active: followAgent === id }]"
+            :style="{ borderColor: agentColor(id), color: followAgent === id ? '#0a0a0f' : agentColor(id), backgroundColor: followAgent === id ? agentColor(id) : 'transparent' }"
+            @click="setFollowAgent(id)"
+          >{{ id }}</button>
+          <button
+            :class="['follow-btn', { active: !followAgent }]"
+            :style="{ borderColor: '#555', color: !followAgent ? '#0a0a0f' : '#555', backgroundColor: !followAgent ? '#555' : 'transparent' }"
+            @click="followAgent = null"
+          >Free</button>
+        </div>
         <WorldMap
+          ref="worldMapRef"
           :world-state="worldState"
           :agent-ids="agentIds"
+          :follow-agent="followAgent"
           @select-agent="selectAgent"
+          @unfollow="onUnfollow"
+        />
+        <MiniMap
+          :world-state="worldState"
+          :agent-ids="agentIds"
+          :cam-x="camXVal"
+          :cam-y="camYVal"
+          @navigate="onMinimapNavigate"
         />
         <EventLog :events="events" />
       </div>
@@ -167,5 +224,38 @@ h2 {
 ::-webkit-scrollbar-thumb {
   background: #222;
   border-radius: 2px;
+}
+
+.follow-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  flex-wrap: wrap;
+}
+
+.follow-label {
+  font-size: 0.7rem;
+  color: #555;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.follow-btn {
+  font-family: 'Courier New', monospace;
+  font-size: 0.65rem;
+  padding: 0.15rem 0.4rem;
+  border: 1px solid;
+  border-radius: 3px;
+  background: transparent;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.follow-btn:hover {
+  opacity: 0.8;
+}
+
+.follow-btn.active {
+  font-weight: bold;
 }
 </style>
