@@ -1,9 +1,11 @@
 """In-memory world state for the Mars simulation."""
 
 import copy
+import hashlib
 import logging
 import math
 import random
+import struct
 
 from .config import settings
 
@@ -13,7 +15,10 @@ if settings.world_seed:
     random.seed(settings.world_seed)
     logger.info("World seed: %s", settings.world_seed)
 
+# Legacy — kept for backward compat in tests; no longer enforced as boundary
 GRID_W, GRID_H = 20, 20
+
+CHUNK_SIZE = 16
 
 DIRECTIONS = {
     "north": (0, 1),
@@ -43,116 +48,139 @@ TARGET_STONE_COUNT = 1
 MEMORY_MAX = 8
 
 
-def _random_free_pos(occupied):
-    """Pick a random grid position not in `occupied`."""
+def _random_free_pos(occupied, rng=None, cx=0, cy=0):
+    """Pick a random position within a chunk area not in `occupied`."""
+    r = rng or random
+    x0, y0 = cx * CHUNK_SIZE, cy * CHUNK_SIZE
     while True:
-        x = random.randint(0, GRID_W - 1)
-        y = random.randint(0, GRID_H - 1)
+        x = r.randint(x0, x0 + CHUNK_SIZE - 1)
+        y = r.randint(y0, y0 + CHUNK_SIZE - 1)
         if (x, y) not in occupied:
             return x, y
 
 
-def _generate_stones():
-    """Place 5-8 stones with clustered core placement via preferential attachment.
+# --------------- Chunk-based procedural generation ---------------
 
-    Returns (stones, core_positions) tuple.
-    All stones start with type='unknown' and a hidden '_true_type'.
-    """
-    count = random.randint(5, 8)
-    stones = []
-    occupied = set(AGENT_STARTS)
-    core_positions = []
-
-    # Phase 1: guarantee at least one core stone (random placement)
-    for _ in range(TARGET_STONE_COUNT):
-        x, y = _random_free_pos(occupied)
-        occupied.add((x, y))
-        core_positions.append((x, y))
-        stones.append(
-            {
-                "position": [x, y],
-                "type": "unknown",
-                "_true_type": "core",
-                "extracted": False,
-                "analyzed": False,
-            }
-        )
-
-    # Phase 2: fill the rest
-    while len(stones) < count:
-        is_core = random.random() < 0.3
-        if is_core and core_positions:
-            # Preferential attachment: bias toward existing cores
-            candidates = [
-                (x, y) for x in range(GRID_W) for y in range(GRID_H) if (x, y) not in occupied
-            ]
-            if candidates:
-                weights = []
-                for cx, cy in candidates:
-                    w = sum(1.0 / (1 + abs(cx - px) + abs(cy - py)) for px, py in core_positions)
-                    weights.append(w)
-                ((x, y),) = random.choices(candidates, weights=weights, k=1)
-            else:
-                x, y = _random_free_pos(occupied)
-            occupied.add((x, y))
-            core_positions.append((x, y))
-            stones.append(
-                {
-                    "position": [x, y],
-                    "type": "unknown",
-                    "_true_type": "core",
-                    "extracted": False,
-                    "analyzed": False,
-                }
-            )
-        else:
-            x, y = _random_free_pos(occupied)
-            occupied.add((x, y))
-            stones.append(
-                {
-                    "position": [x, y],
-                    "type": "unknown",
-                    "_true_type": "basalt",
-                    "extracted": False,
-                    "analyzed": False,
-                }
-            )
-
-    return stones, core_positions
+def _chunk_seed(cx, cy):
+    """Deterministic seed for chunk (cx, cy)."""
+    base = settings.world_seed or 42
+    return int(hashlib.sha256(f"{base}:{cx}:{cy}".encode()).hexdigest()[:8], 16)
 
 
-def _compute_concentration_map(core_positions):
-    """Compute a concentration map based on proximity to core stone positions.
+def _chunk_key(x, y):
+    """Return the chunk coordinate for a world tile (x, y)."""
+    return (x // CHUNK_SIZE if x >= 0 else -(-x - 1) // CHUNK_SIZE - 1,
+            y // CHUNK_SIZE if y >= 0 else -(-y - 1) // CHUNK_SIZE - 1)
 
-    For each cell, concentration = sum(exp(-d^2 / sigma^2)) for each core,
-    where d = manhattan distance. Normalized so max = 1.0.
-    """
-    sigma = 4.0
+
+def _ensure_chunk(cx, cy):
+    """Generate and cache chunk (cx, cy) if not already present."""
+    chunks = WORLD.setdefault("chunks", {})
+    key = (cx, cy)
+    if key in chunks:
+        return chunks[key]
+
+    rng = random.Random(_chunk_seed(cx, cy))
+    x0, y0 = cx * CHUNK_SIZE, cy * CHUNK_SIZE
+
+    # Concentration: seeded hash-based pseudo-noise
     conc = {}
-    for x in range(GRID_W):
-        for y in range(GRID_H):
-            val = sum(
-                math.exp(-((abs(x - px) + abs(y - py)) ** 2) / (sigma**2))
-                for px, py in core_positions
-            )
-            conc[(x, y)] = val
+    for dy in range(CHUNK_SIZE):
+        for dx in range(CHUNK_SIZE):
+            wx, wy = x0 + dx, y0 + dy
+            conc[(wx, wy)] = _noise_concentration(wx, wy)
 
-    max_val = max(conc.values()) if conc else 1.0
-    if max_val > 0:
-        for key in conc:
-            conc[key] /= max_val
-    return conc
+    # Stones: origin chunk guaranteed ≥1 core, others 0-2 stones
+    stones = []
+    is_origin = (cx == 0 and cy == 0)
+    occupied = set(AGENT_STARTS) if is_origin else set()
+    num_stones = rng.randint(1, 3) if is_origin else rng.randint(0, 2)
+
+    for i in range(num_stones):
+        is_core = (i == 0 and is_origin) or rng.random() < 0.3
+        sx, sy = _random_free_pos(occupied, rng, cx, cy)
+        occupied.add((sx, sy))
+        stones.append({
+            "position": [sx, sy],
+            "type": "unknown",
+            "_true_type": "core" if is_core else "basalt",
+            "extracted": False,
+            "analyzed": False,
+        })
+
+    # Register stones in the global list
+    WORLD.setdefault("stones", []).extend(stones)
+    # Merge concentration into global map
+    WORLD.setdefault("concentration_map", {}).update(conc)
+
+    chunk_data = {"generated": True, "stone_count": len(stones)}
+    chunks[key] = chunk_data
+    logger.info("Generated chunk (%d,%d) with %d stones", cx, cy, len(stones))
+    return chunk_data
+
+
+def _noise_concentration(x, y):
+    """Deterministic noise value 0.0-1.0 for world tile (x, y).
+
+    Uses layered hash-based noise at multiple frequencies to create
+    natural-looking concentration fields. Core stones later boost
+    nearby values via _boost_concentration_near_cores().
+    """
+    base_seed = settings.world_seed or 42
+    val = 0.0
+    amp = 1.0
+    total_amp = 0.0
+    for octave in range(3):
+        freq = 1 << octave  # 1, 2, 4
+        h = hashlib.md5(f"{base_seed}:{x * freq}:{y * freq}:{octave}".encode()).digest()
+        n = struct.unpack("<H", h[:2])[0] / 65535.0
+        val += n * amp
+        total_amp += amp
+        amp *= 0.5
+    raw = val / total_amp  # 0.0-1.0
+    return round(raw * 0.4, 4)  # base noise is low; cores boost it
+
+
+def _boost_concentration_near_cores():
+    """After stones are placed, boost concentration near core positions."""
+    sigma = 4.0
+    core_positions = []
+    for s in WORLD.get("stones", []):
+        if s.get("_true_type") == "core":
+            core_positions.append(tuple(s["position"]))
+    if not core_positions:
+        return
+    conc = WORLD.setdefault("concentration_map", {})
+    boosted = set()
+    for px, py in core_positions:
+        for dx in range(-8, 9):
+            for dy in range(-8, 9):
+                cell = (px + dx, py + dy)
+                if cell in boosted:
+                    continue
+                d = abs(dx) + abs(dy)
+                boost = math.exp(-(d ** 2) / (sigma ** 2))
+                if cell in conc:
+                    conc[cell] = min(1.0, conc[cell] + boost * 0.6)
+                else:
+                    conc[cell] = round(boost * 0.6, 4)
+                boosted.add(cell)
+
+
+def get_concentration(x, y):
+    """Get concentration at (x, y), generating the chunk if needed."""
+    cx, cy = _chunk_key(x, y)
+    _ensure_chunk(cx, cy)
+    return WORLD.get("concentration_map", {}).get((x, y), 0.0)
 
 
 def _cells_in_radius(cx, cy, radius):
-    """Return set of (x, y) tuples within Manhattan distance `radius` of (cx, cy), clamped to grid."""
+    """Return set of (x, y) tuples within Manhattan distance `radius` of (cx, cy)."""
     cells = set()
     for dy in range(-radius, radius + 1):
         for dx in range(-radius, radius + 1):
             if abs(dx) + abs(dy) <= radius:
-                x, y = cx + dx, cy + dy
-                if 0 <= x < GRID_W and 0 <= y < GRID_H:
-                    cells.add((x, y))
+                cells.add((cx + dx, cy + dy))
     return cells
 
 
@@ -170,9 +198,25 @@ def _expand_revealed(agent, cx, cy):
     """Add newly visible cells around (cx, cy) to the agent's revealed list."""
     radius = _reveal_radius_for(agent)
     current = {tuple(c) for c in agent.get("revealed", [])}
+    # Ensure chunks exist for all cells in reveal radius
+    chunks_needed = set()
+    for cell in _cells_in_radius(cx, cy, radius):
+        chunks_needed.add(_chunk_key(cell[0], cell[1]))
+    for ck in chunks_needed:
+        _ensure_chunk(*ck)
     for cell in _cells_in_radius(cx, cy, radius):
         if cell not in current:
             agent.setdefault("revealed", []).append(list(cell))
+            _update_bounds(cell[0], cell[1])
+
+
+def _update_bounds(x, y):
+    """Expand world bounds to include (x, y)."""
+    bounds = WORLD.setdefault("bounds", {"min_x": 0, "max_x": 0, "min_y": 0, "max_y": 0})
+    bounds["min_x"] = min(bounds["min_x"], x)
+    bounds["max_x"] = max(bounds["max_x"], x)
+    bounds["min_y"] = min(bounds["min_y"], y)
+    bounds["max_y"] = max(bounds["max_y"], y)
 
 
 _ROVER_TOOL_DEFS = [
@@ -243,9 +287,8 @@ def _make_rover(start_x, start_y):
 def _build_initial_world():
     if settings.world_seed:
         random.seed(settings.world_seed)
-    stones, core_positions = _generate_stones()
-    return {
-        "grid": {"w": GRID_W, "h": GRID_H},
+    world = {
+        "grid": {"w": GRID_W, "h": GRID_H},  # kept for legacy compat; viewport is dynamic
         "agents": {
             "station": {
                 "position": [0, 0],
@@ -258,10 +301,12 @@ def _build_initial_world():
             "rover-mistral": _make_rover(0, 0),
             "drone-mistral": _make_drone(0, 0),
         },
-        "stones": stones,
+        "stones": [],
+        "chunks": {},
+        "concentration_map": {},
         "drone_scans": [],
-        "concentration_map": _compute_concentration_map(core_positions),
         "tick": 0,
+        "bounds": {"min_x": -3, "max_x": 3, "min_y": -3, "max_y": 3},
         "mission": {
             "status": "running",
             "target_type": TARGET_STONE_TYPE,
@@ -269,9 +314,20 @@ def _build_initial_world():
             "collected_count": 0,
         },
     }
+    return world
+
+
+def _init_world_chunks():
+    """Generate starting chunks around origin after WORLD is initialized."""
+    # Generate the origin chunk and immediate neighbors
+    for cx in range(-1, 2):
+        for cy in range(-1, 2):
+            _ensure_chunk(cx, cy)
+    _boost_concentration_near_cores()
 
 
 WORLD = _build_initial_world()
+_init_world_chunks()
 
 
 def reset_world():
@@ -279,6 +335,7 @@ def reset_world():
     fresh = _build_initial_world()
     WORLD.clear()
     WORLD.update(fresh)
+    _init_world_chunks()
     logger.info("World reset")
 
 
@@ -308,9 +365,6 @@ def move_agent(agent_id, x, y):
 
     max_dist = MAX_MOVE_DISTANCE_DRONE if agent.get("type") == "drone" else MAX_MOVE_DISTANCE
 
-    if not (0 <= x < GRID_W and 0 <= y < GRID_H):
-        return {"ok": False, "error": f"Out of bounds: ({x}, {y})"}
-
     ox, oy = agent["position"]
     dx, dy = x - ox, y - oy
     dist = abs(dx) + abs(dy)
@@ -320,6 +374,10 @@ def move_agent(agent_id, x, y):
         return {"ok": False, "error": f"Too far: {dist} tiles (max {max_dist})"}
     if dx != 0 and dy != 0:
         return {"ok": False, "error": f"Not a straight line: ({ox}, {oy}) -> ({x}, {y})"}
+
+    # Ensure chunk exists at destination
+    _ensure_chunk(*_chunk_key(x, y))
+    _update_bounds(x, y)
 
     agent["position"] = [x, y]
     logger.info("Agent %s moved (%d,%d) -> (%d,%d)", agent_id, ox, oy, x, y)
@@ -466,7 +524,7 @@ def _execute_analyze_ground(agent_id, agent):
 
     x, y = agent["position"]
     agent["battery"] = max(0.0, agent["battery"] - BATTERY_COST_ANALYZE_GROUND)
-    concentration = WORLD.get("concentration_map", {}).get((x, y), 0.0)
+    concentration = get_concentration(x, y)
     readings = agent.setdefault("ground_readings", {})
     readings[f"{x},{y}"] = concentration
     logger.info(
@@ -482,12 +540,11 @@ def _execute_scan(agent_id, agent):
 
     x, y = agent["position"]
     agent["battery"] = max(0.0, agent["battery"] - BATTERY_COST_SCAN)
-    conc_map = WORLD.get("concentration_map", {})
     scan_radius = DRONE_REVEAL_RADIUS
     readings = {}
     peak = 0.0
     for cell in _cells_in_radius(x, y, scan_radius):
-        val = conc_map.get(cell, 0.0)
+        val = get_concentration(cell[0], cell[1])
         readings[f"{cell[0]},{cell[1]}"] = round(val, 3)
         if val > peak:
             peak = val
@@ -689,20 +746,20 @@ def _update_drone_tasks(agent_id, agent):
     if (x, y) not in scanned_positions:
         tasks.append(f"Scan area at current position ({x},{y})")
 
-    # Find nearest unscanned region (areas far from any previous scan)
+    # Find nearest unscanned region within a search radius around the drone
+    search_radius = 30
     best_target = None
     best_dist = float("inf")
-    for gx in range(GRID_W):
-        for gy in range(GRID_H):
+    for gx in range(x - search_radius, x + search_radius + 1):
+        for gy in range(y - search_radius, y + search_radius + 1):
             if (gx, gy) in scanned_positions:
                 continue
-            # Prefer unscanned areas that are also far from other scans
             min_scan_dist = min(
                 (abs(gx - sp[0]) + abs(gy - sp[1]) for sp in scanned_positions),
-                default=GRID_W + GRID_H,
+                default=search_radius * 2,
             )
             if min_scan_dist < DRONE_REVEAL_RADIUS:
-                continue  # already covered by a nearby scan
+                continue
             d = abs(gx - x) + abs(gy - y)
             if d < best_dist:
                 best_dist = d
@@ -819,6 +876,8 @@ def assign_mission(agent_id, objective):
 def get_snapshot():
     """Return a deep copy of the current world state, filtered by fog-of-war."""
     snap = copy.deepcopy(WORLD)
+    # Remove internal chunk data
+    snap.pop("chunks", None)
     # Build union of all agents' revealed cells
     revealed = set()
     for agent in snap["agents"].values():
@@ -835,4 +894,7 @@ def get_snapshot():
     conc = snap.get("concentration_map")
     if conc and isinstance(conc, dict):
         snap["concentration_map"] = {f"{k[0]},{k[1]}": v for k, v in conc.items()}
+    # Ensure bounds are present
+    if "bounds" not in snap:
+        snap["bounds"] = {"min_x": 0, "max_x": GRID_W - 1, "min_y": 0, "max_y": GRID_H - 1}
     return snap
