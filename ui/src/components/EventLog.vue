@@ -64,26 +64,28 @@ function formatPayload(event) {
     >
       Waiting for mission events...
     </div>
-    <div
-      v-for="(event, i) in events"
-      :key="i"
-      class="event"
-    >
-      <span
-        v-if="event.tick != null"
-        class="event-tick"
-      >#{{ event.tick }}</span>
-      <span
-        class="event-source"
-        :style="{ color: agentColor(event.source) }"
-      >{{ event.source }}</span>
-      <span class="event-type">{{ event.type }}</span>
-      <span class="event-name">{{ event.name }}</span>
-      <span
-        v-if="event.payload && formatPayload(event)"
-        class="event-payload"
-      >{{ formatPayload(event) }}</span>
-    </div>
+    <TransitionGroup name="event-item">
+      <div
+        v-for="(event, i) in events"
+        :key="event._uid ?? i"
+        class="event"
+      >
+        <span
+          v-if="event.tick != null"
+          class="event-tick"
+        >#{{ event.tick }}</span>
+        <span
+          class="event-source"
+          :style="{ color: agentColor(event.source) }"
+        >{{ event.source }}</span>
+        <span class="event-type">{{ event.type }}</span>
+        <span class="event-name">{{ event.name }}</span>
+        <span
+          v-if="event.payload && formatPayload(event)"
+          class="event-payload"
+        >{{ formatPayload(event) }}</span>
+      </div>
+    </TransitionGroup>
   </section>
 </template>
 
@@ -136,5 +138,19 @@ function formatPayload(event) {
   text-overflow: ellipsis;
   flex: 1;
   min-width: 0;
+}
+
+/* ── TransitionGroup animations ── */
+.event-item-enter-active {
+  transition: opacity 0.3s ease, transform 0.3s ease;
+}
+
+.event-item-enter-from {
+  opacity: 0;
+  transform: translateX(-12px);
+}
+
+.event-item-move {
+  transition: transform 0.3s ease;
 }
 </style>

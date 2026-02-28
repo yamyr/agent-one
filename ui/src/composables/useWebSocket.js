@@ -7,6 +7,7 @@ export function useWebSocket({ onConnect } = {}) {
   const narration = ref(null)
   const narrationChunk = ref(null)
   let ws = null
+  let eventUid = 0
 
   const agentEvents = computed(() => {
     const byAgent = {}
@@ -43,6 +44,7 @@ export function useWebSocket({ onConnect } = {}) {
       } else if (event.source === 'narrator' && event.name === 'narration_chunk') {
         narrationChunk.value = event.payload
       } else {
+        event._uid = ++eventUid
         events.value.unshift(event)
         if (events.value.length > 200) {
           events.value.length = 200
