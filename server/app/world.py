@@ -12,6 +12,15 @@ from .models import RoverSummary, StationContext
 
 logger = logging.getLogger(__name__)
 
+# ENGINE vs AGENT RESPONSIBILITY — DO NOT BREAK THIS CONTRACT:
+# - Engine (world.py): enforces physics — battery drain, movement cost, pickup limits,
+#   inventory capacity. It NEVER computes strategy or tells agents what to do.
+# - Agents (LLM / mock fallback): observe raw state (battery %, position, station
+#   position, fuel costs) and reason about actions. Return-to-base is the agent's call.
+# - update_tasks(): generates observational hints (what's at current tile, nearby veins)
+#   but NEVER injects strategic directives like "return to base" or pre-computed costs.
+#   Providing pre-computed answers is cheating — agents must reason from raw observations.
+
 if settings.world_seed:
     random.seed(settings.world_seed)
     logger.info("World seed: %s", settings.world_seed)
@@ -42,6 +51,7 @@ BATTERY_COST_PICKUP = 2 / FUEL_CAPACITY_ROVER  # 2 fuel units
 BATTERY_COST_ANALYZE = 3 / FUEL_CAPACITY_ROVER  # 3 fuel units
 BATTERY_COST_ANALYZE_GROUND = 3 / FUEL_CAPACITY_ROVER  # 3 fuel units
 BATTERY_COST_SCAN = 2 / FUEL_CAPACITY_DRONE  # 2 fuel units
+BATTERY_COST_NOTIFY = 2 / FUEL_CAPACITY_ROVER  # 2 fuel units (radio notification)
 CHARGE_RATE = 0.20
 MAX_MOVE_DISTANCE = 3
 MAX_MOVE_DISTANCE_DRONE = 6
@@ -65,12 +75,8 @@ DRONE_REVEAL_RADIUS = 6
 REVEAL_RADIUS = ROVER_REVEAL_RADIUS  # legacy alias
 MEMORY_MAX = 8
 
-# --- Return-to-base policy ---
-# Agents return when battery <= RETURN_TO_BASE_THRESHOLD (67% capacity).
-# As an additional safety net, they also return if the remaining battery
-# is barely enough to cover the distance back + a small safety margin.
-RETURN_TO_BASE_THRESHOLD = 0.67  # return when battery drops to 67%
-BATTERY_SAFETY_MARGIN = 0.06  # extra margin above distance-based cost
+# --- Inventory ---
+MAX_INVENTORY_ROVER = 3  # rover can carry at most 3 veins
 
 # --- Solar panels ---
 SOLAR_BATTERY_CAPACITY = 0.25
@@ -79,35 +85,6 @@ MAX_SOLAR_PANELS = 2
 # --- Stone generation ---
 STONE_PROBABILITY = 0.015
 CORE_PROBABILITY = 0.3
-
-
-def _battery_to_reach_station(agent):
-    """Calculate battery cost needed to return to station from current position."""
-    station = WORLD.get("agents", {}).get("station")
-    sp = station["position"] if station else [0, 0]
-    x, y = agent["position"]
-    dist = abs(x - sp[0]) + abs(y - sp[1])
-    cost_per_tile = BATTERY_COST_MOVE_DRONE if agent.get("type") == "drone" else BATTERY_COST_MOVE
-    return dist * cost_per_tile
-
-
-def must_return_to_base(agent):
-    """Check if agent must immediately return to base to avoid stranding.
-
-    Returns True if:
-      1. Battery is at or below RETURN_TO_BASE_THRESHOLD (67%), OR
-      2. Battery is at or below the cost to reach station + safety margin.
-    """
-    if agent.get("type") == "station":
-        return False
-    station = WORLD.get("agents", {}).get("station")
-    if station and agent["position"] == station["position"]:
-        return False  # already at station
-    # Dual check: flat threshold OR distance-based safety net
-    if agent["battery"] <= RETURN_TO_BASE_THRESHOLD:
-        return True
-    cost = _battery_to_reach_station(agent)
-    return agent["battery"] <= cost + BATTERY_SAFETY_MARGIN
 
 
 def _random_free_pos(occupied, rng=None, cx=0, cy=0):
@@ -553,6 +530,12 @@ def execute_action(agent_id, action_name, params):
         if is_drone:
             return {"ok": False, "error": "Drones cannot use solar batteries"}
         result = _execute_use_solar_battery(agent_id)
+    elif action_name == "notify_base":
+        if is_drone:
+            return {"ok": False, "error": "Drones cannot notify base"}
+        result = _execute_notify_base(agent_id, agent)
+        if result["ok"]:
+            record_memory(agent_id, f"Notified base: {result['message']}")
     else:
         return {"ok": False, "error": f"Unknown action: {action_name}"}
 
@@ -684,6 +667,8 @@ def _execute_dig(agent_id, agent):
 
 def _execute_pickup(agent_id, agent):
     """Pick up an extracted vein into the agent's inventory."""
+    if len(agent.get("inventory", [])) >= MAX_INVENTORY_ROVER:
+        return {"ok": False, "error": "Inventory full (max 3 veins)"}
     if agent["battery"] < BATTERY_COST_PICKUP:
         return {"ok": False, "error": "Not enough battery to pick up"}
 
@@ -716,6 +701,23 @@ def _execute_pickup(agent_id, agent):
             "quantity": stone["quantity"],
         },
         "inventory_count": len(agent["inventory"]),
+    }
+
+
+def _execute_notify_base(agent_id, agent):
+    """Send a radio notification to station about collected stone. Costs 2 fuel."""
+    if agent["battery"] < BATTERY_COST_NOTIFY:
+        return {"ok": False, "error": "Not enough battery to notify base"}
+    inventory = agent.get("inventory", [])
+    if not inventory:
+        return {"ok": False, "error": "Nothing to report — inventory is empty"}
+    agent["battery"] = max(0.0, agent["battery"] - BATTERY_COST_NOTIFY)
+    last_stone = inventory[-1]
+    return {
+        "ok": True,
+        "position": list(agent["position"]),
+        "message": f"Collected {last_stone['grade']} {last_stone['type']} (qty={last_stone['quantity']})",
+        "inventory_summary": [{"grade": s["grade"], "quantity": s["quantity"]} for s in inventory],
     }
 
 
@@ -832,6 +834,7 @@ def check_mission_status():
                 if agent["position"] == station_pos:
                     delivered_qty += qty
     mission["collected_quantity"] = collected_qty
+    mission["in_transit_quantity"] = collected_qty - delivered_qty
 
     # Success: enough total basalt quantity delivered to station
     if delivered_qty >= mission["target_quantity"]:
@@ -947,19 +950,6 @@ def _update_drone_tasks(agent_id, agent):
     _ = {tuple(c) for c in agent.get("visited", [])}  # reserved for future use
     tasks = []
 
-    # CRITICAL: battery safety — must return to base if battery is low
-    if must_return_to_base(agent):
-        station = WORLD["agents"].get("station")
-        sp = station["position"] if station else [0, 0]
-        if [x, y] != [sp[0], sp[1]]:
-            cost = _battery_to_reach_station(agent)
-            tasks.append(
-                f"⚠️ LOW BATTERY ({agent['battery']:.0%}) — RETURN TO STATION at ({sp[0]},{sp[1]}) immediately! "
-                f"Need {cost:.0%} to get back."
-            )
-            agent["tasks"] = tasks
-            return
-
     # Check if current area has been scanned already
     scanned_positions = {tuple(s["position"]) for s in WORLD.get("drone_scans", [])}
     if (x, y) not in scanned_positions:
@@ -1005,49 +995,13 @@ def _update_rover_tasks(agent_id, agent):
     revealed_set = {tuple(c) for c in agent.get("revealed", [])}
     tasks = []
 
-    # CRITICAL: battery safety — must return to base if battery is low
-    if must_return_to_base(agent):
-        station = WORLD["agents"].get("station")
-        sp = station["position"] if station else [0, 0]
-        if [x, y] != sp:
-            cost = _battery_to_reach_station(agent)
-            nearby_panel = _nearest_solar_panel(x, y)
-            if nearby_panel:
-                pp = nearby_panel["position"]
-                pd = abs(pp[0] - x) + abs(pp[1] - y)
-                tasks.append(
-                    f"⚠️ LOW BATTERY ({agent['battery']:.0%}) — Solar panel at ({pp[0]},{pp[1]}) is {pd} tiles away, "
-                    f"or RETURN TO STATION at ({sp[0]},{sp[1]}). Need {cost:.0%} to get back."
-                )
-            else:
-                tasks.append(
-                    f"⚠️ LOW BATTERY ({agent['battery']:.0%}) — RETURN TO STATION at ({sp[0]},{sp[1]}) immediately! "
-                    f"Need {cost:.0%} to get back."
-                )
-            agent["tasks"] = tasks
-            return
-
-    # Mission fulfillment check — return to station when target met or carrying basalt
+    # Inventory status (observational — agent decides what to do with this info)
+    inv_count = len(inventory)
     inv_qty = sum(s.get("quantity", 0) for s in inventory if s["type"] == target_type)
-    collected_qty = mission.get("collected_quantity", 0)
-    target_qty = mission["target_quantity"]
-    has_basalt = any(s["type"] == target_type for s in inventory)
-    mission_met = (collected_qty + inv_qty) >= target_qty
-    if has_basalt or mission_met:
-        station = WORLD["agents"].get("station")
-        sp = station["position"] if station else [0, 0]
-        if [x, y] == sp:
-            if inv_qty > 0:
-                tasks.append(f"🏁 Deliver basalt at station ({inv_qty} units, mission needs {target_qty})")
-            else:
-                tasks.append("🏁 Mission target reached! Standby at station.")
-        else:
-            if mission_met:
-                tasks.append(f"🏁 Mission fulfilled! Return to station at ({sp[0]},{sp[1]}) to deliver {inv_qty} units of basalt IMMEDIATELY")
-            else:
-                tasks.append(f"Return to station at ({sp[0]},{sp[1]}) to deliver {inv_qty} units of basalt")
-        agent["tasks"] = tasks
-        return
+    if inv_count >= MAX_INVENTORY_ROVER:
+        tasks.append(f"Inventory full ({inv_count}/{MAX_INVENTORY_ROVER} veins, {inv_qty} basalt units)")
+    elif inv_count > 0:
+        tasks.append(f"Inventory: {inv_count}/{MAX_INVENTORY_ROVER} veins ({inv_qty} basalt units)")
 
     # Vein at current tile → analyze, dig, or pickup (priority order)
     stone_here = _find_stone_at(x, y)

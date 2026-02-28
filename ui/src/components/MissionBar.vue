@@ -18,6 +18,10 @@ const emit = defineEmits(['abort'])
     <span class="mission-target">collect {{ mission.target_quantity || mission.target_count }} basalt</span>
     <span class="mission-progress">{{ mission.collected_quantity || mission.collected_count || 0 }} / {{ mission.target_quantity || mission.target_count }}</span>
     <span
+      v-if="mission.in_transit_quantity"
+      class="mission-transit"
+    >{{ mission.in_transit_quantity }} in transit</span>
+    <span
       class="mission-status"
       :class="mission.status"
     >{{ mission.status }}</span>
@@ -56,6 +60,11 @@ const emit = defineEmits(['abort'])
 .mission-progress {
   color: #c8c8d0;
   font-weight: bold;
+}
+
+.mission-transit {
+  color: #c9a227;
+  font-size: 0.7rem;
 }
 
 .mission-status {
