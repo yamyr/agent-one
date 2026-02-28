@@ -1,7 +1,8 @@
 <script setup>
+import { computed } from 'vue'
 import BatteryBar from './BatteryBar.vue'
 
-defineProps({
+const props = defineProps({
   agentId: {
     type: String,
     required: true,
@@ -41,6 +42,34 @@ defineProps({
 })
 
 const emit = defineEmits(['select-agent'])
+
+// Merge consecutive thinking+action pairs into single rows
+const mergedEvents = computed(() => {
+  const raw = props.events || []
+  const result = []
+  for (let i = 0; i < raw.length; i++) {
+    const e = raw[i]
+    if (e.name === 'thinking') {
+      const next = raw[i + 1]
+      if (next && next.name !== 'thinking') {
+        result.push({ ...next, reason: e.payload?.text || '' })
+        i++
+      }
+      // Drop orphan thinking events (no following action)
+      continue
+    }
+    result.push({ ...e, reason: '' })
+  }
+  return result
+})
+
+function eventText(e) {
+  if (e.name === 'move' && e.payload?.from) {
+    return `(${e.payload.from[0]},${e.payload.from[1]}) → (${e.payload.to[0]},${e.payload.to[1]})`
+  }
+  return e.payload?.result || ''
+}
+
 </script>
 
 <template>
@@ -77,40 +106,28 @@ const emit = defineEmits(['select-agent'])
     </div>
     <div class="agent-log">
       <div
-        v-if="!events || events.length === 0"
+        v-if="mergedEvents.length === 0"
         class="empty"
       >
         No activity yet
       </div>
       <div
-        v-for="(e, i) in (events || [])"
+        v-for="(e, i) in mergedEvents"
         :key="'e-'+i"
         class="agent-event"
       >
+        <span class="ae-type action">{{ e.name }}</span>
+        <span class="ae-text action-text">{{ eventText(e) }}</span>
         <span
-          v-if="e.name === 'thinking'"
-          class="ae-type think"
-        >think</span>
-        <span
-          v-else
-          class="ae-type action"
-        >{{ e.name }}</span>
-        <span
-          v-if="e.name === 'thinking'"
-          class="ae-text"
-        >{{ e.payload.text }}</span>
-        <span
-          v-else-if="e.name === 'move' && e.payload && e.payload.from"
-          class="ae-text action-text"
+          v-if="e.reason"
+          class="ae-reason"
+        >{{ e.reason }}</span>
+        <div
+          v-if="e.reason"
+          class="ae-tooltip"
         >
-          ({{ e.payload.from[0] }},{{ e.payload.from[1] }}) → ({{ e.payload.to[0] }},{{ e.payload.to[1] }})
-        </span>
-        <span
-          v-else
-          class="ae-text action-text"
-        >
-          {{ e.payload && e.payload.result ? e.payload.result : '' }}
-        </span>
+          {{ e.reason }}
+        </div>
       </div>
     </div>
   </div>
@@ -183,16 +200,13 @@ const emit = defineEmits(['select-agent'])
   display: flex;
   gap: 0.4rem;
   align-items: baseline;
+  position: relative;
 }
 
 .ae-type {
   font-size: 0.65rem;
   color: var(--text-muted);
   flex-shrink: 0;
-}
-
-.ae-type.think {
-  color: var(--accent-think);
 }
 
 .ae-type.action {
@@ -213,6 +227,40 @@ const emit = defineEmits(['select-agent'])
 
 .ae-text.action-text {
   color: var(--accent-memory);
+}
+
+.ae-reason {
+  font-size: 0.65rem;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex-shrink: 1;
+  min-width: 0;
+}
+
+.ae-tooltip {
+  display: none;
+  position: absolute;
+  left: 0;
+  top: 100%;
+  z-index: 10;
+  max-width: 320px;
+  padding: 0.4rem 0.6rem;
+  font-size: 0.65rem;
+  line-height: 1.4;
+  color: var(--text-primary);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-medium);
+  border-radius: var(--radius-sm);
+  white-space: pre-wrap;
+  word-break: break-word;
+  pointer-events: none;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+}
+
+.agent-event:hover .ae-tooltip {
+  display: block;
 }
 
 @media (max-width: 768px) {

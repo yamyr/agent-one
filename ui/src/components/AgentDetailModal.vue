@@ -130,23 +130,6 @@ function batteryPct() {
             </span>
           </div>
         </div>
-        <div
-          v-if="agent.memory && agent.memory.length"
-          class="modal-section"
-        >
-          <div class="modal-label">
-            Memory
-          </div>
-          <div class="modal-memory">
-            <div
-              v-for="(m, i) in agent.memory"
-              :key="i"
-              class="memory-entry"
-            >
-              {{ m }}
-            </div>
-          </div>
-        </div>
         <div class="modal-section">
           <div class="modal-label">
             Tools
@@ -165,6 +148,23 @@ function batteryPct() {
               class="empty"
             >
               No tools
+            </div>
+          </div>
+        </div>
+        <div
+          v-if="agent.memory && agent.memory.length"
+          class="modal-section"
+        >
+          <div class="modal-label">
+            Memory
+          </div>
+          <div class="modal-memory">
+            <div
+              v-for="(m, i) in agent.memory"
+              :key="i"
+              class="memory-entry"
+            >
+              {{ m }}
             </div>
           </div>
         </div>
@@ -200,7 +200,7 @@ function batteryPct() {
   background: var(--bg-elevated);
   border: 1px solid var(--border-medium);
   border-radius: var(--radius-lg);
-  width: 560px;
+  width: 700px;
   max-width: 90vw;
   max-height: 80vh;
   overflow-y: auto;
