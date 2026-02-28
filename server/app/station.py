@@ -150,7 +150,7 @@ class StationAgent:
 
     def __init__(self, agent_id="station", model="mistral-small-latest"):
         self.agent_id = agent_id
-        self.model = model
+        self.model = settings.fine_tuned_agent_model or model
         self._client = None
 
     def _get_client(self):
@@ -182,6 +182,12 @@ class StationAgent:
             messages=messages,
             tools=STATION_TOOLS,
         )
+
+        from .training import collector
+
+        collector.record_agent_interaction(
+            self.agent_id, "station", messages, STATION_TOOLS, response
+        )
         choice = response.choices[0]
         thinking = choice.message.content or None
         actions = []
@@ -206,13 +212,10 @@ class StationAgent:
                 " 'Explore south and west quadrant')."
             )
         if drone_count > 1:
-            agent_hint += (
-                f" You have {drone_count} drones — send each to a different sector."
-            )
+            agent_hint += f" You have {drone_count} drones — send each to a different sector."
         return self._call_llm(
             "The mission is starting. Review the world state and assign initial "
-            "missions to ALL agents (rovers and drones)."
-            + agent_hint,
+            "missions to ALL agents (rovers and drones)." + agent_hint,
             context,
         )
 

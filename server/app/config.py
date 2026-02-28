@@ -42,5 +42,11 @@ class Settings(BaseSettings):
     narration_model: str = "mistral-medium-latest"
     narration_min_interval_seconds: float = 5.0
 
+    # Fine-tuning / training data
+    training_data_enabled: bool = False
+    training_data_dir: str = "training_data"
+    fine_tuned_agent_model: str = ""
+    fine_tuned_narration_model: str = ""
+
 
 settings = Settings()

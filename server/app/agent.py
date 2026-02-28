@@ -140,9 +140,11 @@ ROVER_TOOLS = [
 class MistralRoverReasoner:
     """Rover reasoner that decides via Mistral LLM. Returns action dict, does not execute."""
 
-    def __init__(self, agent_id="rover-mistral", model="mistral-small-latest", world: World | None = None):
+    def __init__(
+        self, agent_id="rover-mistral", model="mistral-small-latest", world: World | None = None
+    ):
         self.agent_id = agent_id
-        self.model = model
+        self.model = settings.fine_tuned_agent_model or model
         self._client = None
         self._world = world or default_world
 
@@ -240,11 +242,7 @@ class MistralRoverReasoner:
             f"Objective: {mission['objective']}\n"
             f"Target: collect {target_quantity} units of basalt and deliver to station.\n"
             f"Your inventory: {len(inventory)}/{MAX_INVENTORY_ROVER} veins"
-            + (
-                "\n🏁 INVENTORY FULL — RETURN TO STATION NOW TO DELIVER!"
-                if inventory_full
-                else ""
-            )
+            + ("\n🏁 INVENTORY FULL — RETURN TO STATION NOW TO DELIVER!" if inventory_full else "")
         )
 
         current_task = agent.get("tasks", [None])[0] if agent.get("tasks") else None
@@ -268,11 +266,7 @@ class MistralRoverReasoner:
                 else ""
             )
             + f"\nSolar panels remaining: {agent.get('solar_panels_remaining', 0)}"
-            + (
-                "\n⚠️ BATTERY CRITICAL — return to station now!"
-                if battery_critical
-                else ""
-            )
+            + ("\n⚠️ BATTERY CRITICAL — return to station now!" if battery_critical else "")
         )
 
         # Nearby solar panels
@@ -373,6 +367,12 @@ class MistralRoverReasoner:
                 model=self.model,
                 messages=messages,
                 tools=ROVER_TOOLS,
+            )
+
+            from .training import collector
+
+            collector.record_agent_interaction(
+                self.agent_id, "rover", messages, ROVER_TOOLS, response
             )
             choice = response.choices[0]
             thinking = choice.message.content or None
@@ -481,9 +481,11 @@ DRONE_TOOLS = [DRONE_MOVE_TOOL, SCAN_TOOL, NOTIFY_TOOL]
 class DroneAgent:
     """Drone scout agent powered by Mistral LLM. Moves fast, scans for basalt vein deposits."""
 
-    def __init__(self, agent_id="drone-mistral", model="mistral-small-latest", world: World | None = None):
+    def __init__(
+        self, agent_id="drone-mistral", model="mistral-small-latest", world: World | None = None
+    ):
         self.agent_id = agent_id
-        self.model = model
+        self.model = settings.fine_tuned_agent_model or model
         self._client = None
         self._world = world or default_world
         self._mock_fallback = MockDroneAgent(agent_id=agent_id, world=self._world)
@@ -594,11 +596,7 @@ class DroneAgent:
             f"Battery: {battery:.0%} ({moves_on_battery} moves remaining, {FUEL_CAPACITY_DRONE} fuel capacity)\n"
             f"Distance to station: {dist_to_station} tiles (need {safety_margin} moves to return safely)\n"
             f"Tiles visited: {len(agent.get('visited', []))}"
-            + (
-                "\n⚠️ BATTERY CRITICAL — return to station now!"
-                if battery_critical
-                else ""
-            )
+            + ("\n⚠️ BATTERY CRITICAL — return to station now!" if battery_critical else "")
         )
 
         # -- Last Scan --
@@ -611,9 +609,7 @@ class DroneAgent:
             )
             # Check if hotspot was notified
             if scan_peak >= 0.5:
-                last_action_was_notify = (
-                    memory and "notify" in memory[-1].lower()
-                )
+                last_action_was_notify = memory and "notify" in memory[-1].lower()
                 if not last_action_was_notify:
                     parts.append("⚠️ HOTSPOT — notify station before moving!")
 
@@ -625,9 +621,7 @@ class DroneAgent:
         if best_target:
             tx, ty = best_target
             hint = direction_hint(tx - x, ty - y)
-            parts.append(
-                f"Nearest unscanned area: ({tx},{ty}) — {hint}, {best_dist} tiles"
-            )
+            parts.append(f"Nearest unscanned area: ({tx},{ty}) — {hint}, {best_dist} tiles")
         else:
             parts.append("Nearest unscanned area: none within range")
 
@@ -683,6 +677,12 @@ class DroneAgent:
                 model=self.model,
                 messages=messages,
                 tools=DRONE_TOOLS,
+            )
+
+            from .training import collector
+
+            collector.record_agent_interaction(
+                self.agent_id, "drone", messages, DRONE_TOOLS, response
             )
             choice = response.choices[0]
             thinking = choice.message.content or None
@@ -758,7 +758,6 @@ class MockDroneAgent:
                     thinking = f"Recall received but already at station ({x}, {y})."
                     return {
                         "thinking": thinking,
-                        
                         "action": {"name": "move", "params": {"direction": "north", "distance": 1}},
                     }
                 if abs(dx) >= abs(dy):
@@ -771,7 +770,6 @@ class MockDroneAgent:
                 thinking = f"RECALL received: {reason}. Heading to station at ({sp[0]},{sp[1]})."
                 return {
                     "thinking": thinking,
-                    
                     "action": {
                         "name": "move",
                         "params": {"direction": direction, "distance": distance},
@@ -799,7 +797,6 @@ class MockDroneAgent:
             )
             return {
                 "thinking": thinking,
-                
                 "action": {
                     "name": "move",
                     "params": {"direction": direction, "distance": distance},
@@ -845,7 +842,6 @@ class MockDroneAgent:
             )
             return {
                 "thinking": thinking,
-                
                 "action": {
                     "name": "move",
                     "params": {"direction": direction, "distance": distance},
@@ -858,7 +854,6 @@ class MockDroneAgent:
         thinking = f"I'm at ({x}, {y}). All nearby areas covered, exploring outward."
         return {
             "thinking": thinking,
-            
             "action": {
                 "name": "move",
                 "params": {"direction": direction, "distance": MAX_MOVE_DISTANCE_DRONE},
@@ -942,12 +937,16 @@ class RoverLoop(BaseAgent):
                     station_state = self._world.get_agents().get("station")
                     if station_state:
                         mem = station_state.setdefault("memory", [])
-                        mem.append(f"Radio from {self.agent_id} at ({pos[0]},{pos[1]}): {result['message']}")
+                        mem.append(
+                            f"Radio from {self.agent_id} at ({pos[0]},{pos[1]}): {result['message']}"
+                        )
                     station_log = make_message(
                         source="station",
                         type="event",
                         name="thinking",
-                        payload={"text": f"Radio from {self.agent_id} at ({pos[0]},{pos[1]}): {result['message']}"},
+                        payload={
+                            "text": f"Radio from {self.agent_id} at ({pos[0]},{pos[1]}): {result['message']}"
+                        },
                     )
                     messages.append(station_log)
 
@@ -1005,7 +1004,9 @@ class RoverLoop(BaseAgent):
 class RoverMistralLoop(RoverLoop):
     """Rover loop wired to MistralRoverReasoner."""
 
-    def __init__(self, agent_id: str = "rover-mistral", interval: float = 3.0, world: World | None = None):
+    def __init__(
+        self, agent_id: str = "rover-mistral", interval: float = 3.0, world: World | None = None
+    ):
         super().__init__(agent_id=agent_id, interval=interval, world=world)
         self._reasoner = MistralRoverReasoner(agent_id=self.agent_id, world=self._world)
         set_agent_model(self.agent_id, self._reasoner.model)
@@ -1033,9 +1034,10 @@ class DroneLoop(BaseAgent):
 
         # During abort, force recall so drone heads to station
         if mission_status == "aborted":
-            self._world.set_pending_commands(self.agent_id, [
-                {"name": "recall", "payload": {"reason": "Mission aborted — return to station"}}
-            ])
+            self._world.set_pending_commands(
+                self.agent_id,
+                [{"name": "recall", "payload": {"reason": "Mission aborted — return to station"}}],
+            )
 
         turn = await asyncio.to_thread(self._reasoner.run_turn)
         next_tick()
@@ -1071,12 +1073,16 @@ class DroneLoop(BaseAgent):
                     station_state = self._world.get_agents().get("station")
                     if station_state:
                         mem = station_state.setdefault("memory", [])
-                        mem.append(f"Radio from {self.agent_id} at ({pos[0]},{pos[1]}): {result['message']}")
+                        mem.append(
+                            f"Radio from {self.agent_id} at ({pos[0]},{pos[1]}): {result['message']}"
+                        )
                     station_log = make_message(
                         source="station",
                         type="event",
                         name="thinking",
-                        payload={"text": f"Radio from {self.agent_id} at ({pos[0]},{pos[1]}): {result['message']}"},
+                        payload={
+                            "text": f"Radio from {self.agent_id} at ({pos[0]},{pos[1]}): {result['message']}"
+                        },
                     )
                     messages.append(station_log)
 

@@ -4,6 +4,25 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [Unreleased]
+
+### Features
+
+* **fine-tuning:** add Mistral fine-tuning pipeline for continuous model improvement
+  - `TrainingDataCollector` records all LLM interactions (rover, drone, station, narrator) as JSONL training data
+  - `FineTuningManager` wraps the Mistral fine-tuning API: upload data, create/list/cancel jobs, activate models
+  - Automatic model switching: agents and narrator use fine-tuned models when configured
+  - REST endpoints for managing fine-tuning lifecycle (`/fine-tuning/data`, `/fine-tuning/jobs`, `/fine-tuning/status`)
+  - Thread-safe training data collection (agents run in ThreadPoolExecutor)
+  - Fine-tune `mistral-small-latest` for agents, `mistral-medium-latest` for narration
+  - New config settings: `TRAINING_DATA_ENABLED`, `TRAINING_DATA_DIR`, `FINE_TUNED_AGENT_MODEL`, `FINE_TUNED_NARRATION_MODEL`
+
+### Lessons Learned
+
+* Magistral models (`magistral-medium-latest`, `magistral-small-latest`) do NOT support Mistral fine-tuning — only base models like `mistral-small-latest` and `mistral-medium-latest` are fine-tuneable
+* Training data must use the Mistral JSONL format with `tool_calls` array for function-calling fine-tuning
+* Lazy imports (`from .training import collector` inside function bodies) are needed to avoid circular import issues at module load time
+
 ## [0.2.0](https://github.com/mhack-agent-one/agent-one/compare/v0.1.0...v0.2.0) (2026-02-28)
 
 

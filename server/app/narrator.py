@@ -532,7 +532,7 @@ class Narrator:
         try:
             client = self._get_mistral()
             response = client.chat.complete(
-                model=settings.narration_model,
+                model=settings.fine_tuned_narration_model or settings.narration_model,
                 messages=[
                     {"role": "system", "content": NARRATOR_SYSTEM_PROMPT},
                     {"role": "user", "content": prompt},
@@ -541,6 +541,16 @@ class Narrator:
                 temperature=0.9,
             )
             text = response.choices[0].message.content
+
+            from .training import collector
+
+            collector.record_narration_interaction(
+                [
+                    {"role": "system", "content": NARRATOR_SYSTEM_PROMPT},
+                    {"role": "user", "content": prompt},
+                ],
+                text or "",
+            )
             return text.strip() if text else None
         except Exception:
             logger.exception("Narrator LLM call failed")
@@ -556,7 +566,7 @@ class Narrator:
             client = self._get_mistral()
 
             stream = client.chat.stream(
-                model=settings.narration_model,
+                model=settings.fine_tuned_narration_model or settings.narration_model,
                 messages=[
                     {"role": "system", "content": NARRATOR_SYSTEM_PROMPT},
                     {"role": "user", "content": prompt},
@@ -583,6 +593,15 @@ class Narrator:
                         }
                     )
 
+            from .training import collector
+
+            collector.record_narration_interaction(
+                [
+                    {"role": "system", "content": NARRATOR_SYSTEM_PROMPT},
+                    {"role": "user", "content": prompt},
+                ],
+                full_text,
+            )
             return full_text.strip() if full_text else None
         except Exception:
             logger.exception("Narrator streaming LLM call failed")

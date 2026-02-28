@@ -29,8 +29,12 @@ narrator = Narrator(broadcast_fn=broadcaster.send)
 host = Host(narrator=narrator)
 
 AGENT_MAP = {
-    "rover-mistral": lambda: RoverMistralLoop(agent_id="rover-mistral", interval=settings.llm_turn_interval_seconds),
-    "rover-2": lambda: RoverMistralLoop(agent_id="rover-2", interval=settings.llm_turn_interval_seconds),
+    "rover-mistral": lambda: RoverMistralLoop(
+        agent_id="rover-mistral", interval=settings.llm_turn_interval_seconds
+    ),
+    "rover-2": lambda: RoverMistralLoop(
+        agent_id="rover-2", interval=settings.llm_turn_interval_seconds
+    ),
     "drone-mistral": lambda: DroneMistralLoop(interval=2.0),
 }
 
@@ -49,9 +53,11 @@ def _register_agents():
 
 
 @asynccontextmanager
-async def lifespan(app):
+async def lifespan(app):  # noqa: ARG001
     init_db()
     _register_agents()
+    if settings.training_data_enabled:
+        logger.info("Training data collection ENABLED → %s", settings.training_data_dir)
     await host.start()
     yield
     host.stop()
