@@ -1,8 +1,9 @@
 <script setup>
-import { ref } from 'vue'
+import { ref, computed } from 'vue'
 import { useWebSocket } from './composables/useWebSocket.js'
 import AppHeader from './components/AppHeader.vue'
 import WorldMap from './components/WorldMap.vue'
+import MiniMap from './components/MiniMap.vue'
 import AgentPanes from './components/AgentPanes.vue'
 import MissionBar from './components/MissionBar.vue'
 import EventLog from './components/EventLog.vue'
@@ -12,6 +13,9 @@ import NarrationPlayer from './components/NarrationPlayer.vue'
 const selectedAgent = ref(null)
 const paused = ref(false)
 const narrationEnabled = ref(true)
+const worldMapRef = ref(null)
+const camXVal = computed(() => worldMapRef.value?.camX ?? -10)
+const camYVal = computed(() => worldMapRef.value?.camY ?? -10)
 
 
 function onWsConnect() {
@@ -54,6 +58,14 @@ function agentData(id) {
   if (!worldState.value) return null
   return worldState.value.agents[id] || null
 }
+
+function onMinimapNavigate(x, y) {
+  if (worldMapRef.value) {
+    worldMapRef.value.camX = x
+    worldMapRef.value.camY = y
+    worldMapRef.value.autoFollow = false
+  }
+}
 </script>
 
 <template>
@@ -76,9 +88,17 @@ function agentData(id) {
     <div class="top-row">
       <div class="left-col">
         <WorldMap
+          ref="worldMapRef"
           :world-state="worldState"
           :agent-ids="agentIds"
           @select-agent="selectAgent"
+        />
+        <MiniMap
+          :world-state="worldState"
+          :agent-ids="agentIds"
+          :cam-x="camXVal"
+          :cam-y="camYVal"
+          @navigate="onMinimapNavigate"
         />
         <EventLog :events="events" />
       </div>

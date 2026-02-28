@@ -1,7 +1,9 @@
 export const GRID_SIZE = 20
 export const TILE_SIZE = 20
-export const MAP_W = GRID_SIZE * TILE_SIZE
-export const MAP_H = GRID_SIZE * TILE_SIZE
+export const VIEWPORT_W = 20
+export const VIEWPORT_H = 20
+export const MAP_W = VIEWPORT_W * TILE_SIZE
+export const MAP_H = VIEWPORT_H * TILE_SIZE
 
 export const ROVER_REVEAL_RADIUS = 3
 export const DRONE_REVEAL_RADIUS = 6

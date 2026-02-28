@@ -1,6 +1,6 @@
 <script setup>
-import { computed } from 'vue'
-import { GRID_SIZE, TILE_SIZE, MAP_W, MAP_H, STONE_COLORS, agentColor, revealRadius } from '../constants.js'
+import { computed, ref, watch } from 'vue'
+import { GRID_SIZE, TILE_SIZE, MAP_W, MAP_H, VIEWPORT_W, VIEWPORT_H, STONE_COLORS, agentColor, revealRadius } from '../constants.js'
 
 const props = defineProps({
   worldState: {
@@ -15,11 +15,58 @@ const props = defineProps({
 
 const emit = defineEmits(['select-agent'])
 
+// Camera state: top-left tile of viewport
+const camX = ref(-Math.floor(VIEWPORT_W / 2))
+const camY = ref(-Math.floor(VIEWPORT_H / 2))
+const autoFollow = ref(true)
+const lastMovedAgent = ref(null)
+
+// Track drag state
+const dragging = ref(false)
+const dragStart = ref({ x: 0, y: 0 })
+
+// Auto-follow: center camera on most recently moved agent
+watch(() => props.worldState, (ws) => {
+  if (!ws || !autoFollow.value) return
+  // Find agent closest to "most recently moved" by checking positions
+  const agents = ws.agents || {}
+  let target = null
+  for (const id of props.agentIds) {
+    const a = agents[id]
+    if (a && a.type !== 'station') {
+      if (!target) target = { id, pos: a.position }
+      // Prefer the last known moved agent
+      if (lastMovedAgent.value === id) {
+        target = { id, pos: a.position }
+        break
+      }
+    }
+  }
+  if (target) {
+    camX.value = target.pos[0] - Math.floor(VIEWPORT_W / 2)
+    camY.value = target.pos[1] - Math.floor(VIEWPORT_H / 2)
+  }
+}, { deep: true })
+
+// Detect which agent moved most recently
+watch(() => props.worldState, (ws, oldWs) => {
+  if (!ws || !oldWs) return
+  for (const id of props.agentIds) {
+    const curr = ws.agents?.[id]
+    const prev = oldWs.agents?.[id]
+    if (curr && prev && (curr.position[0] !== prev.position[0] || curr.position[1] !== prev.position[1])) {
+      lastMovedAgent.value = id
+    }
+  }
+}, { deep: true })
+
 const tiles = computed(() => {
   const arr = []
-  for (let y = 0; y < GRID_SIZE; y++) {
-    for (let x = 0; x < GRID_SIZE; x++) {
-      arr.push({ x, y, key: `${x}-${y}` })
+  for (let dy = 0; dy < VIEWPORT_H; dy++) {
+    for (let dx = 0; dx < VIEWPORT_W; dx++) {
+      const x = camX.value + dx
+      const y = camY.value + VIEWPORT_H - 1 - dy  // flip Y for SVG
+      arr.push({ x, y, sx: dx * TILE_SIZE, sy: dy * TILE_SIZE, key: `${x}-${y}` })
     }
   }
   return arr
@@ -67,52 +114,137 @@ function isRevealed(x, y) {
   return revealedSet.value.has(`${x},${y}`)
 }
 
+function worldToScreen(wx, wy) {
+  const sx = (wx - camX.value) * TILE_SIZE + TILE_SIZE / 2
+  const sy = (VIEWPORT_H - 1 - (wy - camY.value)) * TILE_SIZE + TILE_SIZE / 2
+  return { sx, sy }
+}
+
 function agentTransform(id) {
   if (!props.worldState) return ''
   const a = props.worldState.agents[id]
   if (!a) return ''
-  const cx = a.position[0] * TILE_SIZE + TILE_SIZE / 2
-  const cy = (GRID_SIZE - 1 - a.position[1]) * TILE_SIZE + TILE_SIZE / 2
-  return `translate(${cx}, ${cy})`
+  const { sx, sy } = worldToScreen(a.position[0], a.position[1])
+  return `translate(${sx}, ${sy})`
 }
+
+function isAgentVisible(id) {
+  if (!props.worldState) return false
+  const a = props.worldState.agents[id]
+  if (!a) return false
+  const [wx, wy] = a.position
+  return wx >= camX.value && wx < camX.value + VIEWPORT_W &&
+         wy >= camY.value && wy < camY.value + VIEWPORT_H
+}
+
+function isStoneVisible(s) {
+  const [wx, wy] = s.position
+  return wx >= camX.value && wx < camX.value + VIEWPORT_W &&
+         wy >= camY.value && wy < camY.value + VIEWPORT_H
+}
+
+function stoneScreenX(s) {
+  return (s.position[0] - camX.value) * TILE_SIZE + TILE_SIZE / 2 - 4
+}
+
+function stoneScreenY(s) {
+  return (VIEWPORT_H - 1 - (s.position[1] - camY.value)) * TILE_SIZE + TILE_SIZE / 2 - 4
+}
+
+function stoneRotateCenter(s) {
+  const cx = (s.position[0] - camX.value) * TILE_SIZE + TILE_SIZE / 2
+  const cy = (VIEWPORT_H - 1 - (s.position[1] - camY.value)) * TILE_SIZE + TILE_SIZE / 2
+  return `rotate(45, ${cx}, ${cy})`
+}
+
+// Drag-to-pan
+function onMouseDown(e) {
+  dragging.value = true
+  dragStart.value = { x: e.clientX, y: e.clientY }
+}
+
+function onMouseMove(e) {
+  if (!dragging.value) return
+  const dx = e.clientX - dragStart.value.x
+  const dy = e.clientY - dragStart.value.y
+  // Convert pixel drag to tile offset (using the SVG element's rendered size)
+  const svg = e.currentTarget
+  const rect = svg.getBoundingClientRect()
+  const tilePixelW = rect.width / VIEWPORT_W
+  const tilePixelH = rect.height / VIEWPORT_H
+  if (Math.abs(dx) >= tilePixelW) {
+    const tileDx = Math.round(dx / tilePixelW)
+    camX.value -= tileDx
+    dragStart.value.x = e.clientX
+    autoFollow.value = false
+  }
+  if (Math.abs(dy) >= tilePixelH) {
+    const tileDy = Math.round(dy / tilePixelH)
+    camY.value += tileDy  // inverted: drag down = move camera south (lower Y)
+    dragStart.value.y = e.clientY
+    autoFollow.value = false
+  }
+}
+
+function onMouseUp() {
+  dragging.value = false
+}
+
+function onDblClick() {
+  autoFollow.value = true
+}
+
+// Expose camera for minimap
+defineExpose({ camX, camY, autoFollow })
 </script>
 
 <template>
   <section class="world-map">
-    <h2>Surface Map</h2>
+    <h2>
+      Surface Map
+      <span v-if="!autoFollow" class="cam-hint">(drag to pan · double-click to re-center)</span>
+      <span v-else class="cam-hint">(auto-following)</span>
+    </h2>
     <svg
       v-if="worldState"
       :viewBox="`0 0 ${MAP_W} ${MAP_H}`"
       class="map-svg"
+      @mousedown.prevent="onMouseDown"
+      @mousemove="onMouseMove"
+      @mouseup="onMouseUp"
+      @mouseleave="onMouseUp"
+      @dblclick="onDblClick"
     >
       <!-- grid tiles -->
       <rect
         v-for="t in tiles"
         :key="t.key"
-        :x="t.x * TILE_SIZE"
-        :y="(GRID_SIZE - 1 - t.y) * TILE_SIZE"
+        :x="t.sx"
+        :y="t.sy"
         :width="TILE_SIZE"
         :height="TILE_SIZE"
         :class="isRevealed(t.x, t.y) ? 'grid-tile revealed' : 'grid-tile'"
       />
 
       <!-- stones -->
-      <rect
-        v-for="(s, i) in (worldState.stones || [])"
-        :key="'stone-'+i"
-        :x="s.position[0] * TILE_SIZE + TILE_SIZE/2 - 4"
-        :y="(GRID_SIZE - 1 - s.position[1]) * TILE_SIZE + TILE_SIZE/2 - 4"
-        width="8"
-        height="8"
-        :fill="STONE_COLORS[s.type] || '#666'"
-        opacity="0.85"
-        :transform="`rotate(45, ${s.position[0] * TILE_SIZE + TILE_SIZE/2}, ${(GRID_SIZE - 1 - s.position[1]) * TILE_SIZE + TILE_SIZE/2})`"
-      />
+      <template v-for="(s, i) in (worldState.stones || [])" :key="'stone-'+i">
+        <rect
+          v-if="isStoneVisible(s)"
+          :x="stoneScreenX(s)"
+          :y="stoneScreenY(s)"
+          width="8"
+          height="8"
+          :fill="STONE_COLORS[s.type] || '#666'"
+          opacity="0.85"
+          :transform="stoneRotateCenter(s)"
+        />
+      </template>
 
       <!-- station markers (square) -->
       <g
         v-for="id in stations"
         :key="'station-'+id"
+        v-show="isAgentVisible(id)"
         :transform="agentTransform(id)"
         class="rover-group"
         style="cursor:pointer"
@@ -182,6 +314,7 @@ function agentTransform(id) {
       <g
         v-for="id in rovers"
         :key="'rover-'+id"
+        v-show="isAgentVisible(id)"
         :transform="agentTransform(id)"
         class="rover-group"
         style="cursor:pointer"
@@ -240,6 +373,7 @@ function agentTransform(id) {
       <g
         v-for="id in drones"
         :key="'drone-'+id"
+        v-show="isAgentVisible(id)"
         :transform="agentTransform(id)"
         class="rover-group"
         style="cursor:pointer"
@@ -331,5 +465,20 @@ function agentTransform(id) {
 .rover-label {
   font-family: 'Courier New', monospace;
   font-size: 6px;
+}
+
+.cam-hint {
+  font-size: 0.6rem;
+  color: #444;
+  font-weight: normal;
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.map-svg {
+  cursor: grab;
+}
+.map-svg:active {
+  cursor: grabbing;
 }
 </style>
