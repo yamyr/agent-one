@@ -1,0 +1,11 @@
+.git
+.venv
+node_modules
+dist
+.env
+.claude
+_private
+__pycache__
+tests
+*.pyc
+.ruff_cache

@@ -18,6 +18,9 @@ class Settings(BaseSettings):
     surreal_user: str = "root"
     surreal_pass: str = "root"
 
+    # CORS
+    cors_origins: str = "http://localhost:4089"
+
     # Mistral
     mistral_api_key: str = ""
 
