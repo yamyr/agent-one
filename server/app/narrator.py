@@ -566,6 +566,8 @@ class Narrator:
 
             full_text = ""
             for event in stream:
+                if not event.data.choices:
+                    continue
                 chunk = event.data.choices[0].delta.content
                 if chunk:
                     full_text += chunk

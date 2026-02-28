@@ -260,6 +260,28 @@ class TestNarrator(unittest.IsolatedAsyncioTestCase):
         task2 = self.narrator._task
         self.assertIs(task1, task2)
 
+    async def test_streaming_skips_empty_choices(self):
+        """Events with empty choices array should be skipped without error."""
+        with patch("app.narrator.settings") as ms:
+            ms.elevenlabs_api_key = "test-key"
+            ms.narration_model = "test-model"
+            narrator = Narrator(broadcast_fn=self.broadcast)
+
+            # Build fake stream events
+            empty_event = MagicMock()
+            empty_event.data.choices = []  # empty choices
+
+            normal_event = MagicMock()
+            normal_event.data.choices = [MagicMock()]
+            normal_event.data.choices[0].delta.content = "Hello Mars!"
+
+            mock_client = MagicMock()
+            mock_client.chat.stream.return_value = [empty_event, normal_event]
+
+            with patch.object(narrator, "_get_mistral", return_value=mock_client):
+                result = await narrator._generate_text_streaming("test prompt")
+            self.assertEqual(result, "Hello Mars!")
+
 
 class TestParseDialogue(unittest.TestCase):
     """Test dialogue parsing from LLM output."""
