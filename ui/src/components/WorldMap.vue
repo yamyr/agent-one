@@ -28,6 +28,10 @@ const targetCamX = ref(camX.value)
 const targetCamY = ref(camY.value)
 const LERP_SPEED = 0.15 // fraction per frame (higher = snappier)
 let rafId = null
+const zoom = ref(1)
+const ZOOM_MIN = 0.7
+const ZOOM_MAX = 2.2
+const ZOOM_STEP = 0.1
 
 function cameraLoop() {
   const dx = targetCamX.value - camX.value
@@ -250,6 +254,36 @@ function onMouseUp() {
   dragging.value = false
 }
 
+function clamp(v, min, max) {
+  return Math.max(min, Math.min(max, v))
+}
+
+function zoomIn() {
+  zoom.value = clamp(Number((zoom.value + ZOOM_STEP).toFixed(2)), ZOOM_MIN, ZOOM_MAX)
+}
+
+function zoomOut() {
+  zoom.value = clamp(Number((zoom.value - ZOOM_STEP).toFixed(2)), ZOOM_MIN, ZOOM_MAX)
+}
+
+function resetZoom() {
+  zoom.value = 1
+}
+
+function onWheel(e) {
+  e.preventDefault()
+  if (e.deltaY < 0) zoomIn()
+  else zoomOut()
+}
+
+const mapViewBox = computed(() => {
+  const vbW = MAP_W / zoom.value
+  const vbH = MAP_H / zoom.value
+  const x = (MAP_W - vbW) / 2
+  const y = (MAP_H - vbH) / 2
+  return `${x} ${y} ${vbW} ${vbH}`
+})
+
 // Agent trail data: last N visited positions per mobile agent
 const TRAIL_LENGTH = 20
 
@@ -349,14 +383,39 @@ defineExpose({ camX, camY, panCamera })
         class="cam-hint"
       >(free camera · drag to pan)</span>
     </h2>
+    <div class="map-controls">
+      <button
+        class="zoom-btn"
+        title="Zoom out"
+        @click="zoomOut"
+      >
+        −
+      </button>
+      <span class="zoom-label">{{ Math.round(zoom * 100) }}%</span>
+      <button
+        class="zoom-btn"
+        title="Zoom in"
+        @click="zoomIn"
+      >
+        +
+      </button>
+      <button
+        class="zoom-btn reset"
+        title="Reset zoom"
+        @click="resetZoom"
+      >
+        Reset
+      </button>
+    </div>
     <svg
       v-if="worldState"
-      :viewBox="`0 0 ${MAP_W} ${MAP_H}`"
+      :viewBox="mapViewBox"
       class="map-svg"
       @mousedown.prevent="onMouseDown"
       @mousemove="onMouseMove"
       @mouseup="onMouseUp"
       @mouseleave="onMouseUp"
+      @wheel="onWheel"
     >
       <!-- grid tiles -->
       <rect
@@ -749,6 +808,40 @@ defineExpose({ camX, camY, panCamera })
   font-weight: normal;
   text-transform: none;
   letter-spacing: 0;
+}
+
+.map-controls {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  margin-bottom: 0.35rem;
+}
+
+.zoom-btn {
+  font-family: var(--font-mono);
+  font-size: 0.65rem;
+  padding: 0.12rem 0.35rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--text-muted);
+  background: var(--bg-input);
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.zoom-btn:hover {
+  border-color: var(--text-secondary);
+  color: var(--text-primary);
+}
+
+.zoom-btn.reset {
+  margin-left: 0.2rem;
+}
+
+.zoom-label {
+  font-size: 0.65rem;
+  color: var(--text-muted);
+  min-width: 2.4rem;
+  text-align: center;
 }
 
 .map-svg {
