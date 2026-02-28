@@ -25,6 +25,21 @@ function agentColor(id) {
   return AGENT_COLORS[id] || '#6c6'
 }
 
+const selectedAgent = ref(null)
+
+function openAgentPopup(id) {
+  selectedAgent.value = id
+}
+
+function closeAgentPopup() {
+  selectedAgent.value = null
+}
+
+function agentData(id) {
+  if (!worldState.value) return null
+  return worldState.value.agents[id] || null
+}
+
 const agentEvents = computed(() => {
   const byAgent = {}
   for (const e of events.value) {
@@ -152,7 +167,8 @@ onUnmounted(() => {
 
           <!-- rover dots -->
           <g v-for="id in agentIds" :key="'rover-'+id"
-            :transform="roverTransform(id)" class="rover-group">
+            :transform="roverTransform(id)" class="rover-group" style="cursor:pointer"
+            @click="openAgentPopup(id)">
             <circle r="7" :fill="agentColor(id)" opacity="0.9">
               <animate attributeName="r" values="7;8;7" dur="2s" repeatCount="indefinite" />
             </circle>
@@ -171,7 +187,7 @@ onUnmounted(() => {
       <!-- Agent Panes -->
       <section class="agent-panes">
         <div v-for="id in agentIds" :key="id" class="agent-pane">
-          <div class="agent-header">
+          <div class="agent-header" style="cursor:pointer" @click="openAgentPopup(id)">
             <span class="agent-name" :style="{ color: agentColor(id) }">{{ id }}</span>
             <span class="agent-stats">
               {{ agentPosition(id) }} &middot; bat {{ batteryPct(id) }}
@@ -206,6 +222,50 @@ onUnmounted(() => {
         <pre v-if="event.payload" class="event-payload">{{ JSON.stringify(event.payload, null, 2) }}</pre>
       </div>
     </section>
+
+    <!-- Agent Detail Popup -->
+    <div v-if="selectedAgent" class="modal-overlay" @click.self="closeAgentPopup">
+      <div class="modal" v-if="agentData(selectedAgent)">
+        <div class="modal-header">
+          <span class="modal-title" :style="{ color: agentColor(selectedAgent) }">{{ selectedAgent }}</span>
+          <button class="modal-close" @click="closeAgentPopup">x</button>
+        </div>
+        <div class="modal-body">
+          <div class="modal-section">
+            <div class="modal-label">Type</div>
+            <div class="modal-value">{{ agentData(selectedAgent).type || 'rover' }}</div>
+          </div>
+          <div class="modal-section">
+            <div class="modal-label">Mission</div>
+            <div class="modal-value">{{ agentData(selectedAgent).mission.objective }}</div>
+          </div>
+          <div class="modal-section">
+            <div class="modal-label">Position</div>
+            <div class="modal-value">{{ agentPosition(selectedAgent) }}</div>
+          </div>
+          <div class="modal-section">
+            <div class="modal-label">Battery</div>
+            <div class="modal-value">{{ batteryPct(selectedAgent) }}</div>
+          </div>
+          <div class="modal-section">
+            <div class="modal-label">Tiles visited</div>
+            <div class="modal-value">{{ agentData(selectedAgent).visited.length }}</div>
+          </div>
+          <div class="modal-section">
+            <div class="modal-label">Tools</div>
+            <div class="modal-tools">
+              <div v-for="tool in (agentData(selectedAgent).tools || [])" :key="tool.name" class="tool-item">
+                <span class="tool-name">{{ tool.name }}</span>
+                <span class="tool-desc">{{ tool.description }}</span>
+              </div>
+              <div v-if="!agentData(selectedAgent).tools || agentData(selectedAgent).tools.length === 0" class="empty">
+                No tools
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -426,6 +486,108 @@ h2 {
   color: #555;
   padding: 0.15rem 0 0 100px;
   white-space: pre-wrap;
+}
+
+/* ── Agent Detail Modal ── */
+
+.modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(0, 0, 0, 0.7);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+}
+
+.modal {
+  background: #12121a;
+  border: 1px solid #2a2a38;
+  border-radius: 6px;
+  width: 380px;
+  max-width: 90vw;
+  max-height: 80vh;
+  overflow-y: auto;
+}
+
+.modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.75rem 1rem;
+  border-bottom: 1px solid #1a1a24;
+}
+
+.modal-title {
+  font-weight: bold;
+  font-size: 0.95rem;
+}
+
+.modal-close {
+  background: none;
+  border: 1px solid #333;
+  color: #888;
+  font-size: 0.8rem;
+  padding: 0.15rem 0.45rem;
+  border-radius: 3px;
+  cursor: pointer;
+  font-family: 'Courier New', monospace;
+}
+
+.modal-close:hover {
+  color: #ccc;
+  border-color: #555;
+}
+
+.modal-body {
+  padding: 0.75rem 1rem;
+}
+
+.modal-section {
+  margin-bottom: 0.6rem;
+}
+
+.modal-label {
+  font-size: 0.65rem;
+  color: #555;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  margin-bottom: 0.15rem;
+}
+
+.modal-value {
+  font-size: 0.8rem;
+  color: #c8c8d0;
+}
+
+.modal-tools {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.tool-item {
+  background: #0e0e16;
+  border: 1px solid #1a1a24;
+  border-radius: 3px;
+  padding: 0.4rem 0.6rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.tool-name {
+  font-size: 0.8rem;
+  color: #ccaa44;
+  font-weight: bold;
+}
+
+.tool-desc {
+  font-size: 0.7rem;
+  color: #777;
 }
 
 /* scrollbar */
