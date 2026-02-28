@@ -26,7 +26,6 @@ const camY = ref(-Math.floor(VIEWPORT_H / 2))
 // Smooth camera: targets that camX/camY interpolate toward
 const targetCamX = ref(camX.value)
 const targetCamY = ref(camY.value)
-const LERP_SPEED = 0.15 // fraction per frame (higher = snappier)
 let rafId = null
 const zoom = ref(1)
 const ZOOM_MIN = 0.7
@@ -42,9 +41,14 @@ const dynamicMapH = computed(() => visibleH.value * TILE_SIZE)
 function cameraLoop() {
   const dx = targetCamX.value - camX.value
   const dy = targetCamY.value - camY.value
-  if (Math.abs(dx) > 0.01 || Math.abs(dy) > 0.01) {
-    camX.value += dx * LERP_SPEED
-    camY.value += dy * LERP_SPEED
+  const dist = Math.sqrt(dx * dx + dy * dy)
+
+  if (dist > 0.01) {
+    // Adaptive speed: slower start/end (0.1), faster when far (up to 0.3)
+    const speed = Math.min(0.3, 0.1 + dist * 0.02)
+    camX.value += dx * speed
+    camY.value += dy * speed
+
     // Snap when very close
     if (Math.abs(dx) < 0.05) camX.value = targetCamX.value
     if (Math.abs(dy) < 0.05) camY.value = targetCamY.value
