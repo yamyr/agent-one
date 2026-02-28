@@ -46,6 +46,31 @@ REVEAL_RADIUS = ROVER_REVEAL_RADIUS  # legacy alias
 TARGET_STONE_TYPE = "core"
 TARGET_STONE_COUNT = 1
 MEMORY_MAX = 8
+BATTERY_SAFETY_MARGIN = 0.06  # 6% safety buffer above minimum needed
+
+
+def _battery_to_reach_station(agent):
+    """Calculate battery cost needed to return to station from current position."""
+    station = WORLD.get("agents", {}).get("station")
+    sp = station["position"] if station else [0, 0]
+    x, y = agent["position"]
+    dist = abs(x - sp[0]) + abs(y - sp[1])
+    cost_per_tile = BATTERY_COST_MOVE_DRONE if agent.get("type") == "drone" else BATTERY_COST_MOVE
+    return dist * cost_per_tile
+
+
+def must_return_to_base(agent):
+    """Check if agent must immediately return to base to avoid stranding.
+
+    Returns True if battery is at or below the cost to reach station + safety margin.
+    """
+    if agent.get("type") == "station":
+        return False
+    station = WORLD.get("agents", {}).get("station")
+    if station and agent["position"] == station["position"]:
+        return False  # already at station
+    cost = _battery_to_reach_station(agent)
+    return agent["battery"] <= cost + BATTERY_SAFETY_MARGIN
 
 
 def _random_free_pos(occupied, rng=None, cx=0, cy=0):
@@ -741,6 +766,19 @@ def _update_drone_tasks(agent_id, agent):
     visited_set = {tuple(c) for c in agent.get("visited", [])}
     tasks = []
 
+    # CRITICAL: battery safety — must return to base if battery is low
+    if must_return_to_base(agent):
+        station = WORLD["agents"].get("station")
+        sp = station["position"] if station else [0, 0]
+        if [x, y] != [sp[0], sp[1]]:
+            cost = _battery_to_reach_station(agent)
+            tasks.append(
+                f"⚠️ LOW BATTERY ({agent['battery']:.0%}) — RETURN TO STATION at ({sp[0]},{sp[1]}) immediately! "
+                f"Need {cost:.0%} to get back."
+            )
+            agent["tasks"] = tasks
+            return
+
     # Check if current area has been scanned already
     scanned_positions = {tuple(s["position"]) for s in WORLD.get("drone_scans", [])}
     if (x, y) not in scanned_positions:
@@ -783,6 +821,19 @@ def _update_rover_tasks(agent_id, agent):
     inventory = agent.get("inventory", [])
     revealed_set = {tuple(c) for c in agent.get("revealed", [])}
     tasks = []
+
+    # CRITICAL: battery safety — must return to base if battery is low
+    if must_return_to_base(agent):
+        station = WORLD["agents"].get("station")
+        sp = station["position"] if station else [0, 0]
+        if [x, y] != sp:
+            cost = _battery_to_reach_station(agent)
+            tasks.append(
+                f"⚠️ LOW BATTERY ({agent['battery']:.0%}) — RETURN TO STATION at ({sp[0]},{sp[1]}) immediately! "
+                f"Need {cost:.0%} to get back."
+            )
+            agent["tasks"] = tasks
+            return
 
     # Already collected target stone → return to station
     has_target = any(s["type"] == target_type for s in inventory)

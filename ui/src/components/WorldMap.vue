@@ -11,52 +11,29 @@ const props = defineProps({
     type: Array,
     default: () => [],
   },
+  followAgent: {
+    type: String,
+    default: null,
+  },
 })
 
-const emit = defineEmits(['select-agent'])
+const emit = defineEmits(['select-agent', 'unfollow'])
 
 // Camera state: top-left tile of viewport
 const camX = ref(-Math.floor(VIEWPORT_W / 2))
 const camY = ref(-Math.floor(VIEWPORT_H / 2))
-const autoFollow = ref(true)
-const lastMovedAgent = ref(null)
 
 // Track drag state
 const dragging = ref(false)
 const dragStart = ref({ x: 0, y: 0 })
 
-// Auto-follow: center camera on most recently moved agent
-watch(() => props.worldState, (ws) => {
-  if (!ws || !autoFollow.value) return
-  // Find agent closest to "most recently moved" by checking positions
-  const agents = ws.agents || {}
-  let target = null
-  for (const id of props.agentIds) {
-    const a = agents[id]
-    if (a && a.type !== 'station') {
-      if (!target) target = { id, pos: a.position }
-      // Prefer the last known moved agent
-      if (lastMovedAgent.value === id) {
-        target = { id, pos: a.position }
-        break
-      }
-    }
-  }
-  if (target) {
-    camX.value = target.pos[0] - Math.floor(VIEWPORT_W / 2)
-    camY.value = target.pos[1] - Math.floor(VIEWPORT_H / 2)
-  }
-}, { deep: true })
-
-// Detect which agent moved most recently
-watch(() => props.worldState, (ws, oldWs) => {
-  if (!ws || !oldWs) return
-  for (const id of props.agentIds) {
-    const curr = ws.agents?.[id]
-    const prev = oldWs.agents?.[id]
-    if (curr && prev && (curr.position[0] !== prev.position[0] || curr.position[1] !== prev.position[1])) {
-      lastMovedAgent.value = id
-    }
+// Follow selected agent: center camera on it when worldState updates
+watch([() => props.worldState, () => props.followAgent], () => {
+  if (!props.worldState || !props.followAgent) return
+  const a = props.worldState.agents?.[props.followAgent]
+  if (a) {
+    camX.value = a.position[0] - Math.floor(VIEWPORT_W / 2)
+    camY.value = a.position[1] - Math.floor(VIEWPORT_H / 2)
   }
 }, { deep: true })
 
@@ -167,7 +144,6 @@ function onMouseMove(e) {
   if (!dragging.value) return
   const dx = e.clientX - dragStart.value.x
   const dy = e.clientY - dragStart.value.y
-  // Convert pixel drag to tile offset (using the SVG element's rendered size)
   const svg = e.currentTarget
   const rect = svg.getBoundingClientRect()
   const tilePixelW = rect.width / VIEWPORT_W
@@ -176,13 +152,13 @@ function onMouseMove(e) {
     const tileDx = Math.round(dx / tilePixelW)
     camX.value -= tileDx
     dragStart.value.x = e.clientX
-    autoFollow.value = false
+    emit('unfollow')
   }
   if (Math.abs(dy) >= tilePixelH) {
     const tileDy = Math.round(dy / tilePixelH)
-    camY.value += tileDy  // inverted: drag down = move camera south (lower Y)
+    camY.value += tileDy
     dragStart.value.y = e.clientY
-    autoFollow.value = false
+    emit('unfollow')
   }
 }
 
@@ -190,20 +166,16 @@ function onMouseUp() {
   dragging.value = false
 }
 
-function onDblClick() {
-  autoFollow.value = true
-}
-
 // Expose camera for minimap
-defineExpose({ camX, camY, autoFollow })
+defineExpose({ camX, camY })
 </script>
 
 <template>
   <section class="world-map">
     <h2>
       Surface Map
-      <span v-if="!autoFollow" class="cam-hint">(drag to pan · double-click to re-center)</span>
-      <span v-else class="cam-hint">(auto-following)</span>
+      <span v-if="followAgent" class="cam-hint">(following {{ followAgent }})</span>
+      <span v-else class="cam-hint">(free camera · drag to pan)</span>
     </h2>
     <svg
       v-if="worldState"
@@ -213,7 +185,6 @@ defineExpose({ camX, camY, autoFollow })
       @mousemove="onMouseMove"
       @mouseup="onMouseUp"
       @mouseleave="onMouseUp"
-      @dblclick="onDblClick"
     >
       <!-- grid tiles -->
       <rect

@@ -324,6 +324,27 @@ class MockRoverAgent:
         )
         agent["last_context"] = context
 
+        # CRITICAL: battery safety — return to base if battery is low
+        from .world import must_return_to_base
+        if must_return_to_base(agent):
+            station = WORLD["agents"].get("station")
+            sp = station["position"] if station else [0, 0]
+            dx, dy = sp[0] - x, sp[1] - y
+            if dx != 0:
+                direction = "east" if dx > 0 else "west"
+                distance = min(abs(dx), MAX_MOVE_DISTANCE)
+            elif dy != 0:
+                direction = "north" if dy > 0 else "south"
+                distance = min(abs(dy), MAX_MOVE_DISTANCE)
+            else:
+                direction = "north"
+                distance = 1
+            thinking = f"I'm at ({x}, {y}). ⚠️ LOW BATTERY ({agent['battery']:.0%}) — must return to station!"
+            return {
+                "thinking": thinking,
+                "action": {"name": "move", "params": {"direction": direction, "distance": distance}},
+            }
+
         # Check for stone at current tile — analyze, dig, or pickup
         stone_here = _find_stone_at(x, y)
         if stone_here:
@@ -362,16 +383,15 @@ class MockRoverAgent:
                 },
             }
 
-        # Default: explore unvisited tiles
+        # Default: explore unvisited tiles (infinite grid — no boundary check)
         visited_set = {tuple(p) for p in agent.get("visited", [])}
         valid = []
         unvisited = []
         for name, (ddx, ddy) in DIRECTIONS.items():
             nx, ny = x + ddx, y + ddy
-            if 0 <= nx < GRID_W and 0 <= ny < GRID_H:
-                valid.append((name, nx, ny))
-                if (nx, ny) not in visited_set:
-                    unvisited.append((name, nx, ny))
+            valid.append((name, nx, ny))
+            if (nx, ny) not in visited_set:
+                unvisited.append((name, nx, ny))
 
         candidates = unvisited if unvisited else valid
         direction, tx, ty = random.choice(candidates)
@@ -618,24 +638,46 @@ class MockDroneAgent:
         )
         agent["last_context"] = context
 
+        # CRITICAL: battery safety — return to base if battery is low
+        from .world import must_return_to_base
+        if must_return_to_base(agent):
+            station = WORLD["agents"].get("station")
+            sp = station["position"] if station else [0, 0]
+            dx, dy = sp[0] - x, sp[1] - y
+            if dx != 0:
+                direction = "east" if dx > 0 else "west"
+                distance = min(abs(dx), MAX_MOVE_DISTANCE_DRONE)
+            elif dy != 0:
+                direction = "north" if dy > 0 else "south"
+                distance = min(abs(dy), MAX_MOVE_DISTANCE_DRONE)
+            else:
+                direction = "north"
+                distance = 1
+            thinking = f"I'm at ({x}, {y}). ⚠️ LOW BATTERY ({agent['battery']:.0%}) — must return to station!"
+            return {
+                "thinking": thinking,
+                "action": {"name": "move", "params": {"direction": direction, "distance": distance}},
+            }
+
         # Scan if current position not yet scanned
         scanned_positions = {tuple(s["position"]) for s in WORLD.get("drone_scans", [])}
         if (x, y) not in scanned_positions:
             thinking = f"I'm at ({x}, {y}). Scanning area for concentration readings."
             return {"thinking": thinking, "action": {"name": "scan", "params": {}}}
 
-        # Find nearest unscanned position (prefer systematic coverage)
+        # Find nearest unscanned position within a search radius
         from .world import DRONE_REVEAL_RADIUS
 
+        search_radius = 30
         best_target = None
         best_dist = float("inf")
-        for gx in range(GRID_W):
-            for gy in range(GRID_H):
+        for gx in range(x - search_radius, x + search_radius + 1):
+            for gy in range(y - search_radius, y + search_radius + 1):
                 if (gx, gy) in scanned_positions:
                     continue
                 min_scan_dist = min(
                     (abs(gx - sp[0]) + abs(gy - sp[1]) for sp in scanned_positions),
-                    default=GRID_W + GRID_H,
+                    default=search_radius * 2,
                 )
                 if min_scan_dist < DRONE_REVEAL_RADIUS:
                     continue
@@ -659,12 +701,8 @@ class MockDroneAgent:
                 "action": {"name": "move", "params": {"direction": direction, "distance": distance}},
             }
 
-        # All scanned — patrol randomly
-        valid = []
-        for name, (ddx, ddy) in DIRECTIONS.items():
-            nx, ny = x + ddx, y + ddy
-            if 0 <= nx < GRID_W and 0 <= ny < GRID_H:
-                valid.append(name)
-        direction = random.choice(valid) if valid else "north"
-        thinking = f"I'm at ({x}, {y}). All areas covered, patrolling."
-        return {"thinking": thinking, "action": {"name": "move", "params": {"direction": direction, "distance": 1}}}
+        # All nearby scanned — explore outward (infinite grid, no boundary check)
+        valid = list(DIRECTIONS.keys())
+        direction = random.choice(valid)
+        thinking = f"I'm at ({x}, {y}). All nearby areas covered, exploring outward."
+        return {"thinking": thinking, "action": {"name": "move", "params": {"direction": direction, "distance": MAX_MOVE_DISTANCE_DRONE}}}
