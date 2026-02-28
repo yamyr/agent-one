@@ -19,11 +19,11 @@ class Broadcaster:
     async def connect(self, ws: WebSocket):
         await ws.accept()
         self._connections.append(ws)
-        logger.info(f"Client connected ({len(self._connections)} total)")
+        logger.info("Client connected (%d total)", len(self._connections))
 
     def disconnect(self, ws: WebSocket):
         self._connections.remove(ws)
-        logger.info(f"Client disconnected ({len(self._connections)} total)")
+        logger.info("Client disconnected (%d total)", len(self._connections))
 
     async def send(self, event: dict):
         """Broadcast an event dict to all connected clients."""
