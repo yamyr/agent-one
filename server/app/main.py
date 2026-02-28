@@ -1,15 +1,16 @@
 import asyncio
 import logging
-import time
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from rich.logging import RichHandler
 
+from .agent import MockRoverAgent
 from .broadcast import broadcaster
 from .db import init_db, close_db
 from .views import router as views_router
+from .world import get_snapshot
 
 logging.basicConfig(
     level=logging.INFO,
@@ -18,17 +19,30 @@ logging.basicConfig(
     handlers=[RichHandler(rich_tracebacks=True, show_path=False)],
 )
 
+logger = logging.getLogger(__name__)
+
+TURN_INTERVAL = 10  # seconds between agent turns
+
 
 async def game_loop():
-    """Temporary game loop — sends a ping every second to all connected clients."""
+    """Run the rover agent every TURN_INTERVAL seconds, broadcast events."""
+    rover = MockRoverAgent()
     while True:
-        await broadcaster.send({
-            "source": "world",
-            "type": "event",
-            "name": "ping",
-            "payload": {"ts": time.time()},
-        })
-        await asyncio.sleep(1)
+        try:
+            events = await asyncio.to_thread(
+                rover.run_turn, "Observe your surroundings and decide your next move.",
+            )
+            for event in events:
+                await broadcaster.send(event)
+            await broadcaster.send({
+                "source": "world",
+                "type": "event",
+                "name": "state",
+                "payload": get_snapshot(),
+            })
+        except Exception:
+            logger.exception("Game loop error")
+        await asyncio.sleep(TURN_INTERVAL)
 
 
 @asynccontextmanager
