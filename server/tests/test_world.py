@@ -34,13 +34,25 @@ def _make_vein(pos, grade="high", quantity=200, analyzed=False):
 
 class TestMoveAgent(unittest.TestCase):
     def setUp(self):
-        world.state["agents"]["rover-mistral"]["position"] = [2, 10]
-        world.state["agents"]["rover-mistral"]["battery"] = 1.0
-        world.state["agents"]["rover-mistral"]["mission"] = {
+        agent = world.state["agents"]["rover-mistral"]
+        self._orig_position = list(agent["position"])
+        self._orig_battery = agent["battery"]
+        self._orig_mission = dict(agent["mission"])
+        self._orig_visited = list(agent["visited"])
+        agent["position"] = [2, 10]
+        agent["battery"] = 1.0
+        agent["mission"] = {
             "objective": "Explore the terrain",
             "plan": [],
         }
-        world.state["agents"]["rover-mistral"]["visited"] = [[2, 10]]
+        agent["visited"] = [[2, 10]]
+
+    def tearDown(self):
+        agent = world.state["agents"]["rover-mistral"]
+        agent["position"] = self._orig_position
+        agent["battery"] = self._orig_battery
+        agent["mission"] = self._orig_mission
+        agent["visited"] = self._orig_visited
 
     def test_move_success(self):
         result = move_agent("rover-mistral", 3, 10)
@@ -121,13 +133,25 @@ class TestMoveAgent(unittest.TestCase):
 
 class TestExecuteAction(unittest.TestCase):
     def setUp(self):
-        world.state["agents"]["rover-mistral"]["position"] = [2, 10]
-        world.state["agents"]["rover-mistral"]["battery"] = 1.0
-        world.state["agents"]["rover-mistral"]["mission"] = {
+        agent = world.state["agents"]["rover-mistral"]
+        self._orig_position = list(agent["position"])
+        self._orig_battery = agent["battery"]
+        self._orig_mission = dict(agent["mission"])
+        self._orig_visited = list(agent["visited"])
+        agent["position"] = [2, 10]
+        agent["battery"] = 1.0
+        agent["mission"] = {
             "objective": "Explore the terrain",
             "plan": [],
         }
-        world.state["agents"]["rover-mistral"]["visited"] = [[2, 10]]
+        agent["visited"] = [[2, 10]]
+
+    def tearDown(self):
+        agent = world.state["agents"]["rover-mistral"]
+        agent["position"] = self._orig_position
+        agent["battery"] = self._orig_battery
+        agent["mission"] = self._orig_mission
+        agent["visited"] = self._orig_visited
 
     def test_execute_move_east(self):
         result = execute_action("rover-mistral", "move", {"direction": "east"})
@@ -139,7 +163,9 @@ class TestExecuteAction(unittest.TestCase):
     def test_execute_move_drains_battery(self):
         result = execute_action("rover-mistral", "move", {"direction": "east"})
         self.assertTrue(result["ok"])
-        self.assertAlmostEqual(world.state["agents"]["rover-mistral"]["battery"], 1.0 - BATTERY_COST_MOVE)
+        self.assertAlmostEqual(
+            world.state["agents"]["rover-mistral"]["battery"], 1.0 - BATTERY_COST_MOVE
+        )
 
     def test_execute_move_negative_ok(self):
         """Infinite grid: moving to negative coords succeeds."""
@@ -287,13 +313,27 @@ class TestStones(unittest.TestCase):
 
 class TestVisited(unittest.TestCase):
     def setUp(self):
-        world.state["agents"]["rover-mistral"]["position"] = [10, 10]
-        world.state["agents"]["rover-mistral"]["battery"] = 1.0
-        world.state["agents"]["rover-mistral"]["mission"] = {
+        agent = world.state["agents"]["rover-mistral"]
+        self._orig_position = list(agent["position"])
+        self._orig_battery = agent["battery"]
+        self._orig_mission = dict(agent["mission"])
+        self._orig_visited = list(agent["visited"])
+        self._orig_revealed = list(agent.get("revealed", []))
+        agent["position"] = [10, 10]
+        agent["battery"] = 1.0
+        agent["mission"] = {
             "objective": "Explore the terrain",
             "plan": [],
         }
-        world.state["agents"]["rover-mistral"]["visited"] = [[10, 10]]
+        agent["visited"] = [[10, 10]]
+
+    def tearDown(self):
+        agent = world.state["agents"]["rover-mistral"]
+        agent["position"] = self._orig_position
+        agent["battery"] = self._orig_battery
+        agent["mission"] = self._orig_mission
+        agent["visited"] = self._orig_visited
+        agent["revealed"] = self._orig_revealed
 
     def test_visited_initial(self):
         self.assertEqual(world.state["agents"]["rover-mistral"]["visited"], [[10, 10]])
@@ -477,7 +517,9 @@ class TestDig(unittest.TestCase):
 
     def test_dig_drains_battery(self):
         execute_action("rover-mistral", "dig", {})
-        self.assertAlmostEqual(world.state["agents"]["rover-mistral"]["battery"], 1.0 - BATTERY_COST_DIG)
+        self.assertAlmostEqual(
+            world.state["agents"]["rover-mistral"]["battery"], 1.0 - BATTERY_COST_DIG
+        )
 
     def test_dig_no_stone(self):
         world.state["stones"] = []
@@ -490,7 +532,9 @@ class TestDig(unittest.TestCase):
         result = execute_action("rover-mistral", "dig", {})
         self.assertFalse(result["ok"])
         self.assertIn("Not enough battery", result["error"])
-        self.assertAlmostEqual(world.state["agents"]["rover-mistral"]["battery"], BATTERY_COST_DIG * 0.5)
+        self.assertAlmostEqual(
+            world.state["agents"]["rover-mistral"]["battery"], BATTERY_COST_DIG * 0.5
+        )
 
     def test_dig_failed_no_drain(self):
         world.state["stones"] = []
@@ -571,12 +615,28 @@ class TestCharge(unittest.TestCase):
     """Charging is a station-only action via charge_rover()."""
 
     def setUp(self):
-        world.state["agents"]["rover-mistral"]["position"] = [0, 0]
-        world.state["agents"]["rover-mistral"]["battery"] = 0.5
-        world.state["agents"]["rover-mistral"]["inventory"] = []
-        world.state["agents"]["rover-mistral"]["visited"] = [[0, 0]]
-        world.state["agents"]["rover-mistral"]["memory"] = []
+        rover = world.state["agents"]["rover-mistral"]
+        self._orig_position = list(rover["position"])
+        self._orig_battery = rover["battery"]
+        self._orig_inventory = list(rover.get("inventory", []))
+        self._orig_visited = list(rover["visited"])
+        self._orig_memory = list(rover.get("memory", []))
+        self._orig_station_pos = list(world.state["agents"]["station"]["position"])
+        rover["position"] = [0, 0]
+        rover["battery"] = 0.5
+        rover["inventory"] = []
+        rover["visited"] = [[0, 0]]
+        rover["memory"] = []
         world.state["agents"]["station"]["position"] = [0, 0]
+
+    def tearDown(self):
+        rover = world.state["agents"]["rover-mistral"]
+        rover["position"] = self._orig_position
+        rover["battery"] = self._orig_battery
+        rover["inventory"] = self._orig_inventory
+        rover["visited"] = self._orig_visited
+        rover["memory"] = self._orig_memory
+        world.state["agents"]["station"]["position"] = self._orig_station_pos
 
     def test_charge_rover_success(self):
         result = charge_rover("rover-mistral")
@@ -611,7 +671,9 @@ class TestCharge(unittest.TestCase):
         charge_rover("rover-mistral")
         self.assertAlmostEqual(world.state["agents"]["rover-mistral"]["battery"], 0.1 + CHARGE_RATE)
         charge_rover("rover-mistral")
-        self.assertAlmostEqual(world.state["agents"]["rover-mistral"]["battery"], 0.1 + 2 * CHARGE_RATE)
+        self.assertAlmostEqual(
+            world.state["agents"]["rover-mistral"]["battery"], 0.1 + 2 * CHARGE_RATE
+        )
 
     def test_charge_rover_unknown_agent(self):
         result = charge_rover("rover-99")
@@ -646,16 +708,18 @@ class TestFogOfWar(unittest.TestCase):
         ]
         # Give drone an empty revealed so it doesn't interfere
         if "drone-mistral" in world.state["agents"]:
-            self._original_drone_revealed = world.state["agents"]["drone-mistral"].get("revealed", [])
+            self._original_drone_revealed = world.state["agents"]["drone-mistral"].get(
+                "revealed", []
+            )
             world.state["agents"]["drone-mistral"]["revealed"] = []
         self._original_stones = world.state.get("stones", [])
 
     def tearDown(self):
         world.state["stones"] = self._original_stones
         # Restore rover-mistral revealed
-        world.state["agents"]["rover-mistral"]["revealed"] = world.state["agents"]["rover-mistral"].get(
-            "revealed", []
-        )
+        world.state["agents"]["rover-mistral"]["revealed"] = world.state["agents"][
+            "rover-mistral"
+        ].get("revealed", [])
         if "drone-mistral" in world.state["agents"]:
             world.state["agents"]["drone-mistral"]["revealed"] = self._original_drone_revealed
 
@@ -958,17 +1022,36 @@ class TestDirectionHint(unittest.TestCase):
         self.assertEqual(direction_hint(0, 0), "here")
 
 
-
 class TestObserveRover(unittest.TestCase):
     def setUp(self):
-        world.state["agents"]["rover-mistral"]["position"] = [5, 5]
-        world.state["agents"]["rover-mistral"]["battery"] = 0.75
-        world.state["agents"]["rover-mistral"]["mission"] = {"objective": "Explore", "plan": []}
-        world.state["agents"]["rover-mistral"]["visited"] = [[0, 0], [5, 5]]
-        world.state["agents"]["rover-mistral"]["inventory"] = []
-        world.state["agents"]["rover-mistral"]["memory"] = ["moved east"]
-        world.state["agents"]["rover-mistral"]["tasks"] = []
+        agent = world.state["agents"]["rover-mistral"]
+        self._orig_position = list(agent["position"])
+        self._orig_battery = agent["battery"]
+        self._orig_mission = dict(agent["mission"])
+        self._orig_visited = list(agent["visited"])
+        self._orig_inventory = list(agent.get("inventory", []))
+        self._orig_memory = list(agent.get("memory", []))
+        self._orig_tasks = list(agent.get("tasks", []))
+        self._orig_stones = list(world.state.get("stones", []))
+        agent["position"] = [5, 5]
+        agent["battery"] = 0.75
+        agent["mission"] = {"objective": "Explore", "plan": []}
+        agent["visited"] = [[0, 0], [5, 5]]
+        agent["inventory"] = []
+        agent["memory"] = ["moved east"]
+        agent["tasks"] = []
         world.state["stones"] = []
+
+    def tearDown(self):
+        agent = world.state["agents"]["rover-mistral"]
+        agent["position"] = self._orig_position
+        agent["battery"] = self._orig_battery
+        agent["mission"] = self._orig_mission
+        agent["visited"] = self._orig_visited
+        agent["inventory"] = self._orig_inventory
+        agent["memory"] = self._orig_memory
+        agent["tasks"] = self._orig_tasks
+        world.state["stones"] = self._orig_stones
 
     def test_returns_rover_context_type(self):
         ctx = observe_rover("rover-mistral")
@@ -1152,7 +1235,6 @@ class TestDrone(unittest.TestCase):
         world.state["stones"] = [_make_vein([10, 10], grade="high", quantity=200, analyzed=True)]
         result = execute_action("drone-mistral", "dig", {})
         self.assertFalse(result["ok"])
-
 
 
 class TestChunkSystem(unittest.TestCase):
@@ -1397,7 +1479,9 @@ class TestNotify(unittest.TestCase):
         )
 
     def test_notify_drone_success(self):
-        result = execute_action("drone-mistral", "notify", {"message": "High concentration detected"})
+        result = execute_action(
+            "drone-mistral", "notify", {"message": "High concentration detected"}
+        )
         self.assertTrue(result["ok"])
         self.assertEqual(result["position"], [3, 3])
         self.assertEqual(result["message"], "High concentration detected")
@@ -1420,7 +1504,6 @@ class TestNotify(unittest.TestCase):
         result = execute_action("rover-mistral", "notify", {"message": "help"})
         self.assertFalse(result["ok"])
         self.assertIn("Not enough battery", result["error"])
-
 
 
 class TestInTransitQuantity(unittest.TestCase):
@@ -1461,7 +1544,9 @@ class TestWorldSetters(unittest.TestCase):
 
     def test_set_pending_commands_set_and_clear(self):
         set_pending_commands("rover-mistral", [{"name": "recall"}])
-        self.assertEqual(world.state["agents"]["rover-mistral"]["pending_commands"], [{"name": "recall"}])
+        self.assertEqual(
+            world.state["agents"]["rover-mistral"]["pending_commands"], [{"name": "recall"}]
+        )
         set_pending_commands("rover-mistral", None)
         self.assertNotIn("pending_commands", world.state["agents"]["rover-mistral"])
 
@@ -1470,6 +1555,7 @@ class TestWorldClass(unittest.TestCase):
     def test_singleton_wraps_module_world(self):
         """Module-level `world` singleton is the canonical instance."""
         from app.world import world as w
+
         self.assertIs(w.state, world.state)
 
     def test_get_agent(self):
@@ -1493,7 +1579,9 @@ class TestWorldClass(unittest.TestCase):
         self.assertEqual(world.state["agents"]["rover-mistral"]["last_context"], "ctx-via-class")
 
         world.set_pending_commands("rover-mistral", [{"name": "test"}])
-        self.assertEqual(world.state["agents"]["rover-mistral"]["pending_commands"], [{"name": "test"}])
+        self.assertEqual(
+            world.state["agents"]["rover-mistral"]["pending_commands"], [{"name": "test"}]
+        )
         world.set_pending_commands("rover-mistral", None)
         self.assertNotIn("pending_commands", world.state["agents"]["rover-mistral"])
 
@@ -1503,6 +1591,7 @@ class TestWorldClass(unittest.TestCase):
     def test_fresh_instance_independent(self):
         """A World() with no args gets its own state, independent of the singleton."""
         from app.world import World
+
         w2 = World()
         w2.set_agent_model("rover-mistral", "independent-model")
         self.assertNotEqual(

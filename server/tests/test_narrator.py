@@ -116,7 +116,11 @@ class TestBuildNarrationPrompt(unittest.TestCase):
             {
                 "source": "station",
                 "name": "charge_agent",
-                "payload": {"agent_id": "rover-mistral", "battery_before": 0.3, "battery_after": 1.0},
+                "payload": {
+                    "agent_id": "rover-mistral",
+                    "battery_before": 0.3,
+                    "battery_after": 1.0,
+                },
             }
         ]
         prompt = _build_narration_prompt(events, "")
