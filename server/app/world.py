@@ -1,6 +1,5 @@
 """In-memory world state for the Mars simulation."""
 
-import asyncio
 import copy
 import hashlib
 import logging
@@ -308,7 +307,6 @@ def _make_drone(start_x, start_y):
         "type": "drone",
         "ground_readings": {},
         "tools": list(_DRONE_TOOL_DEFS),
-        "rag_context": {},
     }
 
 
@@ -326,7 +324,6 @@ def _make_rover(start_x, start_y):
         "ground_readings": {},
         "tools": list(_ROVER_TOOL_DEFS),
         "solar_panels_remaining": MAX_SOLAR_PANELS,
-        "rag_context": {},
     }
 
 
@@ -342,7 +339,6 @@ def _build_initial_world():
                 "battery": 1.0,
                 "mission": {"objective": "Coordinate Mars mission", "plan": []},
                 "visited": [[0, 0]],
-                "rag_context": {},
             },
             "rover-mistral": _make_rover(0, 0),
             "drone-mistral": _make_drone(0, 0),
@@ -552,29 +548,6 @@ def execute_action(agent_id, action_name, params):
         mission_event = check_mission_status()
         if mission_event:
             result["mission"] = mission_event
-
-    # RAG: store memory async if enabled
-    if result["ok"] and settings.rag_enabled:
-        # Find the memory text that was just recorded
-        agent_mem = agent.get("memory", [])
-        if agent_mem:
-            memory_text = agent_mem[-1]  # last recorded memory
-            try:
-                loop = asyncio.get_running_loop()
-                from .rag import store_memory as rag_store_memory
-
-                loop.create_task(rag_store_memory(agent_id, memory_text, action_name, True))
-            except RuntimeError:
-                pass  # no running loop (e.g., in sync tests)
-    elif not result["ok"] and settings.rag_enabled:
-        error_text = f"Failed {action_name}: {result.get('error', '?')}"
-        try:
-            loop = asyncio.get_running_loop()
-            from .rag import store_memory as rag_store_memory
-
-            loop.create_task(rag_store_memory(agent_id, error_text, action_name, False))
-        except RuntimeError:
-            pass
 
     update_tasks(agent_id)
     return result
@@ -1062,9 +1035,7 @@ def _update_rover_tasks(agent_id, agent):
     inv_count = len(inventory)
     inv_qty = sum(s.get("quantity", 0) for s in inventory if s["type"] == target_type)
     if inv_count >= MAX_INVENTORY_ROVER:
-        tasks.append(
-            f"Inventory full ({inv_count}/{MAX_INVENTORY_ROVER} veins, {inv_qty} basalt units)"
-        )
+        tasks.append(f"Inventory full ({inv_count}/{MAX_INVENTORY_ROVER} veins, {inv_qty} basalt units)")
     elif inv_count > 0:
         tasks.append(f"Inventory: {inv_count}/{MAX_INVENTORY_ROVER} veins ({inv_qty} basalt units)")
 

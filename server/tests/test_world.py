@@ -643,8 +643,7 @@ class TestPickup(unittest.TestCase):
     def test_pickup_inventory_full(self):
         """Pickup should fail when inventory already has MAX_INVENTORY_ROVER veins."""
         WORLD["agents"]["rover-mistral"]["inventory"] = [
-            {"type": "basalt_vein", "grade": "low", "quantity": 50}
-            for _ in range(MAX_INVENTORY_ROVER)
+            {"type": "basalt_vein", "grade": "low", "quantity": 50} for _ in range(MAX_INVENTORY_ROVER)
         ]
         result = execute_action("rover-mistral", "pickup", {})
         self.assertFalse(result["ok"])
@@ -1638,9 +1637,7 @@ class TestNotifyBase(unittest.TestCase):
         self.assertEqual(len(result["inventory_summary"]), 1)
         self.assertEqual(result["inventory_summary"][0]["grade"], "rich")
         self.assertEqual(result["inventory_summary"][0]["quantity"], 400)
-        self.assertAlmostEqual(
-            WORLD["agents"]["rover-mistral"]["battery"], 1.0 - BATTERY_COST_NOTIFY
-        )
+        self.assertAlmostEqual(WORLD["agents"]["rover-mistral"]["battery"], 1.0 - BATTERY_COST_NOTIFY)
 
     def test_notify_base_empty_inventory(self):
         WORLD["agents"]["rover-mistral"]["inventory"] = []

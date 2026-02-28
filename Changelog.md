@@ -6,23 +6,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
-### Added (RAG-Enhanced Agent Intelligence)
-
-- **RAG service module** (`server/app/rag.py`): Complete retrieval-augmented generation system with static Mars knowledge retrieval and dynamic mission memory. Functions: `init_rag()`, `retrieve_context()`, `store_memory()`, `format_rag_context()`, `retrieve_knowledge()`, `retrieve_memories()`, `prune_memories()`
-- **Mars knowledge document** (`server/data/mars_knowledge.md`): Auto-generated 8-section knowledge base covering terrain, geology, vein classification, concentration gradients, battery management, exploration strategy, storm protocols, and mission procedures. Extracted from `world.py` constants + geological flavor text
-- **RAG setup CLI** (`server/app/rag_setup.py`): Commands `generate-knowledge`, `init-db`, `upload-library` for knowledge base management. Supports Mistral Libraries API upload (beta)
-- **SurrealDB vector storage**: Two new tables — `knowledge_chunk` (static Mars knowledge with HNSW index, 1024-dim embeddings) and `mission_memory` (dynamic agent experience with HNSW index). Both use `mistral-embed` model
-- **Agent prompt enrichment**: Both rover and drone `_build_context()` methods inject `== Mars Knowledge ==` and `== Relevant Past Experience ==` sections from RAG retrieval. System prompt includes precedence rule: "Real-time world state always takes precedence over knowledge base content"
-- **Pre-reasoning RAG retrieval**: `retrieve_context()` called in both `RoverLoop.tick()` and `DroneLoop.tick()` before LLM reasoning, with graceful fallback on timeout/error
-- **Async memory storage**: `store_memory()` called via `asyncio.create_task()` in `execute_action()` after each action, storing agent experiences with embeddings for future retrieval
-- **Cross-agent knowledge sharing**: `retrieve_memories(cross_agent=True)` enables rover to access drone's scan data and vice versa, with `[agent_id, tick N]` attribution
-- **RAG metadata in broadcasts**: Thinking event payloads include `rag_context` with `knowledge_used` and `memories_used` for UI display
-- **Memory pruning**: Automatic pruning after every 50 memory stores, capping at 500 entries to prevent unbounded growth
-- **Latency logging**: `retrieve_context()` logs elapsed time in ms for performance monitoring
-- **RAG configuration** (`server/app/config.py`): `rag_enabled`, `rag_knowledge_top_k` (3), `rag_memory_top_k` (3), `rag_timeout_seconds` (2.0), `rag_max_context_tokens` (800)
-- **Graceful degradation**: All RAG calls wrapped in `_safe_rag_call()` with configurable timeout. Agents continue without RAG on failure
-- **Test coverage**: 40 new tests in `server/tests/test_rag.py` covering knowledge generation, schema creation, embedding, retrieval, formatting, categorization, pruning, timeout handling. Total: 331 tests passing
-
 ### Changed (Basalt Vein System)
 
 - **Vein-based mineral system**: Replaced binary stone types (core/basalt) with a vein grade system. Every vein is basalt with a grade (low/medium/high/rich/pristine) determining quantity, following exponential rarity decay (`weight = 200 * e^(-1.3 * index)`)

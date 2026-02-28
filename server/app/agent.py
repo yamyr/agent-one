@@ -20,9 +20,8 @@ from .world import FUEL_CAPACITY_ROVER, FUEL_CAPACITY_DRONE, DRONE_REVEAL_RADIUS
 from .world import BATTERY_COST_MOVE, BATTERY_COST_MOVE_DRONE, BATTERY_COST_DIG
 from .world import BATTERY_COST_PICKUP, BATTERY_COST_ANALYZE, BATTERY_COST_ANALYZE_GROUND
 from .world import BATTERY_COST_SCAN, BATTERY_COST_NOTIFY, MAX_INVENTORY_ROVER
-from .world import check_ground, _direction_hint
-from .world import execute_action, get_snapshot, charge_agent, next_tick
-from .rag import format_rag_context, retrieve_context
+from .world import check_ground, _direction_hint, _find_stone_at
+from .world import execute_action, get_snapshot, charge_agent, next_tick, all_agents_at_station
 
 logger = logging.getLogger(__name__)
 
@@ -213,8 +212,7 @@ class MistralRoverReasoner:
             "- CRITICAL: Once you have collected the target quantity of basalt, STOP exploring and RETURN TO STATION IMMEDIATELY.\n"
             "- Prefer unvisited tiles when exploring. Don't backtrack aimlessly.\n"
             "- Ground is auto-scanned after every move. No need to check manually.\n"
-            "- Follow your current tasks list. It tells you exactly what to do next.\n"
-            "- Real-time world state always takes precedence over knowledge base content. If retrieved knowledge contradicts what you observe, trust your current observations.".format(
+            "- Follow your current tasks list. It tells you exactly what to do next.".format(
                 sx=station_pos[0], sy=station_pos[1]
             )
         )
@@ -311,13 +309,6 @@ class MistralRoverReasoner:
             parts.append("\n== Recent actions ==")
             for entry in recent:
                 parts.append(f"- {entry}")
-
-        # RAG-enhanced context (Mars knowledge + mission memory)
-        rag_ctx = agent.get("rag_context")
-        if rag_ctx:
-            rag_text = format_rag_context(rag_ctx)
-            if rag_text:
-                parts.append(rag_text)
 
         # Urgent commands from Host inbox
         pending = agent.get("pending_commands", [])
@@ -526,10 +517,7 @@ class DroneAgent:
             f"- Battery: move costs 1 fuel unit/tile (~{BATTERY_COST_MOVE_DRONE:.2%}), scan costs 2 fuel units (~{BATTERY_COST_SCAN:.2%}). You can fly up to {MAX_MOVE_DISTANCE_DRONE} tiles per move.\n"
             "- Station is at ({sx},{sy}). Return when battery is low for recharge.\n"
             "- ALWAYS keep enough battery to return to station.\n"
-            "- Follow your current tasks list.\n"
-            "- Real-time world state always takes precedence over knowledge base content. If retrieved knowledge contradicts what you observe, trust your current observations.".format(
-                sx=station_pos[0], sy=station_pos[1]
-            )
+            "- Follow your current tasks list.".format(sx=station_pos[0], sy=station_pos[1])
         )
 
         parts.append(
@@ -579,13 +567,6 @@ class DroneAgent:
             parts.append("\n== Recent actions ==")
             for entry in recent:
                 parts.append(f"- {entry}")
-
-        # RAG-enhanced context (Mars knowledge + mission memory)
-        rag_ctx = agent.get("rag_context")
-        if rag_ctx:
-            rag_text = format_rag_context(rag_ctx)
-            if rag_text:
-                parts.append(rag_text)
 
         return "\n".join(parts)
 
@@ -815,35 +796,16 @@ class RoverLoop(BaseAgent):
             logger.info("Agent %s at station — abort complete", self.agent_id)
             return
 
-        # RAG: retrieve relevant knowledge + memory before reasoning
-        if settings.rag_enabled:
-            try:
-                await retrieve_context(self.agent_id)
-            except Exception:
-                logger.warning("RAG retrieval failed for %s, continuing without", self.agent_id)
-
         turn = await asyncio.to_thread(self._reasoner.run_turn)
         next_tick()
         messages = []
 
         if turn["thinking"]:
-            payload = {"text": turn["thinking"]}
-            if settings.rag_enabled:
-                rag_ctx = WORLD["agents"][self.agent_id].get("rag_context", {})
-                if rag_ctx.get("knowledge_chunks") or rag_ctx.get("memory_entries"):
-                    payload["rag_context"] = {
-                        "knowledge_used": [
-                            c["content"][:100] for c in rag_ctx.get("knowledge_chunks", [])
-                        ],
-                        "memories_used": [
-                            m["content"][:100] for m in rag_ctx.get("memory_entries", [])
-                        ],
-                    }
             msg = make_message(
                 source=self.agent_id,
                 type="event",
                 name="thinking",
-                payload=payload,
+                payload={"text": turn["thinking"]},
             )
             messages.append(msg)
 
@@ -942,35 +904,16 @@ class DroneLoop(BaseAgent):
                 {"name": "recall", "payload": {"reason": "Mission aborted — return to station"}}
             ]
 
-        # RAG: retrieve relevant knowledge + memory before reasoning
-        if settings.rag_enabled:
-            try:
-                await retrieve_context(self.agent_id)
-            except Exception:
-                logger.warning("RAG retrieval failed for %s, continuing without", self.agent_id)
-
         turn = await asyncio.to_thread(self._reasoner.run_turn)
         next_tick()
         messages = []
 
         if turn["thinking"]:
-            payload = {"text": turn["thinking"]}
-            if settings.rag_enabled:
-                rag_ctx = WORLD["agents"][self.agent_id].get("rag_context", {})
-                if rag_ctx.get("knowledge_chunks") or rag_ctx.get("memory_entries"):
-                    payload["rag_context"] = {
-                        "knowledge_used": [
-                            c["content"][:100] for c in rag_ctx.get("knowledge_chunks", [])
-                        ],
-                        "memories_used": [
-                            m["content"][:100] for m in rag_ctx.get("memory_entries", [])
-                        ],
-                    }
             msg = make_message(
                 source=self.agent_id,
                 type="event",
                 name="thinking",
-                payload=payload,
+                payload={"text": turn["thinking"]},
             )
             messages.append(msg)
 
