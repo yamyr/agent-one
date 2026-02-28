@@ -1,5 +1,6 @@
 """Tests for app.narrator — event filtering, prompt building, dialogue parsing, narrator lifecycle."""
 
+import asyncio
 import unittest
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -343,3 +344,284 @@ class TestStripAudioTags(unittest.TestCase):
         text = "Before [sighs] after"
         result = _strip_audio_tags(text)
         self.assertNotIn("  ", result)
+
+
+# ── Regression tests for non-blocking streaming (issue #92) ──────────────────
+
+
+class TestStreamingNonBlocking(unittest.IsolatedAsyncioTestCase):
+    """Verify narrator streaming uses async iteration and doesn't block the event loop."""
+
+    def setUp(self):
+        self.broadcast = AsyncMock()
+        self.narrator = Narrator(broadcast_fn=self.broadcast)
+        self.narrator._enabled = True
+
+    def tearDown(self):
+        self.narrator.stop()
+
+    def _make_async_stream(self, chunks: list[str]):
+        """Create a mock async iterator mimicking Mistral stream_async response."""
+
+        async def _fake_stream():
+            for text in chunks:
+                event = MagicMock()
+                event.data.choices = [MagicMock()]
+                event.data.choices[0].delta.content = text
+                yield event
+
+        return _fake_stream()
+
+    async def test_streaming_uses_stream_async(self):
+        """Verify _generate_text_streaming calls stream_async (not sync stream)."""
+        mock_client = MagicMock()
+        mock_client.chat.stream_async = AsyncMock(
+            return_value=self._make_async_stream(["COMMANDER REX: Hello."])
+        )
+        self.narrator._mistral = mock_client
+
+        result = await self.narrator._generate_text_streaming("test prompt")
+
+        mock_client.chat.stream_async.assert_awaited_once()
+        self.assertIn("Hello", result)
+
+    async def test_streaming_does_not_call_sync_stream(self):
+        """Ensure the sync stream() method is never called."""
+        mock_client = MagicMock()
+        mock_client.chat.stream_async = AsyncMock(
+            return_value=self._make_async_stream(["DR. NOVA: Test."])
+        )
+        self.narrator._mistral = mock_client
+
+        await self.narrator._generate_text_streaming("test prompt")
+
+        mock_client.chat.stream.assert_not_called()
+
+    async def test_streaming_broadcasts_chunks_in_order(self):
+        """Chunks must be broadcast in the same order they arrive from the LLM."""
+        chunks = ["COMMANDER REX: ", "First part. ", "DR. NOVA: ", "Second part."]
+        mock_client = MagicMock()
+        mock_client.chat.stream_async = AsyncMock(return_value=self._make_async_stream(chunks))
+        self.narrator._mistral = mock_client
+
+        await self.narrator._generate_text_streaming("test prompt")
+
+        # Verify broadcast was called once per chunk, in order
+        self.assertEqual(self.broadcast.await_count, len(chunks))
+        broadcast_texts = [
+            call.args[0]["payload"]["text"] for call in self.broadcast.call_args_list
+        ]
+        # Audio tags stripped but content order preserved
+        self.assertEqual(broadcast_texts[0], "COMMANDER REX:")
+        self.assertEqual(broadcast_texts[1], "First part.")
+        self.assertEqual(broadcast_texts[2], "DR. NOVA:")
+        self.assertEqual(broadcast_texts[3], "Second part.")
+
+    async def test_streaming_accumulates_full_text(self):
+        """Full text returned should be the concatenation of all chunks."""
+        chunks = ["Hello ", "world"]
+        mock_client = MagicMock()
+        mock_client.chat.stream_async = AsyncMock(return_value=self._make_async_stream(chunks))
+        self.narrator._mistral = mock_client
+
+        result = await self.narrator._generate_text_streaming("test prompt")
+
+        self.assertEqual(result, "Hello world")
+
+    async def test_streaming_returns_none_on_empty(self):
+        """Empty stream should return None, not empty string."""
+        mock_client = MagicMock()
+        mock_client.chat.stream_async = AsyncMock(return_value=self._make_async_stream([]))
+        self.narrator._mistral = mock_client
+
+        result = await self.narrator._generate_text_streaming("test prompt")
+
+        self.assertIsNone(result)
+
+    async def test_streaming_skips_none_chunks(self):
+        """None/empty delta content should be skipped without broadcasting."""
+
+        async def _stream_with_nones():
+            for content in [None, "Hello", None, "", "World"]:
+                event = MagicMock()
+                event.data.choices = [MagicMock()]
+                event.data.choices[0].delta.content = content
+                yield event
+
+        mock_client = MagicMock()
+        mock_client.chat.stream_async = AsyncMock(return_value=_stream_with_nones())
+        self.narrator._mistral = mock_client
+
+        result = await self.narrator._generate_text_streaming("test prompt")
+
+        self.assertEqual(result, "HelloWorld")
+        # Only non-empty chunks broadcast
+        self.assertEqual(self.broadcast.await_count, 2)
+
+    async def test_streaming_chunk_event_schema(self):
+        """Each broadcast chunk must follow the narration_chunk message schema."""
+        mock_client = MagicMock()
+        mock_client.chat.stream_async = AsyncMock(
+            return_value=self._make_async_stream(["Test chunk"])
+        )
+        self.narrator._mistral = mock_client
+
+        await self.narrator._generate_text_streaming("test prompt")
+
+        msg = self.broadcast.call_args_list[0].args[0]
+        self.assertEqual(msg["source"], "narrator")
+        self.assertEqual(msg["type"], "narration")
+        self.assertEqual(msg["name"], "narration_chunk")
+        self.assertIn("text", msg["payload"])
+
+    async def test_streaming_strips_audio_tags_from_chunks(self):
+        """Audio emotion tags must be stripped in broadcast chunks."""
+        mock_client = MagicMock()
+        mock_client.chat.stream_async = AsyncMock(
+            return_value=self._make_async_stream(["[laughs] Funny stuff"])
+        )
+        self.narrator._mistral = mock_client
+
+        await self.narrator._generate_text_streaming("test prompt")
+
+        chunk_text = self.broadcast.call_args_list[0].args[0]["payload"]["text"]
+        self.assertNotIn("[laughs]", chunk_text)
+        self.assertIn("Funny stuff", chunk_text)
+
+    async def test_event_loop_not_blocked_during_streaming(self):
+        """Verify other coroutines can run while streaming is in progress.
+
+        This is the key regression test for issue #92: the event loop must
+        remain responsive during narration streaming.
+        """
+        loop_ran = False
+
+        async def _slow_stream():
+            nonlocal loop_ran
+            for text in ["Chunk1", "Chunk2", "Chunk3"]:
+                await asyncio.sleep(0.01)  # yield to event loop
+                event = MagicMock()
+                event.data.choices = [MagicMock()]
+                event.data.choices[0].delta.content = text
+                yield event
+
+        async def _concurrent_task():
+            nonlocal loop_ran
+            await asyncio.sleep(0.005)
+            loop_ran = True
+
+        mock_client = MagicMock()
+        mock_client.chat.stream_async = AsyncMock(return_value=_slow_stream())
+        self.narrator._mistral = mock_client
+
+        # Run streaming and a concurrent task simultaneously
+        result, _ = await asyncio.gather(
+            self.narrator._generate_text_streaming("test"),
+            _concurrent_task(),
+        )
+
+        self.assertTrue(loop_ran, "Event loop was blocked — concurrent task didn't run")
+        self.assertEqual(result, "Chunk1Chunk2Chunk3")
+
+
+class TestStreamingErrorHandling(unittest.IsolatedAsyncioTestCase):
+    """Verify streaming error paths don't crash the narrator or emit malformed events."""
+
+    def setUp(self):
+        self.broadcast = AsyncMock()
+        self.narrator = Narrator(broadcast_fn=self.broadcast)
+        self.narrator._enabled = True
+
+    def tearDown(self):
+        self.narrator.stop()
+
+    async def test_stream_async_exception_returns_none(self):
+        """If stream_async raises, return None gracefully (fallback to non-streaming)."""
+        mock_client = MagicMock()
+        mock_client.chat.stream_async = AsyncMock(side_effect=RuntimeError("API connection failed"))
+        self.narrator._mistral = mock_client
+
+        result = await self.narrator._generate_text_streaming("test prompt")
+
+        self.assertIsNone(result)
+        # No chunks should have been broadcast
+        self.broadcast.assert_not_awaited()
+
+    async def test_partial_stream_then_error_returns_none(self):
+        """If stream fails mid-iteration, return None (not partial text)."""
+
+        async def _failing_stream():
+            event = MagicMock()
+            event.data.choices = [MagicMock()]
+            event.data.choices[0].delta.content = "Partial text"
+            yield event
+            raise ConnectionError("Stream interrupted")
+
+        mock_client = MagicMock()
+        mock_client.chat.stream_async = AsyncMock(return_value=_failing_stream())
+        self.narrator._mistral = mock_client
+
+        result = await self.narrator._generate_text_streaming("test prompt")
+
+        # Exception caught — returns None
+        self.assertIsNone(result)
+
+    async def test_error_does_not_propagate(self):
+        """Streaming errors must be caught, not propagated to the caller."""
+        mock_client = MagicMock()
+        mock_client.chat.stream_async = AsyncMock(side_effect=Exception("Unexpected error"))
+        self.narrator._mistral = mock_client
+
+        # Should NOT raise
+        result = await self.narrator._generate_text_streaming("test prompt")
+        self.assertIsNone(result)
+
+
+class TestProcessBatchStreaming(unittest.IsolatedAsyncioTestCase):
+    """Test the full batch pipeline uses async streaming and falls back correctly."""
+
+    def setUp(self):
+        self.broadcast = AsyncMock()
+        self.narrator = Narrator(broadcast_fn=self.broadcast)
+        self.narrator._enabled = True
+
+    def tearDown(self):
+        self.narrator.stop()
+
+    @patch("app.narrator.settings")
+    async def test_process_batch_uses_streaming(self, mock_settings):
+        """_process_batch should call _generate_text_streaming first."""
+        mock_settings.narration_model = "test-model"
+        mock_settings.mistral_api_key = "test-key"
+        mock_settings.narration_min_interval_seconds = 60
+
+        dialogue = "COMMANDER REX: Test line.\nDR. NOVA: Response."
+
+        self.narrator._generate_text_streaming = AsyncMock(return_value=dialogue)
+        self.narrator._event_buffer = [{"name": "dig", "source": "rover", "payload": {}}]
+
+        with patch("app.world.world") as mock_world:
+            mock_world.get_agents.return_value = {}
+            mock_world.get_mission.return_value = {"status": "active"}
+            await self.narrator._process_batch()
+
+        self.narrator._generate_text_streaming.assert_awaited_once()
+
+    @patch("app.narrator.settings")
+    async def test_process_batch_falls_back_on_streaming_failure(self, mock_settings):
+        """When streaming returns None, _process_batch should fall back to non-streaming."""
+        mock_settings.narration_model = "test-model"
+        mock_settings.mistral_api_key = "test-key"
+        mock_settings.narration_min_interval_seconds = 60
+
+        self.narrator._generate_text_streaming = AsyncMock(return_value=None)
+        self.narrator._generate_text = MagicMock(return_value="COMMANDER REX: Fallback text.")
+        self.narrator._event_buffer = [{"name": "dig", "source": "rover", "payload": {}}]
+
+        with patch("app.world.world") as mock_world:
+            mock_world.get_agents.return_value = {}
+            mock_world.get_mission.return_value = {"status": "active"}
+            await self.narrator._process_batch()
+
+        # Streaming attempted first, then fallback
+        self.narrator._generate_text_streaming.assert_awaited_once()

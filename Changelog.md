@@ -4,6 +4,20 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+
+## [Unreleased]
+
+### Fixed
+
+* **narrator:** use async streaming (`stream_async`) to prevent event loop blocking during narration ([#92](https://github.com/mhack-agent-one/agent-one/issues/92))
+  * Replaced synchronous `client.chat.stream()` with `await client.chat.stream_async()` in `_generate_text_streaming()`
+  * Narrator chunks now yield to the event loop between iterations, keeping simulation responsive
+  * Added 15 regression tests covering async streaming, chunk ordering, error handling, and event loop responsiveness
+
+### Errors Identified & Prevention
+
+* **Blocking sync iterator in async context**: `for event in stream:` with a synchronous iterator inside an `async def` method blocks the entire asyncio event loop. Prevention: always use `async for` with async iterators or wrap sync calls in `asyncio.to_thread()`.
+
 ## [0.2.0](https://github.com/mhack-agent-one/agent-one/compare/v0.1.0...v0.2.0) (2026-02-28)
 
 
