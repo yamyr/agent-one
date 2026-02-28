@@ -11,6 +11,7 @@ import MissionBar from './components/MissionBar.vue'
 import EventLog from './components/EventLog.vue'
 import AgentDetailModal from './components/AgentDetailModal.vue'
 import NarrationPlayer from './components/NarrationPlayer.vue'
+import StatsBar from './components/StatsBar.vue'
 
 const selectedAgent = ref(null)
 const paused = ref(false)
@@ -138,6 +139,12 @@ useKeyboard({
     <MissionBar
       :mission="worldState ? worldState.mission : null"
       @abort="abortMission"
+    />
+
+    <StatsBar
+      :world-state="worldState"
+      :agent-ids="agentIds"
+      :event-count="events.length"
     />
 
     <div class="top-row">
