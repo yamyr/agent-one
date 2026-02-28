@@ -23,17 +23,14 @@
 **Goal**: Reduce visual noise.
 - [ ] T010 Update `useToasts.js` to reject duplicate messages within N seconds
 
-## Phase 6: Loading Skeletons (R3P6)
-**Goal**: Better startup UX.
-- [ ] T011 Create skeleton styles/components
-- [ ] T012 Show skeletons when `!worldState`
+## Phase 6: Loading Skeletons (R3P6) ✅
+- [x] T011 Create skeleton styles/components for AgentPane and StatsBar
+- [x] T012 Show skeletons when `!worldState`
 
-## Phase 7: Persisted Prefs (R3P7)
-**Goal**: Save user config.
-- [ ] T013 Create `usePreferences` composable
-- [ ] T014 Wire up zoom, narration, and follow-mode to prefs
+## Phase 7: Persisted Prefs (R3P7) ✅
+- [x] T013 Create `usePreferences` composable (localStorage wrapper)
+- [x] T014 Wire up zoom, narration, and follow-mode to prefs
 
-## Phase 8: Help Overlay (R3P8)
-**Goal**: Discoverability.
-- [ ] T015 Create `HelpModal.vue` with shortcuts
-- [ ] T016 Bind `?` key to toggle help
+## Phase 8: Help Overlay (R3P8) 🎯
+- [x] T015 Create `HelpModal.vue` with keyboard shortcut cheat sheet
+- [x] T016 Bind `?` key to toggle help

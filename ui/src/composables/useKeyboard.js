@@ -9,12 +9,19 @@ import { onMounted, onUnmounted } from 'vue'
  * @param {Function} opts.onFollowAgent    — 1-9 digit keys → index (0-based)
  * @param {Function} opts.onFreeCamera     — 0 key
  * @param {Function} opts.onCloseModal     — Escape key
+ * @param {Function} opts.onToggleHelp     — ? key
  */
-export function useKeyboard({ onTogglePause, onPanCamera, onFollowAgent, onFreeCamera, onCloseModal } = {}) {
+export function useKeyboard({ onTogglePause, onPanCamera, onFollowAgent, onFreeCamera, onCloseModal, onToggleHelp } = {}) {
   function handler(e) {
     // Skip if user is typing in an input / textarea / contenteditable
     const tag = e.target.tagName
     if (tag === 'INPUT' || tag === 'TEXTAREA' || e.target.isContentEditable) return
+
+    if (e.key === '?' || (e.shiftKey && e.key === '/')) {
+      e.preventDefault()
+      onToggleHelp?.()
+      return
+    }
 
     switch (e.code) {
       case 'Space':
