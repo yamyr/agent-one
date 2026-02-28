@@ -226,7 +226,7 @@ function onUnfollow() {
   --bg-status-narration: #2a1a30;
 
   /* Typography */
-  --font-mono: 'Courier New', monospace;
+  --font-mono: 'JetBrains Mono', monospace;
 
   /* Radii */
   --radius-sm: 3px;
