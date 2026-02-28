@@ -49,8 +49,8 @@ Agents never communicate directly — all messages route through the Coordinator
 
 ## Tech Stack
 
-- **Backend**: Python 3.12+, FastAPI, SurrealDB, `mistralai` SDK, `elevenlabs` SDK, `uv` package manager
-- **Frontend**: Vue 3 (Composition API), Vite 7
+- **Backend**: Python 3.14+, FastAPI, SurrealDB, `mistralai` SDK, `elevenlabs` SDK, `uv` package manager
+- **Frontend**: Vue 3 (Composition API), Vite 7, Node 24 LTS
 - **CI/CD**: GitHub Actions (lint, test, build), Discord webhook notifications
 - **Deployment**: Docker multi-stage build, Railway
 
