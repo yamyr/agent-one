@@ -74,20 +74,20 @@ function agentData(id) {
     <MissionBar :mission="worldState ? worldState.mission : null" />
 
     <div class="top-row">
-      <WorldMap
-        :world-state="worldState"
-        :agent-ids="agentIds"
-        @select-agent="selectAgent"
-      />
-      <div class="right-col">
-        <AgentPanes
+      <div class="left-col">
+        <WorldMap
           :world-state="worldState"
           :agent-ids="agentIds"
-          :agent-events="agentEvents"
           @select-agent="selectAgent"
         />
         <EventLog :events="events" />
       </div>
+      <AgentPanes
+        :world-state="worldState"
+        :agent-ids="agentIds"
+        :agent-events="agentEvents"
+        @select-agent="selectAgent"
+      />
     </div>
 
     <AgentDetailModal
@@ -124,14 +124,12 @@ body {
   margin-bottom: 1rem;
 }
 
-.right-col {
+.left-col {
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
-  flex: 1;
+  flex: 3;
   min-width: 0;
-  max-height: 600px;
-  overflow-y: auto;
 }
 
 .empty {
