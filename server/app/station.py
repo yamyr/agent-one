@@ -206,13 +206,10 @@ class StationAgent:
                 " 'Explore south and west quadrant')."
             )
         if drone_count > 1:
-            agent_hint += (
-                f" You have {drone_count} drones — send each to a different sector."
-            )
+            agent_hint += f" You have {drone_count} drones — send each to a different sector."
         return self._call_llm(
             "The mission is starting. Review the world state and assign initial "
-            "missions to ALL agents (rovers and drones)."
-            + agent_hint,
+            "missions to ALL agents (rovers and drones)." + agent_hint,
             context,
         )
 

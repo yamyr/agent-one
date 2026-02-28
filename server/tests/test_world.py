@@ -968,7 +968,6 @@ class TestDirectionHint(unittest.TestCase):
         self.assertEqual(direction_hint(0, 0), "here")
 
 
-
 class TestObserveRover(unittest.TestCase):
     def setUp(self):
         world.state["agents"]["rover-mistral"]["position"] = [5, 5]
@@ -1162,7 +1161,6 @@ class TestDrone(unittest.TestCase):
         world.state["stones"] = [_make_vein([10, 10], grade="high", quantity=200, analyzed=True)]
         result = execute_action("drone-mistral", "dig", {})
         self.assertFalse(result["ok"])
-
 
 
 class TestChunkSystem(unittest.TestCase):
@@ -1432,7 +1430,6 @@ class TestNotify(unittest.TestCase):
         result = execute_action("rover-mistral", "notify", {"message": "help"})
         self.assertFalse(result["ok"])
         self.assertIn("Not enough battery", result["error"])
-
 
 
 class TestInTransitQuantity(unittest.TestCase):
