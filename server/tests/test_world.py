@@ -4,7 +4,7 @@ from app.world import WORLD, move_agent, execute_action, get_snapshot, check_gro
 from app.world import check_mission_status, charge_rover
 from app.world import BATTERY_COST_MOVE, BATTERY_COST_DIG, BATTERY_COST_PICKUP
 from app.world import BATTERY_COST_ANALYZE, BATTERY_COST_ANALYZE_GROUND
-from app.world import CHARGE_RATE, REVEAL_RADIUS, GRID_W, GRID_H, AGENT_STARTS, MAX_MOVE_DISTANCE
+from app.world import CHARGE_RATE, REVEAL_RADIUS, GRID_W, GRID_H, AGENT_STARTS
 from app.world import assign_mission, _cells_in_radius, record_memory, MEMORY_MAX
 from app.world import update_tasks, _direction_hint
 

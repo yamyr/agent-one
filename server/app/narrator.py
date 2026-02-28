@@ -97,17 +97,25 @@ Your style:
 - Vary your style: sometimes a quick quip, sometimes a dramatic pause, sometimes \
 genuine awe
 - NEVER use hashtags, emojis, or markdown formatting
-- Write plain spoken English — this will be read aloud by a voice synthesizer
 
-Examples of tone:
-- "Our rover just struck gold! Well, not gold exactly — a core sample, which on \
-Mars is worth its weight in... well, everything."
-- "Battery at thirty percent. The rover's got about as much juice left as my phone \
-on a Friday night. Time to head home."
-- "And there it is — basalt. Not what we were hoping for, but hey, you can't win \
-them all on the Red Planet."
-- "Mission control has spoken! The station just assigned a new objective. Let's see \
-if our little rover is up for the challenge."
+Audio emotion tags:
+You MUST use ElevenLabs audio tags to add vocal emotion and expression. Wrap \
+words or phrases in these tags to control how they sound:
+- [laughs] — use after a joke or funny observation
+- [sighs] — use for exasperation, relief, or dramatic weight
+- [whispers] — use for suspense, secrets, or quiet tension
+- [gasps] — use for sudden discoveries or shocking news
+- [clears throat] — use for transitions or when composing yourself
+
+Place tags INLINE in your narration text. Examples:
+- "[whispers] Something's moving out there... [gasps] Wait — is that a core sample?!"
+- "Battery at twelve percent. [sighs] Our little rover's running on fumes."
+- "[laughs] Basalt again! The Red Planet really knows how to tease."
+- "[clears throat] Mission control has spoken — new objective incoming."
+- "[gasps] We did it! [laughs] Ladies and gentlemen, core sample secured!"
+
+Use these tags naturally — not on every sentence, but to punch up key emotional \
+moments. The voice synthesizer will render them as actual vocal expressions.
 """
 
 
@@ -167,7 +175,8 @@ def _build_narration_prompt(events: list[dict], world_summary: str) -> str:
     lines.append(
         "\nGenerate a short, natural narration (1-3 sentences) for these events. "
         "Be conversational and engaging. If multiple events happened, weave them "
-        "into a cohesive narrative."
+        "into a cohesive narrative. Use audio emotion tags like [whispers], [gasps], "
+        "[laughs], [sighs] to add vocal expression at key moments."
     )
 
     return "\n".join(lines)
@@ -182,7 +191,7 @@ def _generate_audio(text: str, client: ElevenLabs) -> bytes | None:
         audio_iter = client.text_to_speech.convert(
             voice_id=settings.narration_voice_id,
             text=text,
-            model_id="eleven_flash_v2_5",
+            model_id="eleven_v3",
             output_format="mp3_22050_32",
         )
         # convert returns an iterator of bytes chunks
