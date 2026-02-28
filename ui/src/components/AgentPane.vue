@@ -114,9 +114,9 @@ const emit = defineEmits(['select-agent'])
 
 <style scoped>
 .agent-pane {
-  border: 1px solid #1a1a24;
-  border-radius: 4px;
-  background: #0c0c14;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--bg-card);
   height: 200px;
   display: flex;
   flex-direction: column;
@@ -128,7 +128,7 @@ const emit = defineEmits(['select-agent'])
   justify-content: space-between;
   align-items: center;
   padding: 0.4rem 0.6rem;
-  border-bottom: 1px solid #1a1a24;
+  border-bottom: 1px solid var(--border-subtle);
   flex-shrink: 0;
 }
 
@@ -139,18 +139,18 @@ const emit = defineEmits(['select-agent'])
 
 .agent-stats {
   font-size: 0.7rem;
-  color: #666;
+  color: var(--text-tertiary);
 }
 
 .agent-inv {
-  color: #b8962a;
+  color: var(--accent-amber-dark);
 }
 
 .agent-mission {
   padding: 0.25rem 0.6rem;
   font-size: 0.7rem;
-  color: #8a8a6a;
-  border-bottom: 1px solid #1a1a24;
+  color: var(--accent-mission);
+  border-bottom: 1px solid var(--border-subtle);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -166,14 +166,14 @@ const emit = defineEmits(['select-agent'])
 .memory-entry {
   padding: 0.15rem 0.35rem;
   font-size: 0.7rem;
-  color: #7a9a7a;
-  border-bottom: 1px solid #111118;
+  color: var(--accent-memory);
+  border-bottom: 1px solid var(--border-dim);
 }
 
 .agent-event {
   padding: 0.2rem 0.35rem;
   font-size: 0.75rem;
-  border-bottom: 1px solid #111118;
+  border-bottom: 1px solid var(--border-dim);
   display: flex;
   gap: 0.4rem;
   align-items: baseline;
@@ -181,7 +181,7 @@ const emit = defineEmits(['select-agent'])
 
 .ae-type {
   font-size: 0.65rem;
-  color: #555;
+  color: var(--text-muted);
   flex-shrink: 0;
 }
 
@@ -190,16 +190,16 @@ const emit = defineEmits(['select-agent'])
 }
 
 .ae-type.action {
-  color: #c86040;
+  color: var(--accent-action);
 }
 
 .ae-name {
-  color: #ccaa44;
+  color: var(--accent-gold);
   flex-shrink: 0;
 }
 
 .ae-text {
-  color: #888;
+  color: var(--text-secondary);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;

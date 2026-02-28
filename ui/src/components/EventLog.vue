@@ -43,9 +43,9 @@ defineProps({
 
 <style scoped>
 .event-log {
-  border: 1px solid #1a1a24;
-  border-radius: 4px;
-  background: #0c0c14;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--bg-card);
   padding: 0.75rem;
   max-height: 420px;
   overflow-y: auto;
@@ -53,7 +53,7 @@ defineProps({
 
 .event {
   padding: 0.35rem 0;
-  border-bottom: 1px solid #111118;
+  border-bottom: 1px solid var(--border-dim);
   display: flex;
   flex-wrap: wrap;
   gap: 0.5rem;
@@ -61,7 +61,7 @@ defineProps({
 }
 
 .event-tick {
-  color: #555;
+  color: var(--text-muted);
   font-size: 0.7rem;
   min-width: 35px;
 }
@@ -73,19 +73,19 @@ defineProps({
 }
 
 .event-type {
-  color: #888;
+  color: var(--text-secondary);
   font-size: 0.75rem;
 }
 
 .event-name {
-  color: #ccaa44;
+  color: var(--accent-gold);
   font-size: 0.8rem;
 }
 
 .event-payload {
   width: 100%;
   font-size: 0.7rem;
-  color: #555;
+  color: var(--text-muted);
   padding: 0.15rem 0 0 100px;
   white-space: pre-wrap;
 }

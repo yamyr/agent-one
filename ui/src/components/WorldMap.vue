@@ -203,8 +203,14 @@ defineExpose({ camX, camY })
   <section class="world-map">
     <h2>
       Surface Map
-      <span v-if="followAgent" class="cam-hint">(following {{ followAgent }})</span>
-      <span v-else class="cam-hint">(free camera · drag to pan)</span>
+      <span
+        v-if="followAgent"
+        class="cam-hint"
+      >(following {{ followAgent }})</span>
+      <span
+        v-else
+        class="cam-hint"
+      >(free camera · drag to pan)</span>
     </h2>
     <svg
       v-if="worldState"
@@ -228,8 +234,18 @@ defineExpose({ camX, camY })
 
       <!-- SVG filter for vein glow -->
       <defs>
-        <filter id="vein-glow" x="-50%" y="-50%" width="200%" height="200%">
-          <feGaussianBlur in="SourceGraphic" stdDeviation="2" result="blur" />
+        <filter
+          id="vein-glow"
+          x="-50%"
+          y="-50%"
+          width="200%"
+          height="200%"
+        >
+          <feGaussianBlur
+            in="SourceGraphic"
+            stdDeviation="2"
+            result="blur"
+          />
           <feMerge>
             <feMergeNode in="blur" />
             <feMergeNode in="SourceGraphic" />
@@ -238,7 +254,10 @@ defineExpose({ camX, camY })
       </defs>
 
       <!-- veins (stones) -->
-      <template v-for="(s, i) in (worldState.stones || [])" :key="'stone-'+i">
+      <template
+        v-for="(s, i) in (worldState.stones || [])"
+        :key="'stone-'+i"
+      >
         <rect
           v-if="isStoneVisible(s)"
           :x="stoneScreenX(s)"
@@ -253,7 +272,10 @@ defineExpose({ camX, camY })
       </template>
 
       <!-- solar panels -->
-      <template v-for="(p, i) in (worldState.solar_panels || [])" :key="'panel-'+i">
+      <template
+        v-for="(p, i) in (worldState.solar_panels || [])"
+        :key="'panel-'+i"
+      >
         <g v-if="isPanelVisible(p)">
           <rect
             :x="panelScreenX(p)"
@@ -286,8 +308,8 @@ defineExpose({ camX, camY })
       <!-- station markers (square) -->
       <g
         v-for="id in stations"
-        :key="'station-'+id"
         v-show="isAgentVisible(id)"
+        :key="'station-'+id"
         :transform="agentTransform(id)"
         class="rover-group"
         style="cursor:pointer"
@@ -356,8 +378,8 @@ defineExpose({ camX, camY })
       <!-- rover dots (circle) -->
       <g
         v-for="id in rovers"
-        :key="'rover-'+id"
         v-show="isAgentVisible(id)"
+        :key="'rover-'+id"
         :transform="agentTransform(id)"
         class="rover-group"
         style="cursor:pointer"
@@ -415,8 +437,8 @@ defineExpose({ camX, camY })
       <!-- drone markers (triangle) -->
       <g
         v-for="id in drones"
-        :key="'drone-'+id"
         v-show="isAgentVisible(id)"
+        :key="'drone-'+id"
         :transform="agentTransform(id)"
         class="rover-group"
         style="cursor:pointer"
@@ -478,9 +500,9 @@ defineExpose({ camX, camY })
 .world-map {
   flex: 3;
   padding: 0.75rem;
-  border: 1px solid #1a1a24;
-  border-radius: 4px;
-  background: #0c0c14;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--bg-card);
   min-width: 0;
 }
 
@@ -491,14 +513,14 @@ defineExpose({ camX, camY })
 }
 
 .grid-tile {
-  fill: #060609;
-  stroke: #111118;
+  fill: var(--bg-tile);
+  stroke: var(--border-dim);
   stroke-width: 0.5;
 }
 
 .grid-tile.revealed {
-  fill: #0e0e16;
-  stroke: #1a1a24;
+  fill: var(--bg-revealed);
+  stroke: var(--border-subtle);
 }
 
 .rover-group {
@@ -506,13 +528,13 @@ defineExpose({ camX, camY })
 }
 
 .rover-label {
-  font-family: 'Courier New', monospace;
+  font-family: var(--font-mono);
   font-size: 6px;
 }
 
 .cam-hint {
   font-size: 0.6rem;
-  color: #444;
+  color: var(--text-dimmer);
   font-weight: normal;
   text-transform: none;
   letter-spacing: 0;
