@@ -21,13 +21,14 @@ async function changeLanguage(lang) {
 
 <template>
   <header>
-    <h1>Mars Mission Control</h1>
+    <h1 title="Mars Mission Control Center">Mars Mission Control</h1>
     <div class="header-controls">
       <select 
         v-model="currentLang" 
         class="lang-select"
         @change="changeLanguage(currentLang)"
         aria-label="Select language"
+        title="Select interface language"
       >
         <option v-for="lang in supportedLangs" :key="lang" :value="lang">
           {{ lang.toUpperCase() }}
@@ -38,6 +39,7 @@ async function changeLanguage(lang) {
         type="button"
         aria-label="Reset simulation"
         @click="emit('reset')"
+        title="Reset: Restart simulation with new world state"
       >
         RESET
       </button>
@@ -47,6 +49,7 @@ async function changeLanguage(lang) {
         type="button"
         :aria-label="paused ? 'Resume simulation' : 'Pause simulation'"
         @click="emit('toggle-pause')"
+        :title="paused ? 'Resume: Continue the simulation (click to unpause)' : 'Pause: Halt simulation updates (click to pause)'"
       >
         {{ paused ? 'RESUME' : 'PAUSE' }}
       </button>
@@ -55,12 +58,14 @@ async function changeLanguage(lang) {
         type="button"
         aria-label="Show help"
         @click="emit('show-help')"
+        title="HELP: Pop-up with mission controls, agent capabilities, and instructions"
       >
         HELP
       </button>
       <span
         class="status"
         :class="{ online: connected }"
+        :title="connected ? 'Server connected - live data streaming' : 'Server disconnected - no live data'"
       >
         {{ connected ? 'CONNECTED' : 'DISCONNECTED' }}
       </span>
