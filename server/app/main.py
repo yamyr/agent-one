@@ -30,7 +30,7 @@ host = Host(narrator=narrator)
 
 AGENT_MAP = {
     "rover-mistral": lambda: RoverMistralLoop(interval=settings.llm_turn_interval_seconds),
-    "drone-mistral": lambda: DroneMistralLoop(interval=2.0),
+    "drone-mistral": lambda: DroneMistralLoop(interval=settings.drone_turn_interval_seconds),
 }
 
 
