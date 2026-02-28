@@ -114,11 +114,9 @@ function eventNameClass(event) {
       return 'event-name-error'
     case 'analyze':
     case 'dig':
-    case 'pickup':
       return 'event-name-resource'
     case 'move':
     case 'scan':
-    case 'analyze_ground':
       return 'event-name-map'
     case 'thinking':
       return 'event-name-think'
@@ -144,14 +142,8 @@ function formatPayload(event) {
       return ''
     case 'dig':
       if (p.stone)
-        return `extracted ${p.stone.grade} at (${p.position[0]},${p.position[1]})`
+        return `dug ${p.stone.grade} qty=${p.stone.quantity} at (${p.position[0]},${p.position[1]})  inv=${p.inventory_count}`
       return ''
-    case 'pickup':
-      if (p.stone)
-        return `picked up ${p.stone.grade} qty=${p.stone.quantity}  inv=${p.inventory_count}`
-      return ''
-    case 'analyze_ground':
-      return `concentration ${p.concentration} at (${p.position[0]},${p.position[1]})`
     case 'scan':
       return `peak ${p.peak} at (${p.position[0]},${p.position[1]})`
     case 'charge_rover':

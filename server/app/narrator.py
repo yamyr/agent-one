@@ -29,10 +29,8 @@ INTERESTING_EVENTS = {
     "check": 2,  # stone found at position
     # Agent actions
     "move": 1,  # movement (only narrate occasionally)
-    "dig": 2,  # digging a stone
-    "pickup": 2,  # picking up a stone
+    "dig": 2,  # digging and collecting a stone
     "analyze": 2,  # analyzing unknown stone
-    "analyze_ground": 1,  # ground concentration reading
     # Station events
     "assign_mission": 3,  # mission assigned to rover
     "alert": 3,  # station broadcast alert
@@ -150,8 +148,7 @@ def _build_narration_prompt(events: list[dict], world_summary: str) -> str:
             stone = payload.get("stone", {})
             if stone:
                 lines.append(
-                    f"- {source} found a {stone.get('type', 'unknown')} stone "
-                    f"(extracted={stone.get('extracted', False)})"
+                    f"- {source} found a {stone.get('type', 'unknown')} stone"
                 )
         elif name == "thinking":
             text = payload.get("text", "")
@@ -167,19 +164,13 @@ def _build_narration_prompt(events: list[dict], world_summary: str) -> str:
             bef = payload.get("battery_before", 0)
             aft = payload.get("battery_after", 0)
             lines.append(f"- Station charged a rover: battery {bef:.0%} → {aft:.0%}")
-        elif name in ("dig", "pickup", "analyze"):
+        elif name in ("dig", "analyze"):
             stone = payload.get("stone", {})
             pos = payload.get("position", [])
             lines.append(
                 f"- {source} performed '{name}' at ({pos[0] if pos else '?'},"
                 f"{pos[1] if len(pos) > 1 else '?'})"
                 + (f" — stone type: {stone.get('type', '?')}" if stone else "")
-            )
-        elif name == "analyze_ground":
-            conc = payload.get("concentration", 0)
-            lines.append(
-                f"- {source} analyzed ground concentration: {conc:.3f}"
-                + (" (hot spot!)" if conc > 0.5 else " (low reading)")
             )
         elif name == "mission_success":
             lines.append("- MISSION SUCCESS! All target stones delivered to station!")

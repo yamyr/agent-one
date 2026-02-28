@@ -19,7 +19,6 @@ class StoneInfo(BaseModel):
     type: str
     grade: str = "unknown"
     quantity: int = 0
-    extracted: bool = False
     analyzed: bool = False
 
 
@@ -37,7 +36,6 @@ class RoverAgentState(BaseModel):
     tasks: list[str] = []
     visited: list[list[int]] = []
     visited_count: int = 0
-    ground_readings: dict[str, float] = {}
 
 
 class RoverWorldView(BaseModel):

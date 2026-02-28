@@ -74,14 +74,13 @@ class TestBuildNarrationPrompt(unittest.TestCase):
                 "source": "rover",
                 "name": "check",
                 "payload": {
-                    "stone": {"type": "core", "extracted": False},
+                    "stone": {"type": "core"},
                 },
             }
         ]
         prompt = _build_narration_prompt(events, "Mission: active")
         self.assertIn("rover", prompt)
         self.assertIn("core", prompt)
-        self.assertIn("extracted=False", prompt)
 
     def test_thinking_event_truncates(self):
         long_text = "x" * 300
@@ -162,34 +161,12 @@ class TestBuildNarrationPrompt(unittest.TestCase):
         self.assertIn("dig", prompt)
         self.assertIn("basalt", prompt)
 
-    def test_analyze_ground_hot_spot(self):
-        events = [
-            {
-                "source": "rover",
-                "name": "analyze_ground",
-                "payload": {"concentration": 0.75},
-            }
-        ]
-        prompt = _build_narration_prompt(events, "")
-        self.assertIn("hot spot", prompt)
-
-    def test_analyze_ground_low_reading(self):
-        events = [
-            {
-                "source": "rover",
-                "name": "analyze_ground",
-                "payload": {"concentration": 0.1},
-            }
-        ]
-        prompt = _build_narration_prompt(events, "")
-        self.assertIn("low reading", prompt)
-
     def test_multiple_events_combined(self):
         events = [
             {
                 "source": "rover",
                 "name": "check",
-                "payload": {"stone": {"type": "core", "extracted": False}},
+                "payload": {"stone": {"type": "core"}},
             },
             {
                 "source": "station",

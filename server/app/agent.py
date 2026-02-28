@@ -18,8 +18,8 @@ from .protocol import make_message
 from .world import WORLD, GRID_W, GRID_H, DIRECTIONS, MAX_MOVE_DISTANCE, MAX_MOVE_DISTANCE_DRONE
 from .world import FUEL_CAPACITY_ROVER, FUEL_CAPACITY_DRONE, DRONE_REVEAL_RADIUS
 from .world import BATTERY_COST_MOVE, BATTERY_COST_MOVE_DRONE, BATTERY_COST_DIG
-from .world import BATTERY_COST_PICKUP, BATTERY_COST_ANALYZE, BATTERY_COST_ANALYZE_GROUND
-from .world import BATTERY_COST_SCAN, BATTERY_COST_NOTIFY, MAX_INVENTORY_ROVER
+from .world import BATTERY_COST_ANALYZE, BATTERY_COST_SCAN, BATTERY_COST_NOTIFY
+from .world import MAX_INVENTORY_ROVER
 from .world import check_ground, _direction_hint, _find_stone_at
 from .world import execute_action, get_snapshot, charge_agent, next_tick, all_agents_at_station
 
@@ -54,16 +54,7 @@ DIG_TOOL = {
     "type": "function",
     "function": {
         "name": "dig",
-        "description": f"Dig at current tile to extract a vein. Costs 6 fuel units (~{BATTERY_COST_DIG:.2%} battery). The vein must be analyzed first.",
-        "parameters": {"type": "object", "properties": {}},
-    },
-}
-
-PICKUP_TOOL = {
-    "type": "function",
-    "function": {
-        "name": "pickup",
-        "description": "Pick up an extracted vein at current tile into inventory (with its basalt quantity). The vein must have been dug out first.",
+        "description": f"Dig and collect an analyzed vein at current tile into inventory. Costs 6 fuel units (~{BATTERY_COST_DIG:.2%} battery). The vein must be analyzed first.",
         "parameters": {"type": "object", "properties": {}},
     },
 }
@@ -73,15 +64,6 @@ ANALYZE_TOOL = {
     "function": {
         "name": "analyze",
         "description": f"Analyze an unknown vein at current tile to reveal its grade (low/medium/high/rich/pristine) and basalt quantity. Costs 3 fuel units (~{BATTERY_COST_ANALYZE:.2%} battery). Must be done before dig/pickup.",
-        "parameters": {"type": "object", "properties": {}},
-    },
-}
-
-ANALYZE_GROUND_TOOL = {
-    "type": "function",
-    "function": {
-        "name": "analyze_ground",
-        "description": f"Analyze ground concentration at current tile to detect nearby basalt vein deposits. Returns a 0.0-1.0 reading (higher = closer to high-grade veins). Costs 3 fuel units (~{BATTERY_COST_ANALYZE_GROUND:.2%} battery).",
         "parameters": {"type": "object", "properties": {}},
     },
 }
@@ -117,8 +99,6 @@ ROVER_TOOLS = [
     MOVE_TOOL,
     ANALYZE_TOOL,
     DIG_TOOL,
-    PICKUP_TOOL,
-    ANALYZE_GROUND_TOOL,
     DEPLOY_SOLAR_PANEL_TOOL,
     USE_SOLAR_BATTERY_TOOL,
     NOTIFY_BASE_TOOL,
@@ -171,10 +151,8 @@ class MistralRoverReasoner:
         if stone_info:
             if stone_info["type"] == "unknown":
                 stone_line = "unknown vein (needs analyze to reveal grade and quantity)"
-            elif stone_info["extracted"]:
-                stone_line = f"{stone_info.get('grade', '?')} vein, qty={stone_info.get('quantity', 0)} (extracted — ready for pickup)"
             else:
-                stone_line = f"{stone_info.get('grade', '?')} vein, qty={stone_info.get('quantity', 0)} (analyzed, buried — needs dig)"
+                stone_line = f"{stone_info.get('grade', '?')} vein, qty={stone_info.get('quantity', 0)} (analyzed — needs dig)"
         else:
             stone_line = "none"
 
@@ -198,16 +176,15 @@ class MistralRoverReasoner:
             "VEIN WORKFLOW:\n"
             "- Veins start as 'unknown'. You must ANALYZE them first to reveal grade + quantity.\n"
             "- Grades: low, medium, high, rich, pristine. Higher grade = more basalt.\n"
-            "- After analyzing: DIG to extract, then PICKUP to collect into inventory.\n"
-            "- Use analyze_ground to read concentration (0.0-1.0). Higher = closer to rich veins.\n"
+            "- After analyzing: DIG to extract and collect into inventory in one step.\n"
             "\n"
             "RULES:\n"
-            f"- Battery is your lifeline. Move costs 1 fuel unit/tile (~{BATTERY_COST_MOVE:.2%}), dig 6 units (~{BATTERY_COST_DIG:.2%}), analyze 3 units (~{BATTERY_COST_ANALYZE:.2%}), pickup 2 units (~{BATTERY_COST_PICKUP:.2%}).\n"
+            f"- Battery is your lifeline. Move costs 1 fuel unit/tile (~{BATTERY_COST_MOVE:.2%}), dig 6 units (~{BATTERY_COST_DIG:.2%}), analyze 3 units (~{BATTERY_COST_ANALYZE:.2%}).\n"
             "- Station is your base at ({sx},{sy}). Return there when battery is low — "
             "the station will recharge you automatically.\n"
             "- ALWAYS keep enough battery to return to station. When your battery drops to 67% or below, \n"
             "head back to station IMMEDIATELY — this is the return-to-base threshold.\n"
-            "- If you find an unknown vein: analyze → dig → pickup. All on the same tile.\n"
+            "- If you find an unknown vein: analyze → dig. Both on the same tile.\n"
             "- Once you have collected enough basalt, RETURN TO STATION to deliver and complete the mission.\n"
             "- CRITICAL: Once you have collected the target quantity of basalt, STOP exploring and RETURN TO STATION IMMEDIATELY.\n"
             "- Prefer unvisited tiles when exploring. Don't backtrack aimlessly.\n"
@@ -271,7 +248,7 @@ class MistralRoverReasoner:
             sp = tuple(stone["position"])
             if sp in revealed_set and list(sp) != [x, y]:
                 dist = abs(sp[0] - x) + abs(sp[1] - y)
-                status = "extracted" if stone.get("extracted") else "buried"
+                status = "analyzed" if stone.get("analyzed") else "unknown"
                 hint = _direction_hint(sp[0] - x, sp[1] - y)
                 grade_info = stone.get("grade", "unknown")
                 qty_info = stone.get("quantity", 0)
@@ -297,12 +274,6 @@ class MistralRoverReasoner:
             parts.append("Visible veins nearby:")
             for vs in visible_stones:
                 parts.append(f"  - {vs}")
-
-        readings = agent.get("ground_readings", {})
-        if readings:
-            parts.append("Ground concentration readings:")
-            for pos, val in readings.items():
-                parts.append(f"  - ({pos}): {val:.3f}")
 
         if memory:
             recent = memory[-5:]
@@ -363,9 +334,7 @@ class MistralRoverReasoner:
                 if name in (
                     "move",
                     "dig",
-                    "pickup",
                     "analyze",
-                    "analyze_ground",
                     "deploy_solar_panel",
                     "use_solar_battery",
                     "notify_base",

@@ -32,12 +32,10 @@ class TestPendingCommand(unittest.TestCase):
 class TestStoneInfo(unittest.TestCase):
     def test_defaults(self):
         s = StoneInfo(position=[5, 5], type="core")
-        self.assertFalse(s.extracted)
         self.assertFalse(s.analyzed)
 
     def test_full(self):
-        s = StoneInfo(position=[1, 2], type="basalt", extracted=True, analyzed=True)
-        self.assertTrue(s.extracted)
+        s = StoneInfo(position=[1, 2], type="basalt", analyzed=True)
         self.assertTrue(s.analyzed)
         self.assertEqual(s.type, "basalt")
 

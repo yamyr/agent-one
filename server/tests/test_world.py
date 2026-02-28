@@ -3,8 +3,8 @@ import unittest
 
 from app.world import WORLD, GRID_W, GRID_H, move_agent, execute_action, get_snapshot, check_ground
 from app.world import check_mission_status, charge_rover, charge_agent
-from app.world import BATTERY_COST_MOVE, BATTERY_COST_DIG, BATTERY_COST_PICKUP
-from app.world import BATTERY_COST_ANALYZE, BATTERY_COST_ANALYZE_GROUND
+from app.world import BATTERY_COST_MOVE, BATTERY_COST_DIG
+from app.world import BATTERY_COST_ANALYZE
 from app.world import BATTERY_COST_SCAN, BATTERY_COST_MOVE_DRONE, BATTERY_COST_NOTIFY
 from app.world import CHARGE_RATE, REVEAL_RADIUS, ROVER_REVEAL_RADIUS, DRONE_REVEAL_RADIUS
 from app.world import AGENT_STARTS
@@ -17,7 +17,7 @@ from app.world import MAX_INVENTORY_ROVER
 from app.models import RoverContext, StationContext, StoneInfo
 
 
-def _make_vein(pos, grade="high", quantity=200, analyzed=False, extracted=False):
+def _make_vein(pos, grade="high", quantity=200, analyzed=False):
     """Helper to build a vein dict for tests."""
     return {
         "position": list(pos),
@@ -27,7 +27,6 @@ def _make_vein(pos, grade="high", quantity=200, analyzed=False, extracted=False)
         "_true_grade": grade,
         "quantity": quantity if analyzed else 0,
         "_true_quantity": quantity,
-        "extracted": extracted,
         "analyzed": analyzed,
     }
 
@@ -256,14 +255,13 @@ class TestStones(unittest.TestCase):
             self.assertIn("_true_grade", stone)
             self.assertIn("quantity", stone)
             self.assertIn("_true_quantity", stone)
-            self.assertIn("extracted", stone)
             self.assertIn("analyzed", stone)
+            self.assertNotIn("extracted", stone)
             self.assertEqual(len(stone["position"]), 2)
             self.assertEqual(stone["_true_type"], "basalt_vein")
             self.assertEqual(stone["type"], "unknown")
             self.assertEqual(stone["grade"], "unknown")
             self.assertEqual(stone["quantity"], 0)
-            self.assertFalse(stone["extracted"])
             self.assertFalse(stone["analyzed"])
 
     def test_stones_have_valid_positions(self):
@@ -284,17 +282,6 @@ class TestStones(unittest.TestCase):
             self.assertNotIn("_true_type", stone)
             self.assertNotIn("_true_grade", stone)
             self.assertNotIn("_true_quantity", stone)
-
-    def test_concentration_map_exists(self):
-        self.assertIn("concentration_map", WORLD)
-        # concentration_map may be empty initially; values are computed lazily
-
-    def test_concentration_map_serialized_in_snapshot(self):
-        snap = get_snapshot()
-        conc = snap.get("concentration_map", {})
-        for key in conc:
-            self.assertIsInstance(key, str)
-            self.assertIn(",", key)
 
 
 class TestVisited(unittest.TestCase):
@@ -341,17 +328,6 @@ class TestCheckGround(unittest.TestCase):
         result = check_ground("rover-mistral")
         self.assertEqual(result["stone"]["type"], "unknown")
         self.assertEqual(result["stone"]["grade"], "unknown")
-        self.assertFalse(result["stone"]["extracted"])
-
-    def test_check_ground_extracted_stone(self):
-        WORLD["stones"] = [
-            _make_vein([10, 10], grade="rich", quantity=500, analyzed=True, extracted=True)
-        ]
-        result = check_ground("rover-mistral")
-        self.assertEqual(result["stone"]["type"], "basalt_vein")
-        self.assertEqual(result["stone"]["grade"], "rich")
-        self.assertEqual(result["stone"]["quantity"], 500)
-        self.assertTrue(result["stone"]["extracted"])
 
     def test_check_ground_no_stone(self):
         WORLD["stones"] = [_make_vein([5, 5])]
@@ -472,49 +448,6 @@ class TestAnalyze(unittest.TestCase):
         self.assertIn("qty=500", mem[0])
 
 
-class TestAnalyzeGround(unittest.TestCase):
-    """Test the analyze_ground action that reads concentration."""
-
-    def setUp(self):
-        WORLD["agents"]["rover-mistral"]["position"] = [5, 5]
-        WORLD["agents"]["rover-mistral"]["battery"] = 1.0
-        WORLD["agents"]["rover-mistral"]["inventory"] = []
-        WORLD["agents"]["rover-mistral"]["visited"] = [[5, 5]]
-        WORLD["agents"]["rover-mistral"]["memory"] = []
-        WORLD["agents"]["rover-mistral"]["ground_readings"] = {}
-
-    def test_analyze_ground_returns_concentration(self):
-        result = execute_action("rover-mistral", "analyze_ground", {})
-        self.assertTrue(result["ok"])
-        self.assertIn("concentration", result)
-        self.assertGreaterEqual(result["concentration"], 0.0)
-        self.assertLessEqual(result["concentration"], 1.0)
-
-    def test_analyze_ground_drains_battery(self):
-        execute_action("rover-mistral", "analyze_ground", {})
-        self.assertAlmostEqual(
-            WORLD["agents"]["rover-mistral"]["battery"], 1.0 - BATTERY_COST_ANALYZE_GROUND
-        )
-
-    def test_analyze_ground_stores_reading(self):
-        execute_action("rover-mistral", "analyze_ground", {})
-        readings = WORLD["agents"]["rover-mistral"]["ground_readings"]
-        self.assertIn("5,5", readings)
-
-    def test_analyze_ground_not_enough_battery(self):
-        WORLD["agents"]["rover-mistral"]["battery"] = (
-            BATTERY_COST_ANALYZE_GROUND * 0.5
-        )  # below cost
-        result = execute_action("rover-mistral", "analyze_ground", {})
-        self.assertFalse(result["ok"])
-        self.assertIn("Not enough battery", result["error"])
-
-    def test_analyze_ground_records_memory(self):
-        execute_action("rover-mistral", "analyze_ground", {})
-        mem = WORLD["agents"]["rover-mistral"]["memory"]
-        self.assertEqual(len(mem), 1)
-        self.assertIn("Ground concentration", mem[0])
-
 
 class TestDig(unittest.TestCase):
     def setUp(self):
@@ -528,13 +461,19 @@ class TestDig(unittest.TestCase):
     def tearDown(self):
         WORLD["stones"] = self._original_stones
 
-    def test_dig_extracts_stone(self):
+    def test_dig_collects_stone(self):
         result = execute_action("rover-mistral", "dig", {})
         self.assertTrue(result["ok"])
         self.assertEqual(result["stone"]["type"], "basalt_vein")
         self.assertEqual(result["stone"]["grade"], "high")
         self.assertEqual(result["stone"]["quantity"], 200)
-        self.assertTrue(WORLD["stones"][0]["extracted"])
+        self.assertEqual(result["inventory_count"], 1)
+        # Stone removed from world, added to inventory
+        self.assertEqual(len(WORLD["stones"]), 0)
+        inv = WORLD["agents"]["rover-mistral"]["inventory"]
+        self.assertEqual(len(inv), 1)
+        self.assertEqual(inv[0]["grade"], "high")
+        self.assertEqual(inv[0]["quantity"], 200)
 
     def test_dig_drains_battery(self):
         execute_action("rover-mistral", "dig", {})
@@ -545,14 +484,6 @@ class TestDig(unittest.TestCase):
         result = execute_action("rover-mistral", "dig", {})
         self.assertFalse(result["ok"])
         self.assertIn("No vein", result["error"])
-
-    def test_dig_already_extracted(self):
-        WORLD["stones"] = [
-            _make_vein([5, 5], grade="high", quantity=200, analyzed=True, extracted=True)
-        ]
-        result = execute_action("rover-mistral", "dig", {})
-        self.assertFalse(result["ok"])
-        self.assertIn("already extracted", result["error"])
 
     def test_dig_not_enough_battery(self):
         WORLD["agents"]["rover-mistral"]["battery"] = BATTERY_COST_DIG * 0.5
@@ -574,93 +505,31 @@ class TestDig(unittest.TestCase):
         self.assertFalse(result["ok"])
         self.assertIn("not yet analyzed", result["error"])
 
+    def test_dig_inventory_full(self):
+        """Dig should fail when inventory already has MAX_INVENTORY_ROVER veins."""
+        WORLD["agents"]["rover-mistral"]["inventory"] = [
+            {"type": "basalt_vein", "grade": "low", "quantity": 50} for _ in range(MAX_INVENTORY_ROVER)
+        ]
+        result = execute_action("rover-mistral", "dig", {})
+        self.assertFalse(result["ok"])
+        self.assertIn("Inventory full", result["error"])
 
-class TestPickup(unittest.TestCase):
+
+class TestAnalyzeDigWorkflow(unittest.TestCase):
+    """Test the merged analyze → dig workflow (dig now collects into inventory)."""
+
     def setUp(self):
         WORLD["agents"]["rover-mistral"]["position"] = [5, 5]
         WORLD["agents"]["rover-mistral"]["battery"] = 1.0
         WORLD["agents"]["rover-mistral"]["inventory"] = []
         WORLD["agents"]["rover-mistral"]["visited"] = [[5, 5]]
         self._original_stones = WORLD.get("stones", [])
-        WORLD["stones"] = [
-            _make_vein([5, 5], grade="rich", quantity=400, analyzed=True, extracted=True)
-        ]
 
     def tearDown(self):
         WORLD["stones"] = self._original_stones
 
-    def test_pickup_success(self):
-        result = execute_action("rover-mistral", "pickup", {})
-        self.assertTrue(result["ok"])
-        self.assertEqual(result["stone"]["type"], "basalt_vein")
-        self.assertEqual(result["stone"]["grade"], "rich")
-        self.assertEqual(result["stone"]["quantity"], 400)
-        self.assertEqual(result["inventory_count"], 1)
-
-    def test_pickup_adds_to_inventory_with_grade_and_quantity(self):
-        execute_action("rover-mistral", "pickup", {})
-        inv = WORLD["agents"]["rover-mistral"]["inventory"]
-        self.assertEqual(len(inv), 1)
-        self.assertEqual(inv[0]["type"], "basalt_vein")
-        self.assertEqual(inv[0]["grade"], "rich")
-        self.assertEqual(inv[0]["quantity"], 400)
-
-    def test_pickup_removes_stone_from_world(self):
-        execute_action("rover-mistral", "pickup", {})
-        self.assertEqual(len(WORLD["stones"]), 0)
-
-    def test_pickup_drains_battery(self):
-        execute_action("rover-mistral", "pickup", {})
-        self.assertAlmostEqual(
-            WORLD["agents"]["rover-mistral"]["battery"], 1.0 - BATTERY_COST_PICKUP
-        )
-
-    def test_pickup_not_extracted(self):
-        WORLD["stones"] = [_make_vein([5, 5], grade="low", quantity=30, analyzed=True)]
-        result = execute_action("rover-mistral", "pickup", {})
-        self.assertFalse(result["ok"])
-        self.assertIn("not yet extracted", result["error"])
-
-    def test_pickup_no_stone(self):
-        WORLD["stones"] = []
-        result = execute_action("rover-mistral", "pickup", {})
-        self.assertFalse(result["ok"])
-        self.assertIn("No vein", result["error"])
-
-    def test_pickup_not_enough_battery(self):
-        WORLD["agents"]["rover-mistral"]["battery"] = 0.0
-        result = execute_action("rover-mistral", "pickup", {})
-        self.assertFalse(result["ok"])
-        self.assertIn("Not enough battery", result["error"])
-
-    def test_pickup_requires_analyze(self):
-        """Pickup should fail if vein is not yet analyzed."""
-        WORLD["stones"] = [_make_vein([5, 5], extracted=True)]
-        result = execute_action("rover-mistral", "pickup", {})
-        self.assertFalse(result["ok"])
-        self.assertIn("not yet analyzed", result["error"])
-
-    def test_pickup_inventory_full(self):
-        """Pickup should fail when inventory already has MAX_INVENTORY_ROVER veins."""
-        WORLD["agents"]["rover-mistral"]["inventory"] = [
-            {"type": "basalt_vein", "grade": "low", "quantity": 50} for _ in range(MAX_INVENTORY_ROVER)
-        ]
-        result = execute_action("rover-mistral", "pickup", {})
-        self.assertFalse(result["ok"])
-        self.assertIn("Inventory full", result["error"])
-
-    def test_dig_then_pickup(self):
-        WORLD["stones"] = [_make_vein([5, 5], grade="medium", quantity=100, analyzed=True)]
-        result = execute_action("rover-mistral", "dig", {})
-        self.assertTrue(result["ok"])
-        result = execute_action("rover-mistral", "pickup", {})
-        self.assertTrue(result["ok"])
-        self.assertEqual(len(WORLD["agents"]["rover-mistral"]["inventory"]), 1)
-        self.assertEqual(WORLD["agents"]["rover-mistral"]["inventory"][0]["quantity"], 100)
-        self.assertEqual(len(WORLD["stones"]), 0)
-
-    def test_analyze_dig_pickup_workflow(self):
-        """Full workflow: analyze → dig → pickup."""
+    def test_analyze_dig_workflow(self):
+        """Full workflow: analyze → dig (collects into inventory)."""
         WORLD["stones"] = [_make_vein([5, 5], grade="pristine", quantity=900)]
         result = execute_action("rover-mistral", "analyze", {})
         self.assertTrue(result["ok"])
@@ -669,11 +538,32 @@ class TestPickup(unittest.TestCase):
         self.assertEqual(result["stone"]["quantity"], 900)
         result = execute_action("rover-mistral", "dig", {})
         self.assertTrue(result["ok"])
-        result = execute_action("rover-mistral", "pickup", {})
-        self.assertTrue(result["ok"])
+        self.assertEqual(result["inventory_count"], 1)
         inv = WORLD["agents"]["rover-mistral"]["inventory"]
         self.assertEqual(len(inv), 1)
         self.assertEqual(inv[0]["quantity"], 900)
+        self.assertEqual(len(WORLD["stones"]), 0)
+
+    def test_dig_removes_stone_from_world(self):
+        WORLD["stones"] = [_make_vein([5, 5], grade="rich", quantity=400, analyzed=True)]
+        execute_action("rover-mistral", "dig", {})
+        self.assertEqual(len(WORLD["stones"]), 0)
+
+    def test_dig_adds_to_inventory_with_grade_and_quantity(self):
+        WORLD["stones"] = [_make_vein([5, 5], grade="rich", quantity=400, analyzed=True)]
+        execute_action("rover-mistral", "dig", {})
+        inv = WORLD["agents"]["rover-mistral"]["inventory"]
+        self.assertEqual(len(inv), 1)
+        self.assertEqual(inv[0]["type"], "basalt_vein")
+        self.assertEqual(inv[0]["grade"], "rich")
+        self.assertEqual(inv[0]["quantity"], 400)
+
+    def test_pickup_action_no_longer_exists(self):
+        """Pickup action should return 'Unknown action' since it was removed."""
+        WORLD["stones"] = [_make_vein([5, 5], grade="low", quantity=30, analyzed=True)]
+        result = execute_action("rover-mistral", "pickup", {})
+        self.assertFalse(result["ok"])
+        self.assertIn("Unknown action", result["error"])
 
 
 class TestCharge(unittest.TestCase):
@@ -867,22 +757,22 @@ class TestMissionCompletion(unittest.TestCase):
         self.assertIn("mission", snap)
         self.assertEqual(snap["mission"]["status"], "running")
 
-    def test_collected_quantity_updates_on_pickup(self):
-        """Pickup away from station: vein is in transit, not yet collected."""
+    def test_collected_quantity_updates_on_dig(self):
+        """Dig away from station: vein is in transit, not yet collected."""
         WORLD["stones"] = [
-            _make_vein([5, 5], grade="high", quantity=200, analyzed=True, extracted=True)
+            _make_vein([5, 5], grade="high", quantity=200, analyzed=True)
         ]
-        execute_action("rover-mistral", "pickup", {})
+        execute_action("rover-mistral", "dig", {})
         self.assertEqual(WORLD["mission"]["collected_quantity"], 0)
         self.assertEqual(WORLD["mission"]["in_transit_quantity"], 200)
 
-    def test_pickup_away_from_station_no_success(self):
-        """Picking up a vein away from station should NOT trigger success."""
+    def test_dig_away_from_station_no_success(self):
+        """Digging a vein away from station should NOT trigger success."""
         WORLD["mission"]["target_quantity"] = 100
         WORLD["stones"] = [
-            _make_vein([5, 5], grade="pristine", quantity=900, analyzed=True, extracted=True)
+            _make_vein([5, 5], grade="pristine", quantity=900, analyzed=True)
         ]
-        result = execute_action("rover-mistral", "pickup", {})
+        result = execute_action("rover-mistral", "dig", {})
         self.assertEqual(WORLD["mission"]["status"], "running")
         self.assertNotIn("mission", result)
         self.assertEqual(WORLD["mission"]["collected_quantity"], 0)
@@ -894,9 +784,9 @@ class TestMissionCompletion(unittest.TestCase):
         WORLD["agents"]["rover-mistral"]["position"] = [0, 0]
         WORLD["agents"]["station"]["position"] = [0, 0]
         WORLD["stones"] = [
-            _make_vein([0, 0], grade="high", quantity=200, analyzed=True, extracted=True)
+            _make_vein([0, 0], grade="high", quantity=200, analyzed=True)
         ]
-        result = execute_action("rover-mistral", "pickup", {})
+        result = execute_action("rover-mistral", "dig", {})
         self.assertEqual(WORLD["mission"]["status"], "success")
         self.assertIn("mission", result)
         self.assertEqual(result["mission"]["status"], "success")
@@ -914,23 +804,23 @@ class TestMissionCompletion(unittest.TestCase):
         self.assertEqual(WORLD["mission"]["status"], "success")
         self.assertIn("mission", result)
 
-    def test_mission_success_with_multiple_pickups(self):
-        """Multiple pickups contributing basalt to reach target_quantity."""
+    def test_mission_success_with_multiple_digs(self):
+        """Multiple digs contributing basalt to reach target_quantity."""
         WORLD["mission"]["target_quantity"] = 300
         WORLD["agents"]["station"]["position"] = [0, 0]
-        # First pickup: 200 units at station
+        # First dig: 200 units at station
         WORLD["agents"]["rover-mistral"]["position"] = [0, 0]
         WORLD["stones"] = [
-            _make_vein([0, 0], grade="high", quantity=200, analyzed=True, extracted=True)
+            _make_vein([0, 0], grade="high", quantity=200, analyzed=True)
         ]
-        execute_action("rover-mistral", "pickup", {})
+        execute_action("rover-mistral", "dig", {})
         self.assertEqual(WORLD["mission"]["status"], "running")
-        # Rover-mistral picks up another 200 at station — total 400 >= 300
+        # Rover-mistral digs another 200 at station — total 400 >= 300
         WORLD["agents"]["rover-mistral"]["position"] = [0, 0]
         WORLD["stones"] = [
-            _make_vein([0, 0], grade="high", quantity=200, analyzed=True, extracted=True)
+            _make_vein([0, 0], grade="high", quantity=200, analyzed=True)
         ]
-        result = execute_action("rover-mistral", "pickup", {})
+        result = execute_action("rover-mistral", "dig", {})
         self.assertEqual(WORLD["mission"]["status"], "success")
         self.assertEqual(WORLD["mission"]["collected_quantity"], 400)
         self.assertIn("mission", result)
@@ -974,9 +864,9 @@ class TestMissionCompletion(unittest.TestCase):
         WORLD["agents"]["rover-mistral"]["position"] = [0, 0]
         WORLD["agents"]["station"]["position"] = [0, 0]
         WORLD["stones"] = [
-            _make_vein([0, 0], grade="medium", quantity=100, analyzed=True, extracted=True)
+            _make_vein([0, 0], grade="medium", quantity=100, analyzed=True)
         ]
-        execute_action("rover-mistral", "pickup", {})
+        execute_action("rover-mistral", "dig", {})
         self.assertEqual(WORLD["mission"]["status"], "running")
         self.assertEqual(WORLD["mission"]["collected_quantity"], 100)
 
@@ -1013,17 +903,8 @@ class TestMemory(unittest.TestCase):
         execute_action("rover-mistral", "dig", {})
         mem = WORLD["agents"]["rover-mistral"]["memory"]
         self.assertEqual(len(mem), 1)
-        self.assertIn("Dug out medium", mem[0])
+        self.assertIn("Dug and collected medium", mem[0])
         self.assertIn("qty=80", mem[0])
-
-    def test_pickup_records_memory(self):
-        WORLD["stones"] = [
-            _make_vein([10, 10], grade="rich", quantity=400, analyzed=True, extracted=True)
-        ]
-        execute_action("rover-mistral", "pickup", {})
-        mem = WORLD["agents"]["rover-mistral"]["memory"]
-        self.assertEqual(len(mem), 1)
-        self.assertIn("Picked up rich", mem[0])
         self.assertIn("inventory=1", mem[0])
 
     def test_charge_records_memory(self):
@@ -1121,14 +1002,6 @@ class TestUpdateTasks(unittest.TestCase):
         tasks = WORLD["agents"]["rover-mistral"]["tasks"]
         self.assertTrue(any("Dig" in t for t in tasks))
 
-    def test_pickup_when_stone_extracted(self):
-        WORLD["stones"] = [
-            _make_vein([5, 5], grade="rich", quantity=400, analyzed=True, extracted=True)
-        ]
-        update_tasks("rover-mistral")
-        tasks = WORLD["agents"]["rover-mistral"]["tasks"]
-        self.assertTrue(any("Pick up" in t for t in tasks))
-
     def test_navigate_to_known_stone(self):
         WORLD["stones"] = [_make_vein([8, 5])]
         agent = WORLD["agents"]["rover-mistral"]
@@ -1160,7 +1033,6 @@ class TestObserveRover(unittest.TestCase):
         WORLD["agents"]["rover-mistral"]["inventory"] = []
         WORLD["agents"]["rover-mistral"]["memory"] = ["moved east"]
         WORLD["agents"]["rover-mistral"]["tasks"] = []
-        WORLD["agents"]["rover-mistral"]["ground_readings"] = {"3,3": 0.5}
         WORLD["stones"] = []
 
     def test_returns_rover_context_type(self):
@@ -1174,7 +1046,6 @@ class TestObserveRover(unittest.TestCase):
         self.assertEqual(ctx.agent.mission.objective, "Explore")
         self.assertEqual(ctx.agent.memory, ["moved east"])
         self.assertEqual(ctx.agent.visited_count, 2)
-        self.assertEqual(ctx.agent.ground_readings, {"3,3": 0.5})
 
     def test_world_view_fields(self):
         ctx = observe_rover("rover-mistral")
@@ -1210,14 +1081,6 @@ class TestObserveRover(unittest.TestCase):
         ctx = observe_rover("rover-mistral")
         self.assertIn("needs dig", ctx.computed.stone_line)
         self.assertIn("high", ctx.computed.stone_line)
-
-    def test_stone_line_extracted(self):
-        WORLD["stones"] = [
-            _make_vein([5, 5], grade="rich", quantity=400, analyzed=True, extracted=True)
-        ]
-        ctx = observe_rover("rover-mistral")
-        self.assertIn("pickup", ctx.computed.stone_line)
-        self.assertIn("rich", ctx.computed.stone_line)
 
     def test_visible_stones_excludes_current_tile(self):
         WORLD["stones"] = [
