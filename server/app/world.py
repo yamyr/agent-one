@@ -566,7 +566,6 @@ def _execute_analyze(agent_id, agent):
     }
 
 
-
 def _execute_scan(agent_id, agent):
     """Drone aerial scan: sample concentration map around current position."""
     if agent["battery"] < BATTERY_COST_SCAN:
@@ -1051,7 +1050,9 @@ def observe_rover(agent_id):
         if stone_info["type"] == "unknown":
             stone_line = "unknown vein (needs analyze to reveal grade and quantity)"
         else:
-            stone_line = f"{stone_info['grade']} vein, qty={stone_info['quantity']} (analyzed — needs dig)"
+            stone_line = (
+                f"{stone_info['grade']} vein, qty={stone_info['quantity']} (analyzed — needs dig)"
+            )
     else:
         stone_line = "none"
 

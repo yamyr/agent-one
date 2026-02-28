@@ -147,9 +147,7 @@ def _build_narration_prompt(events: list[dict], world_summary: str) -> str:
         if name == "check":
             stone = payload.get("stone", {})
             if stone:
-                lines.append(
-                    f"- {source} found a {stone.get('type', 'unknown')} stone"
-                )
+                lines.append(f"- {source} found a {stone.get('type', 'unknown')} stone")
         elif name == "thinking":
             text = payload.get("text", "")
             lines.append(f'- {source} is thinking: "{text[:150]}"')
