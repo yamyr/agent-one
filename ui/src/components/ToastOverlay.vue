@@ -32,6 +32,7 @@ const ICONS = {
       >
         <span class="toast-icon">{{ ICONS[toast.type] || ICONS.info }}</span>
         <span class="toast-msg">{{ toast.message }}</span>
+        <span v-if="toast.count > 1" class="toast-count">&times;{{ toast.count }}</span>
       </div>
     </TransitionGroup>
   </div>
@@ -71,6 +72,13 @@ const ICONS = {
 
 .toast-msg {
   line-height: 1.3;
+}
+
+.toast-count {
+  font-size: 0.65rem;
+  opacity: 0.7;
+  margin-left: 0.3rem;
+  flex-shrink: 0;
 }
 
 .toast-info {

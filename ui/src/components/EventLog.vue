@@ -176,9 +176,14 @@ function formatPayload(event) {
     <h2>Event Log</h2>
     <div
       v-if="events.length === 0"
-      class="empty"
+      class="skeleton-container"
     >
-      Waiting for mission events...
+      <div
+        v-for="w in [100, 85, 95, 70, 90, 80]"
+        :key="w"
+        class="skeleton-row"
+        :style="{ width: w + '%' }"
+      />
     </div>
     <div
       v-else
@@ -285,6 +290,33 @@ function formatPayload(event) {
   text-overflow: ellipsis;
   flex: 1;
   min-width: 0;
+}
+
+/* -- Skeleton loading state -- */
+.skeleton-container {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 0.5rem 0;
+}
+
+.skeleton-row {
+  height: 10px;
+  background: var(--bg-elevated);
+  border-radius: var(--radius-sm);
+  animation: pulse 1.5s infinite ease-in-out;
+}
+
+.skeleton-row:nth-child(2) { animation-delay: 0.15s; }
+.skeleton-row:nth-child(3) { animation-delay: 0.3s; }
+.skeleton-row:nth-child(4) { animation-delay: 0.45s; }
+.skeleton-row:nth-child(5) { animation-delay: 0.6s; }
+.skeleton-row:nth-child(6) { animation-delay: 0.75s; }
+
+@keyframes pulse {
+  0% { opacity: 0.3; }
+  50% { opacity: 0.6; }
+  100% { opacity: 0.3; }
 }
 
 /* -- Enter animation for new events -- */
