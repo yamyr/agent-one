@@ -13,6 +13,7 @@ defineProps({
       Waiting for mission events...
     </div>
     <div v-for="(event, i) in events" :key="i" class="event">
+      <span v-if="event.tick != null" class="event-tick">#{{ event.tick }}</span>
       <span class="event-source" :style="{ color: agentColor(event.source) }">{{ event.source }}</span>
       <span class="event-type">{{ event.type }}</span>
       <span class="event-name">{{ event.name }}</span>
@@ -38,6 +39,12 @@ defineProps({
   flex-wrap: wrap;
   gap: 0.5rem;
   align-items: baseline;
+}
+
+.event-tick {
+  color: #555;
+  font-size: 0.7rem;
+  min-width: 35px;
 }
 
 .event-source {

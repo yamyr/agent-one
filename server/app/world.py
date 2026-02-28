@@ -207,6 +207,7 @@ def _build_initial_world():
         },
         "stones": stones,
         "concentration_map": _compute_concentration_map(core_positions),
+        "tick": 0,
         "mission": {
             "status": "running",
             "target_type": TARGET_STONE_TYPE,
@@ -225,6 +226,12 @@ def reset_world():
     WORLD.clear()
     WORLD.update(fresh)
     logger.info("World reset")
+
+
+def next_tick():
+    """Increment and return the current tick number."""
+    WORLD["tick"] += 1
+    return WORLD["tick"]
 
 
 def check_ground(agent_id):

@@ -14,7 +14,7 @@ from .config import settings
 from .db import init_db, close_db
 from .station import StationAgent
 from .views import router as views_router
-from .world import execute_action, get_snapshot, reset_world, WORLD, charge_rover
+from .world import execute_action, get_snapshot, reset_world, WORLD, charge_rover, next_tick
 
 logging.basicConfig(
     level=logging.INFO,
@@ -36,6 +36,7 @@ async def _trigger_station(event):
     try:
         station_events = await asyncio.to_thread(station.handle_event, event)
         for se in station_events:
+            se["tick"] = WORLD["tick"]
             await broadcaster.send(se)
         await broadcaster.send(
             {
@@ -64,6 +65,7 @@ async def agent_loop(agent, interval):
 
         try:
             turn = await asyncio.to_thread(agent.run_turn)
+            tick = next_tick()
             events = []
 
             if turn["thinking"]:
@@ -72,6 +74,7 @@ async def agent_loop(agent, interval):
                         "source": agent.agent_id,
                         "type": "event",
                         "name": "thinking",
+                        "tick": tick,
                         "payload": {"text": turn["thinking"]},
                     }
                 )
@@ -88,6 +91,7 @@ async def agent_loop(agent, interval):
                             "source": agent.agent_id,
                             "type": "action",
                             "name": turn["action"]["name"],
+                            "tick": tick,
                             "payload": result,
                         }
                     )
@@ -98,6 +102,7 @@ async def agent_loop(agent, interval):
                                 "source": agent.agent_id,
                                 "type": "event",
                                 "name": "check",
+                                "tick": tick,
                                 "payload": ground,
                             }
                         )
@@ -108,6 +113,7 @@ async def agent_loop(agent, interval):
                                 "source": "world",
                                 "type": "event",
                                 "name": "mission_" + mission_event["status"],
+                                "tick": tick,
                                 "payload": mission_event,
                             }
                         )
@@ -158,6 +164,7 @@ async def _station_startup():
     try:
         station_events = await asyncio.to_thread(station.define_mission)
         for event in station_events:
+            event["tick"] = WORLD["tick"]
             await broadcaster.send(event)
         await broadcaster.send(
             {
