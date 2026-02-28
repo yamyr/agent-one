@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added (UI Polish Round 3 — Phases 3–8)
+
+- **Toast rate-limiting**: Max 5 visible toasts; oldest evicted when capacity reached
+- **Toast dedup count badge**: Identical messages within 5s window show `×N` count badge instead of duplicating
+- **Toast timer management**: Dedup resets dismiss timer; evicted toasts clean up their timers
+- **EventLog skeleton state**: 6 pulsing skeleton rows with staggered animation delays shown before WebSocket data arrives
+
 ### Fixed (Zoom Scaling)
 
 - **Dynamic viewport tile count**: WorldMap zoom now scales tile count proportionally — zooming out (0.7x) renders ~29×29 tiles, zooming in (2.2x) renders ~10×10 tiles, instead of fixed 20×20
