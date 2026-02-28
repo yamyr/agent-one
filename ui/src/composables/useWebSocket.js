@@ -6,6 +6,8 @@ export function useWebSocket({ onConnect, onEvent } = {}) {
   const worldState = ref(null)
   const narration = ref(null)
   const narrationChunk = ref(null)
+  let reconnectDelay = 2000
+  const RECONNECT_MAX = 30000
   let ws = null
   let eventUid = 0
 
@@ -33,6 +35,7 @@ export function useWebSocket({ onConnect, onEvent } = {}) {
       events.value = []
       worldState.value = null
       if (onConnect) onConnect()
+      reconnectDelay = 2000  // reset backoff on successful connection
     }
 
     ws.onmessage = (msg) => {
@@ -55,7 +58,8 @@ export function useWebSocket({ onConnect, onEvent } = {}) {
 
     ws.onclose = () => {
       connected.value = false
-      setTimeout(connect, 2000)
+      setTimeout(connect, reconnectDelay)
+      reconnectDelay = Math.min(reconnectDelay * 2, RECONNECT_MAX)
     }
 
     ws.onerror = () => {
