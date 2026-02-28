@@ -13,6 +13,7 @@ from .config import settings
 from .db import init_db, close_db
 from .host import Host
 from .narrator import Narrator
+from .views import router as views_router
 from .world import reset_world
 
 logging.basicConfig(
@@ -67,8 +68,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-from .views import router as views_router
 
 app.include_router(views_router)
 

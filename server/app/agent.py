@@ -20,8 +20,8 @@ from .world import FUEL_CAPACITY_ROVER, FUEL_CAPACITY_DRONE, DRONE_REVEAL_RADIUS
 from .world import BATTERY_COST_MOVE, BATTERY_COST_MOVE_DRONE, BATTERY_COST_DIG
 from .world import BATTERY_COST_PICKUP, BATTERY_COST_ANALYZE, BATTERY_COST_ANALYZE_GROUND
 from .world import BATTERY_COST_SCAN, RETURN_TO_BASE_THRESHOLD
-from .world import check_ground, _direction_hint, _find_stone_at, must_return_to_base
-from .world import execute_action, get_snapshot, charge_agent, next_tick, all_agents_at_station
+from .world import check_ground, _direction_hint, must_return_to_base
+from .world import execute_action, get_snapshot, charge_agent, next_tick
 
 logger = logging.getLogger(__name__)
 
@@ -162,7 +162,6 @@ class MistralRoverReasoner:
 
         # Mission target
         world_mission = WORLD.get("mission", {})
-        target_type = world_mission.get("target_type", "basalt_vein")
         target_quantity = world_mission.get("target_quantity", 100)
         collected_qty = world_mission.get("collected_quantity", 0)
 
@@ -204,7 +203,7 @@ class MistralRoverReasoner:
             f"\n== Mission ==\n"
             f"Objective: {mission['objective']}\n"
             f"Target: collect {target_quantity} units of basalt from veins ({collected_qty}/{target_quantity} delivered)"
-            + (f"\n🏁 MISSION TARGET MET — RETURN TO STATION NOW!" if collected_qty >= target_quantity else "")
+            + ("\n🏁 MISSION TARGET MET — RETURN TO STATION NOW!" if collected_qty >= target_quantity else "")
         )
 
         tasks = agent.get("tasks", [])
@@ -739,7 +738,7 @@ class RoverLoop(BaseAgent):
             return
 
         turn = await asyncio.to_thread(self._reasoner.run_turn)
-        tick = next_tick()
+        next_tick()
         messages = []
 
         if turn["thinking"]:
@@ -844,7 +843,7 @@ class DroneLoop(BaseAgent):
             ]
 
         turn = await asyncio.to_thread(self._reasoner.run_turn)
-        tick = next_tick()
+        next_tick()
         messages = []
 
         if turn["thinking"]:
