@@ -1556,26 +1556,31 @@ class TestWorldClass(unittest.TestCase):
     def test_singleton_wraps_module_world(self):
         """Module-level `world` instance shares state with WORLD dict."""
         from app.world import world as w
+
         self.assertIs(w._state, WORLD)
 
     def test_get_agent(self):
         from app.world import world as w
+
         agent = w.get_agent("rover-mistral")
         self.assertEqual(agent["type"], "rover")
 
     def test_get_agents_returns_all(self):
         from app.world import world as w
+
         agents = w.get_agents()
         self.assertIn("rover-mistral", agents)
         self.assertIn("station", agents)
 
     def test_get_mission(self):
         from app.world import world as w
+
         mission = w.get_mission()
         self.assertIn("status", mission)
 
     def test_setters_delegate_to_world_dict(self):
         from app.world import world as w
+
         w.set_agent_model("rover-mistral", "test-via-class")
         self.assertEqual(WORLD["agents"]["rover-mistral"]["model"], "test-via-class")
 
@@ -1590,6 +1595,7 @@ class TestWorldClass(unittest.TestCase):
     def test_fresh_instance_independent(self):
         """A World() with no args gets its own state, independent of WORLD."""
         from app.world import World
+
         w2 = World()
         w2.set_agent_model("rover-mistral", "independent-model")
         self.assertNotEqual(
