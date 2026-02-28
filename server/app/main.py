@@ -8,12 +8,11 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from rich.logging import RichHandler
 
-from .agent import MockRoverAgent, RoverAgent
 from .broadcast import broadcaster
 from .config import settings
 from .db import init_db, close_db
+from .sim_agent import MockSimAgent
 from .views import router as views_router
-from .world import get_snapshot
 
 logging.basicConfig(
     level=logging.INFO,
@@ -24,35 +23,41 @@ logging.basicConfig(
 
 logger = logging.getLogger(__name__)
 
-INSTRUCTION = "Observe your surroundings and decide your next move."
 
-
-async def agent_loop(agent, interval):
-    """Run an agent every `interval` seconds, broadcast events."""
-    while True:
+async def agent_loop(app: FastAPI, interval: float = 3.0):
+    """Run the sim agent every `interval` seconds, broadcast events."""
+    agent: MockSimAgent = app.state.sim_agent
+    while not agent.is_terminal():
         try:
-            events = await asyncio.to_thread(agent.run_turn, INSTRUCTION)
-            for event in events:
-                await broadcaster.send(event)
+            step_result, observation = agent.run_turn()
+            await broadcaster.send({
+                "source": "rover-1",
+                "type": "action",
+                "name": "step_result",
+                "payload": step_result,
+            })
             await broadcaster.send({
                 "source": "world",
                 "type": "event",
                 "name": "state",
-                "payload": get_snapshot(),
+                "payload": observation,
             })
         except Exception:
-            logger.exception("Agent loop error (%s)", agent.agent_id)
+            logger.exception("Agent loop error")
         await asyncio.sleep(interval)
+    logger.info("Simulation reached terminal state — agent loop stopped.")
 
 
 @asynccontextmanager
 async def lifespan(app):
-    init_db()
-    mock_task = asyncio.create_task(agent_loop(MockRoverAgent(), interval=10))
-    mistral_task = asyncio.create_task(agent_loop(RoverAgent(), interval=20))
+    try:
+        init_db()
+    except RuntimeError:
+        logger.warning("SurrealDB unavailable — running without database")
+    app.state.sim_agent = MockSimAgent(seed=42)
+    task = asyncio.create_task(agent_loop(app, interval=3.0))
     yield
-    mock_task.cancel()
-    mistral_task.cancel()
+    task.cancel()
     close_db()
 
 

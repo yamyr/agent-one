@@ -21,3 +21,7 @@ dist/
 
 # Test logs
 test_surrealdb.log
+
+# Personal Claude-file
+Claude_lv.md
+.claude/commands/get_started_lv.md
