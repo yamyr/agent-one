@@ -57,7 +57,7 @@ function agentTransform(id) {
   const a = props.worldState.agents[id]
   if (!a) return ''
   const cx = a.position[0] * TILE_SIZE + TILE_SIZE / 2
-  const cy = a.position[1] * TILE_SIZE + TILE_SIZE / 2
+  const cy = (GRID_SIZE - 1 - a.position[1]) * TILE_SIZE + TILE_SIZE / 2
   return `translate(${cx}, ${cy})`
 }
 </script>
@@ -70,18 +70,18 @@ function agentTransform(id) {
       class="map-svg">
       <!-- grid tiles -->
       <rect v-for="t in tiles" :key="t.key"
-        :x="t.x * TILE_SIZE" :y="t.y * TILE_SIZE"
+        :x="t.x * TILE_SIZE" :y="(GRID_SIZE - 1 - t.y) * TILE_SIZE"
         :width="TILE_SIZE" :height="TILE_SIZE"
         :class="isRevealed(t.x, t.y) ? 'grid-tile revealed' : 'grid-tile'" />
 
       <!-- stones -->
       <rect v-for="(s, i) in (worldState.stones || [])" :key="'stone-'+i"
         :x="s.position[0] * TILE_SIZE + TILE_SIZE/2 - 4"
-        :y="s.position[1] * TILE_SIZE + TILE_SIZE/2 - 4"
+        :y="(GRID_SIZE - 1 - s.position[1]) * TILE_SIZE + TILE_SIZE/2 - 4"
         width="8" height="8"
         :fill="STONE_COLORS[s.type] || '#666'"
         opacity="0.85"
-        :transform="`rotate(45, ${s.position[0] * TILE_SIZE + TILE_SIZE/2}, ${s.position[1] * TILE_SIZE + TILE_SIZE/2})`" />
+        :transform="`rotate(45, ${s.position[0] * TILE_SIZE + TILE_SIZE/2}, ${(GRID_SIZE - 1 - s.position[1]) * TILE_SIZE + TILE_SIZE/2})`" />
 
       <!-- station markers (square) -->
       <g v-for="id in stations" :key="'station-'+id"

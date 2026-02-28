@@ -2,6 +2,7 @@
 
 import copy
 import logging
+import math
 import random
 
 logger = logging.getLogger(__name__)
@@ -9,8 +10,8 @@ logger = logging.getLogger(__name__)
 GRID_W, GRID_H = 20, 20
 
 DIRECTIONS = {
-    "north": (0, -1),
-    "south": (0, 1),
+    "north": (0, 1),
+    "south": (0, -1),
     "east": (1, 0),
     "west": (-1, 0),
 }
@@ -18,6 +19,8 @@ DIRECTIONS = {
 BATTERY_COST_MOVE = 0.02
 BATTERY_COST_DIG = 0.06
 BATTERY_COST_PICKUP = 0.02
+BATTERY_COST_ANALYZE = 0.03
+BATTERY_COST_ANALYZE_GROUND = 0.03
 CHARGE_RATE = 0.20
 MAX_MOVE_DISTANCE = 3
 
@@ -39,21 +42,91 @@ def _random_free_pos(occupied):
 
 
 def _generate_stones():
-    """Place 5-8 stones, guaranteeing at least TARGET_STONE_COUNT core stones."""
+    """Place 5-8 stones with clustered core placement via preferential attachment.
+
+    Returns (stones, core_positions) tuple.
+    All stones start with type='unknown' and a hidden '_true_type'.
+    """
     count = random.randint(5, 8)
     stones = []
     occupied = set(AGENT_STARTS)
-    # Guarantee minimum core stones
+    core_positions = []
+
+    # Phase 1: guarantee at least one core stone (random placement)
     for _ in range(TARGET_STONE_COUNT):
         x, y = _random_free_pos(occupied)
         occupied.add((x, y))
-        stones.append({"position": [x, y], "type": "core"})
-    # Fill the rest randomly
+        core_positions.append((x, y))
+        stones.append({
+            "position": [x, y],
+            "type": "unknown",
+            "_true_type": "core",
+            "extracted": False,
+            "analyzed": False,
+        })
+
+    # Phase 2: fill the rest
     while len(stones) < count:
-        x, y = _random_free_pos(occupied)
-        occupied.add((x, y))
-        stones.append({"position": [x, y], "type": random.choice(STONE_TYPES)})
-    return stones
+        is_core = random.random() < 0.3
+        if is_core and core_positions:
+            # Preferential attachment: bias toward existing cores
+            candidates = [
+                (x, y)
+                for x in range(GRID_W) for y in range(GRID_H)
+                if (x, y) not in occupied
+            ]
+            if candidates:
+                weights = []
+                for cx, cy in candidates:
+                    w = sum(1.0 / (1 + abs(cx - px) + abs(cy - py)) for px, py in core_positions)
+                    weights.append(w)
+                (x, y), = random.choices(candidates, weights=weights, k=1)
+            else:
+                x, y = _random_free_pos(occupied)
+            occupied.add((x, y))
+            core_positions.append((x, y))
+            stones.append({
+                "position": [x, y],
+                "type": "unknown",
+                "_true_type": "core",
+                "extracted": False,
+                "analyzed": False,
+            })
+        else:
+            x, y = _random_free_pos(occupied)
+            occupied.add((x, y))
+            stones.append({
+                "position": [x, y],
+                "type": "unknown",
+                "_true_type": "basalt",
+                "extracted": False,
+                "analyzed": False,
+            })
+
+    return stones, core_positions
+
+
+def _compute_concentration_map(core_positions):
+    """Compute a concentration map based on proximity to core stone positions.
+
+    For each cell, concentration = sum(exp(-d^2 / sigma^2)) for each core,
+    where d = manhattan distance. Normalized so max = 1.0.
+    """
+    sigma = 4.0
+    conc = {}
+    for x in range(GRID_W):
+        for y in range(GRID_H):
+            val = sum(
+                math.exp(-(abs(x - px) + abs(y - py)) ** 2 / (sigma ** 2))
+                for px, py in core_positions
+            )
+            conc[(x, y)] = val
+
+    max_val = max(conc.values()) if conc else 1.0
+    if max_val > 0:
+        for key in conc:
+            conc[key] /= max_val
+    return conc
 
 
 def _cells_in_radius(cx, cy, radius):
@@ -81,6 +154,19 @@ def _expand_revealed(agent, cx, cy):
             agent.setdefault("revealed", []).append(list(cell))
 
 
+_stones, _core_positions = _generate_stones()
+
+_ROVER_TOOL_DEFS = [
+    {
+        "name": "move",
+        "description": "Move 1-3 tiles in a cardinal direction (north/south/east/west). Costs 2% battery per tile. Ground is auto-scanned after each move.",
+    },
+    {"name": "analyze", "description": "Analyze an unknown stone at current tile to reveal its true type. Costs 3% battery."},
+    {"name": "dig", "description": "Dig at current tile to extract a stone (costs 6% battery). Stone must be analyzed first."},
+    {"name": "pickup", "description": "Pick up an extracted stone at current tile into inventory."},
+    {"name": "analyze_ground", "description": "Analyze ground concentration at current tile to detect nearby core deposits. Costs 3% battery. Returns a 0.0-1.0 reading."},
+]
+
 WORLD = {
     "grid": {"w": GRID_W, "h": GRID_H},
     "agents": {
@@ -101,14 +187,8 @@ WORLD = {
             "memory": [],
             "tasks": [],
             "type": "rover",
-            "tools": [
-                {
-                    "name": "move",
-                    "description": "Move 1-3 tiles in a cardinal direction (north/south/east/west). Costs 2% battery per tile. Ground is auto-scanned after each move.",
-                },
-                {"name": "dig", "description": "Dig at current tile to extract a stone (costs 3x move battery)."},
-                {"name": "pickup", "description": "Pick up an extracted stone at current tile into inventory."},
-            ],
+            "ground_readings": {},
+            "tools": list(_ROVER_TOOL_DEFS),
         },
         "rover-mistral": {
             "position": [2, 12],
@@ -120,17 +200,12 @@ WORLD = {
             "memory": [],
             "tasks": [],
             "type": "rover",
-            "tools": [
-                {
-                    "name": "move",
-                    "description": "Move 1-3 tiles in a cardinal direction (north/south/east/west). Costs 2% battery per tile. Ground is auto-scanned after each move.",
-                },
-                {"name": "dig", "description": "Dig at current tile to extract a stone (costs 3x move battery)."},
-                {"name": "pickup", "description": "Pick up an extracted stone at current tile into inventory."},
-            ],
+            "ground_readings": {},
+            "tools": list(_ROVER_TOOL_DEFS),
         },
     },
-    "stones": _generate_stones(),
+    "stones": _stones,
+    "concentration_map": _compute_concentration_map(_core_positions),
     "mission": {
         "status": "running",
         "target_type": TARGET_STONE_TYPE,
@@ -206,6 +281,14 @@ def execute_action(agent_id, action_name, params):
                 record_memory(agent_id, f"Moved {direction} {distance} to ({tx},{ty}), found {ground['stone']['type']} stone")
             else:
                 record_memory(agent_id, f"Moved {direction} {distance} to ({tx},{ty}), empty ground")
+    elif action_name == "analyze":
+        result = _execute_analyze(agent_id, agent)
+        if result["ok"]:
+            record_memory(agent_id, f"Analyzed stone at ({result['position'][0]},{result['position'][1]}), type={result['stone']['type']}")
+    elif action_name == "analyze_ground":
+        result = _execute_analyze_ground(agent_id, agent)
+        if result["ok"]:
+            record_memory(agent_id, f"Ground concentration at ({result['position'][0]},{result['position'][1]}): {result['concentration']:.3f}")
     elif action_name == "dig":
         result = _execute_dig(agent_id, agent)
         if result["ok"]:
@@ -237,6 +320,39 @@ def _find_stone_at(x, y):
     return None
 
 
+def _execute_analyze(agent_id, agent):
+    """Analyze an unknown stone at the current tile to reveal its true type."""
+    if agent["battery"] < BATTERY_COST_ANALYZE:
+        return {"ok": False, "error": "Not enough battery to analyze"}
+
+    x, y = agent["position"]
+    stone = _find_stone_at(x, y)
+    if stone is None:
+        return {"ok": False, "error": f"No stone at ({x}, {y})"}
+    if stone.get("analyzed"):
+        return {"ok": False, "error": f"Stone at ({x}, {y}) already analyzed"}
+
+    agent["battery"] = max(0.0, agent["battery"] - BATTERY_COST_ANALYZE)
+    stone["analyzed"] = True
+    stone["type"] = stone["_true_type"]
+    logger.info("Agent %s analyzed stone at (%d,%d), type=%s", agent_id, x, y, stone["type"])
+    return {"ok": True, "position": [x, y], "stone": {"type": stone["type"]}}
+
+
+def _execute_analyze_ground(agent_id, agent):
+    """Analyze ground concentration at current tile to detect nearby core deposits."""
+    if agent["battery"] < BATTERY_COST_ANALYZE_GROUND:
+        return {"ok": False, "error": "Not enough battery to analyze ground"}
+
+    x, y = agent["position"]
+    agent["battery"] = max(0.0, agent["battery"] - BATTERY_COST_ANALYZE_GROUND)
+    concentration = WORLD.get("concentration_map", {}).get((x, y), 0.0)
+    readings = agent.setdefault("ground_readings", {})
+    readings[f"{x},{y}"] = concentration
+    logger.info("Agent %s analyzed ground at (%d,%d), concentration=%.2f", agent_id, x, y, concentration)
+    return {"ok": True, "position": [x, y], "concentration": round(concentration, 3)}
+
+
 def _execute_dig(agent_id, agent):
     """Dig at current tile to extract a buried stone."""
     if agent["battery"] < BATTERY_COST_DIG:
@@ -246,6 +362,8 @@ def _execute_dig(agent_id, agent):
     stone = _find_stone_at(x, y)
     if stone is None:
         return {"ok": False, "error": f"No stone at ({x}, {y})"}
+    if not stone.get("analyzed"):
+        return {"ok": False, "error": "Stone not yet analyzed (analyze first)"}
     if stone.get("extracted"):
         return {"ok": False, "error": f"Stone at ({x}, {y}) already extracted"}
 
@@ -264,6 +382,8 @@ def _execute_pickup(agent_id, agent):
     stone = _find_stone_at(x, y)
     if stone is None:
         return {"ok": False, "error": f"No stone at ({x}, {y})"}
+    if not stone.get("analyzed"):
+        return {"ok": False, "error": "Stone not yet analyzed (analyze first)"}
     if not stone.get("extracted"):
         return {"ok": False, "error": f"Stone at ({x}, {y}) not yet extracted (dig first)"}
 
@@ -372,11 +492,14 @@ def record_memory(agent_id, text):
 
 
 def _direction_hint(dx, dy):
-    """Return human-readable direction hint from deltas."""
+    """Return human-readable direction hint from deltas.
+
+    Math convention: north = +Y, south = -Y.
+    """
     parts = []
-    if dy < 0:
+    if dy > 0:
         parts.append("north")
-    elif dy > 0:
+    elif dy < 0:
         parts.append("south")
     if dx > 0:
         parts.append("east")
@@ -409,39 +532,41 @@ def update_tasks(agent_id):
         agent["tasks"] = tasks
         return
 
-    # Stone at current tile → dig or pickup
+    # Stone at current tile → analyze, dig, or pickup (priority order)
     stone_here = _find_stone_at(x, y)
     if stone_here:
-        if not stone_here.get("extracted"):
+        if not stone_here.get("analyzed"):
+            tasks.append(f"Analyze unknown stone at current tile ({x},{y})")
+        elif not stone_here.get("extracted"):
             tasks.append(f"Dig {stone_here['type']} stone at current tile ({x},{y})")
         else:
             tasks.append(f"Pick up {stone_here['type']} stone at current tile ({x},{y})")
         agent["tasks"] = tasks
         return
 
-    # Known stones on revealed tiles → navigate to nearest target type first
+    # Known stones on revealed tiles → navigate to nearest
+    # Prefer: unknown stones (potential cores) > known target type > known basalt
     known_stones = []
     for stone in WORLD.get("stones", []):
         sp = tuple(stone["position"])
         if sp in revealed_set:
             dist = abs(sp[0] - x) + abs(sp[1] - y)
-            known_stones.append((dist, stone))
-    known_stones.sort(key=lambda t: t[0])
+            # Priority: 0=unknown (might be core), 1=known target, 2=known basalt
+            if stone["type"] == "unknown":
+                priority = 0
+            elif stone["type"] == target_type:
+                priority = 1
+            else:
+                priority = 2
+            known_stones.append((priority, dist, stone))
+    known_stones.sort(key=lambda t: (t[0], t[1]))
 
-    # Prefer target type
-    for dist, stone in known_stones:
-        if stone["type"] == target_type:
-            sx, sy = stone["position"]
-            hint = _direction_hint(sx - x, sy - y)
-            tasks.append(f"Navigate to {stone['type']} stone at ({sx},{sy}) — {hint}, {dist} tiles")
-            break
-
-    if not tasks:
-        for dist, stone in known_stones:
-            sx, sy = stone["position"]
-            hint = _direction_hint(sx - x, sy - y)
-            tasks.append(f"Navigate to {stone['type']} stone at ({sx},{sy}) — {hint}, {dist} tiles")
-            break
+    if known_stones:
+        _priority, dist, stone = known_stones[0]
+        sx, sy = stone["position"]
+        hint = _direction_hint(sx - x, sy - y)
+        label = stone["type"] if stone["type"] != "unknown" else "unknown"
+        tasks.append(f"Navigate to {label} stone at ({sx},{sy}) — {hint}, {dist} tiles")
 
     if not tasks:
         tasks.append("Explore unvisited tiles to find stones")
@@ -467,6 +592,15 @@ def get_snapshot():
     for agent in snap["agents"].values():
         for cell in agent.get("revealed", []):
             revealed.add(tuple(cell))
-    # Filter stones to only those on revealed cells
-    snap["stones"] = [s for s in snap["stones"] if tuple(s["position"]) in revealed]
+    # Filter stones to only those on revealed cells and strip hidden _true_type
+    visible = []
+    for s in snap["stones"]:
+        if tuple(s["position"]) in revealed:
+            s.pop("_true_type", None)
+            visible.append(s)
+    snap["stones"] = visible
+    # Serialize concentration_map tuple keys to JSON-safe "x,y" strings
+    conc = snap.get("concentration_map")
+    if conc and isinstance(conc, dict):
+        snap["concentration_map"] = {f"{k[0]},{k[1]}": v for k, v in conc.items()}
     return snap
