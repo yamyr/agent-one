@@ -22,6 +22,12 @@ function agentPosition(id) {
   if (!a) return '?'
   return `(${a.position[0]}, ${a.position[1]})`
 }
+
+function inventoryCount(id) {
+  if (!props.worldState) return 0
+  const a = props.worldState.agents[id]
+  return a && a.inventory ? a.inventory.length : 0
+}
 </script>
 
 <template>
@@ -31,6 +37,7 @@ function agentPosition(id) {
       :agentId="id"
       :position="agentPosition(id)"
       :battery="batteryPct(id)"
+      :inventoryCount="inventoryCount(id)"
       :events="agentEvents[id]"
       :color="agentColor(id)"
       @select-agent="emit('select-agent', $event)" />

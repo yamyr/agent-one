@@ -4,6 +4,7 @@ import { useWebSocket } from './composables/useWebSocket.js'
 import AppHeader from './components/AppHeader.vue'
 import WorldMap from './components/WorldMap.vue'
 import AgentPanes from './components/AgentPanes.vue'
+import MissionBar from './components/MissionBar.vue'
 import EventLog from './components/EventLog.vue'
 import AgentDetailModal from './components/AgentDetailModal.vue'
 
@@ -28,6 +29,8 @@ function agentData(id) {
 <template>
   <div class="app">
     <AppHeader :connected="connected" />
+
+    <MissionBar :mission="worldState ? worldState.mission : null" />
 
     <div class="top-row">
       <WorldMap :worldState="worldState" :agentIds="agentIds" @select-agent="selectAgent" />

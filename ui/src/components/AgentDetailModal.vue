@@ -47,6 +47,15 @@ function batteryPct() {
           <div class="modal-label">Tiles visited</div>
           <div class="modal-value">{{ agent.visited.length }}</div>
         </div>
+        <div class="modal-section" v-if="agent.inventory">
+          <div class="modal-label">Inventory</div>
+          <div class="modal-value" v-if="agent.inventory.length === 0">Empty</div>
+          <div class="modal-inv" v-else>
+            <span v-for="(stone, i) in agent.inventory" :key="i" class="inv-stone" :class="stone.type">
+              {{ stone.type }}
+            </span>
+          </div>
+        </div>
         <div class="modal-section">
           <div class="modal-label">Tools</div>
           <div class="modal-tools">
@@ -163,5 +172,29 @@ function batteryPct() {
 .tool-desc {
   font-size: 0.7rem;
   color: #777;
+}
+
+.modal-inv {
+  display: flex;
+  gap: 0.3rem;
+  flex-wrap: wrap;
+}
+
+.inv-stone {
+  font-size: 0.7rem;
+  padding: 0.15rem 0.4rem;
+  border-radius: 3px;
+  border: 1px solid #1a1a24;
+  background: #0e0e16;
+}
+
+.inv-stone.core {
+  color: #b8962a;
+  border-color: #3a2a0a;
+}
+
+.inv-stone.basalt {
+  color: #888;
+  border-color: #333;
 }
 </style>

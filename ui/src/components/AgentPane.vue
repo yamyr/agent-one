@@ -5,6 +5,7 @@ defineProps({
   agentId: String,
   position: String,
   battery: String,
+  inventoryCount: Number,
   events: Array,
   color: String,
 })
@@ -18,6 +19,7 @@ const emit = defineEmits(['select-agent'])
       <span class="agent-name" :style="{ color }">{{ agentId }}</span>
       <span class="agent-stats">
         {{ position }} &middot; bat {{ battery }}
+        <span v-if="inventoryCount > 0" class="agent-inv">&middot; inv {{ inventoryCount }}</span>
       </span>
     </div>
     <div class="agent-log">
@@ -63,6 +65,10 @@ const emit = defineEmits(['select-agent'])
 .agent-stats {
   font-size: 0.7rem;
   color: #666;
+}
+
+.agent-inv {
+  color: #b8962a;
 }
 
 .agent-log {

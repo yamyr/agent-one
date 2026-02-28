@@ -14,7 +14,7 @@ from .config import settings
 from .db import init_db, close_db
 from .station import StationAgent
 from .views import router as views_router
-from .world import execute_action, get_snapshot
+from .world import execute_action, get_snapshot, WORLD
 
 logging.basicConfig(
     level=logging.INFO,
@@ -48,6 +48,12 @@ async def _trigger_station(event):
 async def agent_loop(agent, interval):
     """Run an agent every `interval` seconds, broadcast events."""
     while True:
+        # Stop if mission is terminal
+        mission_status = WORLD["mission"]["status"]
+        if mission_status in ("success", "failed"):
+            logger.info("Agent loop stopped (%s): mission %s", agent.agent_id, mission_status)
+            return
+
         try:
             turn = await asyncio.to_thread(agent.run_turn)
             events = []
@@ -80,6 +86,14 @@ async def agent_loop(agent, interval):
                             "type": "event",
                             "name": "check",
                             "payload": ground,
+                        })
+                    mission_event = result.get("mission")
+                    if mission_event:
+                        events.append({
+                            "source": "world",
+                            "type": "event",
+                            "name": "mission_" + mission_event["status"],
+                            "payload": mission_event,
                         })
 
             for event in events:

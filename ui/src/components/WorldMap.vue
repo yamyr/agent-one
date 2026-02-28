@@ -37,6 +37,21 @@ const stations = computed(() => {
   })
 })
 
+const revealedSet = computed(() => {
+  const set = new Set()
+  if (!props.worldState) return set
+  for (const agent of Object.values(props.worldState.agents)) {
+    for (const cell of (agent.revealed || [])) {
+      set.add(`${cell[0]},${cell[1]}`)
+    }
+  }
+  return set
+})
+
+function isRevealed(x, y) {
+  return revealedSet.value.has(`${x},${y}`)
+}
+
 function agentTransform(id) {
   if (!props.worldState) return ''
   const a = props.worldState.agents[id]
@@ -57,7 +72,7 @@ function agentTransform(id) {
       <rect v-for="t in tiles" :key="t.key"
         :x="t.x * TILE_SIZE" :y="t.y * TILE_SIZE"
         :width="TILE_SIZE" :height="TILE_SIZE"
-        class="grid-tile" />
+        :class="isRevealed(t.x, t.y) ? 'grid-tile revealed' : 'grid-tile'" />
 
       <!-- stones -->
       <rect v-for="(s, i) in (worldState.stones || [])" :key="'stone-'+i"
@@ -119,9 +134,14 @@ function agentTransform(id) {
 }
 
 .grid-tile {
+  fill: #060609;
+  stroke: #111118;
+  stroke-width: 0.5;
+}
+
+.grid-tile.revealed {
   fill: #0e0e16;
   stroke: #1a1a24;
-  stroke-width: 0.5;
 }
 
 .rover-group {
