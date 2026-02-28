@@ -53,12 +53,20 @@ function cameraLoop() {
     // Snap when very close
     if (Math.abs(dx) < 0.05) camX.value = targetCamX.value
     if (Math.abs(dy) < 0.05) camY.value = targetCamY.value
+    rafId = requestAnimationFrame(cameraLoop)
+  } else {
+    rafId = null  // idle — stop consuming CPU until target changes
   }
-  rafId = requestAnimationFrame(cameraLoop)
 }
 
+// Start the loop once on mount; it will self-stop when idle
 onMounted(() => { rafId = requestAnimationFrame(cameraLoop) })
 onUnmounted(() => { if (rafId) cancelAnimationFrame(rafId) })
+
+// Restart the animation loop when the camera target moves and the loop is idle
+function ensureCameraLoop() {
+  if (!rafId) rafId = requestAnimationFrame(cameraLoop)
+}
 
 // Track drag state
 const dragging = ref(false)
@@ -71,8 +79,9 @@ watch([() => props.worldState, () => props.followAgent], () => {
   if (a) {
     targetCamX.value = a.position[0] - Math.floor(visibleW.value / 2)
     targetCamY.value = a.position[1] - Math.floor(visibleH.value / 2)
+    ensureCameraLoop()
   }
-}, { deep: true })
+})
 
 const tiles = computed(() => {
   const arr = []
@@ -405,6 +414,7 @@ const fogAgents = computed(() => {
 function panCamera(dx, dy) {
   targetCamX.value += dx
   targetCamY.value += dy
+  ensureCameraLoop()
 }
 
 // Expose camera and dynamic viewport for minimap & keyboard shortcuts
