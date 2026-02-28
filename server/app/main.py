@@ -153,9 +153,10 @@ async def agent_loop(agent, interval):
                     await narrator.feed(charge_event)
 
             # Trigger station on stone-found events
-            for event in events:
-                if event["name"] == "check":
-                    await _trigger_station(event)
+            # NOTE: station-rover communication disabled for now
+            # for event in events:
+            #     if event["name"] == "check":
+            #         await _trigger_station(event)
 
         except Exception:
             logger.exception("Agent loop error (%s)", agent.agent_id)
@@ -189,7 +190,8 @@ async def _start_simulation():
 
     narrator.reset()
     narrator.start()
-    _agent_tasks.append(asyncio.create_task(_station_startup()))
+    # NOTE: station-rover communication disabled for now — rovers explore autonomously
+    # _agent_tasks.append(asyncio.create_task(_station_startup()))
 
     active = [a.strip() for a in settings.active_agents.split(",") if a.strip()]
     agent_map = {
