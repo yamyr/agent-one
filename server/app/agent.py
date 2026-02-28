@@ -24,6 +24,7 @@ from .world import MAX_INVENTORY_ROVER
 from .world import check_ground, direction_hint
 from .world import set_agent_model
 from .world import execute_action, get_snapshot, charge_agent, next_tick
+from .world import _obstacle_at, ROVER_REVEAL_RADIUS
 
 logger = logging.getLogger(__name__)
 
@@ -122,7 +123,9 @@ ROVER_TOOLS = [
 class MistralRoverReasoner:
     """Rover reasoner that decides via Mistral LLM. Returns action dict, does not execute."""
 
-    def __init__(self, agent_id="rover-mistral", model="mistral-small-latest", world: World | None = None):
+    def __init__(
+        self, agent_id="rover-mistral", model="mistral-small-latest", world: World | None = None
+    ):
         self.agent_id = agent_id
         self.model = model
         self._client = None
@@ -210,7 +213,13 @@ class MistralRoverReasoner:
             "- CRITICAL: Once you have collected the target quantity of basalt, STOP exploring and RETURN TO STATION IMMEDIATELY.\n"
             "- Prefer unvisited tiles when exploring. Don't backtrack aimlessly.\n"
             "- Ground is auto-scanned after every move. No need to check manually.\n"
-            "- Follow your current tasks list. It tells you exactly what to do next.".format(
+            "- Follow your current tasks list. It tells you exactly what to do next.\n"
+            "\n"
+            "HAZARD RULES:\n"
+            "- Ice Mountains are impassable. You cannot move through them. Plan routes around them.\n"
+            "- Air Geysers erupt periodically. When ERUPTING, they drain 8 fuel units (~2.3% battery) from rovers passing through.\n"
+            "- Avoid active geysers when possible, especially at low battery.\n"
+            "- Dormant geysers are safe to pass through.".format(
                 sx=station_pos[0], sy=station_pos[1]
             )
         )
@@ -220,11 +229,7 @@ class MistralRoverReasoner:
             f"Objective: {mission['objective']}\n"
             f"Target: collect {target_quantity} units of basalt and deliver to station.\n"
             f"Your inventory: {len(inventory)}/{MAX_INVENTORY_ROVER} veins"
-            + (
-                "\n🏁 INVENTORY FULL — RETURN TO STATION NOW TO DELIVER!"
-                if inventory_full
-                else ""
-            )
+            + ("\n🏁 INVENTORY FULL — RETURN TO STATION NOW TO DELIVER!" if inventory_full else "")
         )
 
         tasks = agent.get("tasks", [])
@@ -305,6 +310,30 @@ class MistralRoverReasoner:
             for vs in visible_stones:
                 parts.append(f"  - {vs}")
 
+        # Nearby obstacles (hazards)
+        revealed_set_tuples = revealed_set  # already computed
+        nearby_obstacles = []
+        for obs in self._world.state.get("obstacles", []):
+            op = tuple(obs["position"])
+            if op in revealed_set_tuples:
+                dist = abs(op[0] - x) + abs(op[1] - y)
+                if dist <= ROVER_REVEAL_RADIUS * 2:
+                    nearby_obstacles.append(obs)
+        if nearby_obstacles:
+            parts.append("\n== Hazards ==")
+            for obs in nearby_obstacles:
+                status = ""
+                if obs["type"] == "air_geyser":
+                    status = (
+                        " (ERUPTING \u2014 avoid!)"
+                        if obs.get("active")
+                        else " (dormant \u2014 safe for now)"
+                    )
+                elif obs["type"] == "ice_mountain":
+                    status = " (impassable \u2014 find alternate route)"
+                parts.append(
+                    f"  {obs['type']} at ({obs['position'][0]},{obs['position'][1]}){status}"
+                )
         if memory:
             recent = memory[-5:]
             parts.append("\n== Recent actions ==")
@@ -399,6 +428,13 @@ class MistralRoverReasoner:
             if (nx, ny) not in visited_set:
                 unvisited.append((name, nx, ny))
         candidates = unvisited if unvisited else valid
+        # Filter out directions blocked by ice mountains
+        safe_candidates = [
+            (name, nx, ny)
+            for name, nx, ny in candidates
+            if not (_obstacle_at(nx, ny) and _obstacle_at(nx, ny)["type"] == "ice_mountain")
+        ]
+        candidates = safe_candidates if safe_candidates else candidates
         direction, tx, ty = random.choice(candidates)
         thinking = f"LLM fallback: {reason}. Moving {direction} to ({tx},{ty})."
         return {
@@ -456,7 +492,9 @@ DRONE_TOOLS = [DRONE_MOVE_TOOL, SCAN_TOOL, NOTIFY_TOOL]
 class DroneAgent:
     """Drone scout agent powered by Mistral LLM. Moves fast, scans for basalt vein deposits."""
 
-    def __init__(self, agent_id="drone-mistral", model="mistral-small-latest", world: World | None = None):
+    def __init__(
+        self, agent_id="drone-mistral", model="mistral-small-latest", world: World | None = None
+    ):
         self.agent_id = agent_id
         self.model = model
         self._client = None
@@ -525,7 +563,12 @@ class DroneAgent:
             f"- Battery: move costs 1 fuel unit/tile (~{BATTERY_COST_MOVE_DRONE:.2%}), scan costs 2 fuel units (~{BATTERY_COST_SCAN:.2%}), notify costs 2 fuel units (~{BATTERY_COST_NOTIFY:.2%}). You can fly up to {MAX_MOVE_DISTANCE_DRONE} tiles per move.\n"
             "- Station is at ({sx},{sy}). Return when battery is low for recharge.\n"
             "- ALWAYS keep enough battery to return to station.\n"
-            "- Follow your current tasks list.".format(sx=station_pos[0], sy=station_pos[1])
+            "- Follow your current tasks list.\n"
+            "\n"
+            "HAZARD RULES:\n"
+            "- Ice Mountains are impassable. You cannot fly through them.\n"
+            "- Air Geysers when ERUPTING will deflect your flight path. Avoid active geysers.\n"
+            "- Dormant geysers are safe to fly over.".format(sx=station_pos[0], sy=station_pos[1])
         )
 
         parts.append(
@@ -570,6 +613,30 @@ class DroneAgent:
             parts.append("Recent hotspots found:")
             parts.extend(hot_scans)
 
+        # Nearby obstacles (hazards)
+        drone_revealed_set = {tuple(c) for c in agent.get("revealed", [])}
+        nearby_obstacles = []
+        for obs in self._world.state.get("obstacles", []):
+            op = tuple(obs["position"])
+            if op in drone_revealed_set:
+                dist = abs(op[0] - x) + abs(op[1] - y)
+                if dist <= DRONE_REVEAL_RADIUS * 2:
+                    nearby_obstacles.append(obs)
+        if nearby_obstacles:
+            parts.append("\n== Hazards ==")
+            for obs in nearby_obstacles:
+                status = ""
+                if obs["type"] == "air_geyser":
+                    status = (
+                        " (ERUPTING \u2014 avoid!)"
+                        if obs.get("active")
+                        else " (dormant \u2014 safe for now)"
+                    )
+                elif obs["type"] == "ice_mountain":
+                    status = " (impassable \u2014 find alternate route)"
+                parts.append(
+                    f"  {obs['type']} at ({obs['position'][0]},{obs['position'][1]}){status}"
+                )
         if memory:
             recent = memory[-5:]
             parts.append("\n== Recent actions ==")
@@ -803,7 +870,16 @@ class RoverLoop(BaseAgent):
             return
 
         turn = await asyncio.to_thread(self._reasoner.run_turn)
-        next_tick()
+        tick, geyser_events = next_tick()
+        for evt in geyser_events:
+            await host.broadcast(
+                {
+                    "source": "world",
+                    "type": "event",
+                    "name": "eruption",
+                    "payload": evt,
+                }
+            )
         messages = []
 
         if turn["thinking"]:
@@ -927,12 +1003,13 @@ class DroneLoop(BaseAgent):
 
         # During abort, force recall so drone heads to station
         if mission_status == "aborted":
-            self._world.set_pending_commands(self.agent_id, [
-                {"name": "recall", "payload": {"reason": "Mission aborted — return to station"}}
-            ])
+            self._world.set_pending_commands(
+                self.agent_id,
+                [{"name": "recall", "payload": {"reason": "Mission aborted — return to station"}}],
+            )
 
         turn = await asyncio.to_thread(self._reasoner.run_turn)
-        next_tick()
+        # Tick is advanced by RoverLoop — drone just reads current tick
         messages = []
 
         if turn["thinking"]:

@@ -86,6 +86,9 @@ function onSimEvent(event) {
       if (event.payload?.stone)
         addToast(`${event.source}: found ${event.payload.stone.grade} vein`, { type: 'info' })
       break
+    case 'eruption':
+      addToast(`⚠️ Geyser eruption at (${event.payload?.position?.[0] ?? '?'},${event.payload?.position?.[1] ?? '?'})!`, { type: 'warning', duration: 4000 })
+      break
     default:
       break
   }

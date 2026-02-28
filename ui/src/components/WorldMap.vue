@@ -1,6 +1,6 @@
 <script setup>
 import { computed, ref, watch, onMounted, onUnmounted } from 'vue'
-import { TILE_SIZE, VIEWPORT_W, VIEWPORT_H, VEIN_COLORS, VEIN_SIZES, SOLAR_PANEL_COLOR, SOLAR_PANEL_DEPLETED_COLOR, agentColor, revealRadius } from '../constants.js'
+import { TILE_SIZE, VIEWPORT_W, VIEWPORT_H, VEIN_COLORS, VEIN_SIZES, SOLAR_PANEL_COLOR, SOLAR_PANEL_DEPLETED_COLOR, OBSTACLE_COLORS, agentColor, revealRadius } from '../constants.js'
 import { usePreferences } from '../composables/usePreferences.js'
 
 const props = defineProps({
@@ -231,6 +231,30 @@ function panelScreenX(p) {
 function panelScreenY(p) {
   return (visibleH.value - 1 - (p.position[1] - camY.value)) * TILE_SIZE + 2
 }
+
+// Obstacle helpers
+function isObstacleVisible(obs) {
+  const [wx, wy] = obs.position
+  return wx >= camX.value && wx < camX.value + visibleW.value &&
+         wy >= camY.value && wy < camY.value + visibleH.value
+}
+
+function obstacleColor(obs) {
+  if (obs.type === 'ice_mountain') return OBSTACLE_COLORS.ice_mountain
+  if (obs.type === 'air_geyser') return obs.active ? OBSTACLE_COLORS.air_geyser_active : OBSTACLE_COLORS.air_geyser_dormant
+  return '#888'
+}
+
+function obstacleTooltip(obs) {
+  const pos = `(${obs.position[0]}, ${obs.position[1]})`
+  if (obs.type === 'ice_mountain') return `Ice Mountain\nPosition: ${pos}\nImpassable terrain`
+  if (obs.type === 'air_geyser') {
+    const status = obs.active ? 'ERUPTING — dangerous!' : 'Dormant — safe to pass'
+    return `Air Geyser\nPosition: ${pos}\n${status}`
+  }
+  return `Obstacle\nPosition: ${pos}`
+}
+
 
 // Drag-to-pan
 function onMouseDown(e) {
@@ -594,6 +618,52 @@ defineExpose({ camX, camY, visibleW, visibleH, panCamera, navigateTo })
             :stroke="p.depleted ? 'var(--text-dim)' : 'var(--accent-panel-stroke)'"
             stroke-width="0.5"
           />
+        </g>
+      </template>
+
+      <!-- obstacles: ice mountains & air geysers -->
+      <template
+        v-for="(obs, i) in (worldState.obstacles || [])"
+        :key="'obs-'+i"
+      >
+        <g v-if="isObstacleVisible(obs)">
+          <title>{{ obstacleTooltip(obs) }}</title>
+          <!-- Ice Mountain: triangle pointing up -->
+          <polygon
+            v-if="obs.type === 'ice_mountain'"
+            :points="`${worldToScreen(obs.position[0], obs.position[1]).sx},${worldToScreen(obs.position[0], obs.position[1]).sy - 8} ${worldToScreen(obs.position[0], obs.position[1]).sx + 7},${worldToScreen(obs.position[0], obs.position[1]).sy + 5} ${worldToScreen(obs.position[0], obs.position[1]).sx - 7},${worldToScreen(obs.position[0], obs.position[1]).sy + 5}`"
+            :fill="obstacleColor(obs)"
+            opacity="0.85"
+            stroke="#c8e0f0"
+            stroke-width="0.5"
+          />
+          <!-- Air Geyser: circle with active/dormant styling -->
+          <template v-if="obs.type === 'air_geyser'">
+            <circle
+              :cx="worldToScreen(obs.position[0], obs.position[1]).sx"
+              :cy="worldToScreen(obs.position[0], obs.position[1]).sy"
+              r="6"
+              :fill="obstacleColor(obs)"
+              :opacity="obs.active ? 0.9 : 0.6"
+              :stroke="obs.active ? '#ff6060' : '#6a5a4a'"
+              stroke-width="1"
+            >
+              <animate
+                v-if="obs.active"
+                attributeName="r"
+                values="6;9;6"
+                dur="0.8s"
+                repeatCount="indefinite"
+              />
+              <animate
+                v-if="obs.active"
+                attributeName="opacity"
+                values="0.9;0.5;0.9"
+                dur="0.8s"
+                repeatCount="indefinite"
+              />
+            </circle>
+          </template>
         </g>
       </template>
 

@@ -7,7 +7,7 @@ import random
 
 from .config import settings
 from .models import RoverAgentState, RoverWorldView, RoverComputed, RoverContext
-from .models import AgentMission, InventoryItem, StoneInfo
+from .models import AgentMission, InventoryItem, StoneInfo, ObstacleInfo
 from .models import RoverSummary, StationContext
 
 logger = logging.getLogger(__name__)
@@ -83,6 +83,14 @@ MAX_SOLAR_PANELS = 2
 # --- Stone generation ---
 STONE_PROBABILITY = 0.015
 CORE_PROBABILITY = 0.3
+
+# --- Obstacles ---
+MOUNTAIN_PROBABILITY = 0.008
+GEYSER_PROBABILITY = 0.012
+MOUNTAIN_CLUSTER_MAX = 3
+GEYSER_ACTIVE_TICKS = 3
+GEYSER_DORMANT_TICKS = 8
+BATTERY_COST_GEYSER_ROVER = 8 / FUEL_CAPACITY_ROVER  # ~2.3% battery damage
 
 
 def _random_free_pos(occupied, rng=None, cx=0, cy=0):
@@ -171,12 +179,69 @@ def _ensure_chunk(cx, cy):
             }
         )
 
+    # Obstacles: mountains and geysers (skip origin chunk)
+    obstacles = []
+    if not is_origin:
+        for dy in range(CHUNK_SIZE):
+            for dx in range(CHUNK_SIZE):
+                wx, wy = x0 + dx, y0 + dy
+                if (wx, wy) in occupied:
+                    continue
+                roll = rng.random()
+                if roll < MOUNTAIN_PROBABILITY:
+                    occupied.add((wx, wy))
+                    obstacles.append(
+                        {
+                            "type": "ice_mountain",
+                            "position": [wx, wy],
+                        }
+                    )
+                    # Cluster: try to add adjacent mountains
+                    for _ in range(MOUNTAIN_CLUSTER_MAX):
+                        adj_dir = rng.choice([(0, 1), (0, -1), (1, 0), (-1, 0)])
+                        ax, ay = wx + adj_dir[0], wy + adj_dir[1]
+                        if (
+                            (ax, ay) not in occupied
+                            and x0 <= ax < x0 + CHUNK_SIZE
+                            and y0 <= ay < y0 + CHUNK_SIZE
+                        ):
+                            occupied.add((ax, ay))
+                            obstacles.append(
+                                {
+                                    "type": "ice_mountain",
+                                    "position": [ax, ay],
+                                }
+                            )
+                            break  # only one cluster extension per iteration
+                elif roll < MOUNTAIN_PROBABILITY + GEYSER_PROBABILITY:
+                    occupied.add((wx, wy))
+                    obstacles.append(
+                        {
+                            "type": "air_geyser",
+                            "position": [wx, wy],
+                            "active": False,
+                            "ticks_remaining": rng.randint(1, GEYSER_DORMANT_TICKS),
+                        }
+                    )
+
+        WORLD.setdefault("obstacles", []).extend(obstacles)
+
     # Register stones in the global list
     WORLD.setdefault("stones", []).extend(stones)
 
-    chunk_data = {"generated": True, "stone_count": len(stones)}
+    chunk_data = {
+        "generated": True,
+        "stone_count": len(stones),
+        "obstacle_count": len(obstacles) if not is_origin else 0,
+    }
     chunks[key] = chunk_data
-    logger.info("Generated chunk (%d,%d) with %d stones", cx, cy, len(stones))
+    logger.info(
+        "Generated chunk (%d,%d) with %d stones, %d obstacles",
+        cx,
+        cy,
+        len(stones),
+        len(obstacles) if not is_origin else 0,
+    )
     return chunk_data
 
 
@@ -319,6 +384,7 @@ def _build_initial_world():
         "stones": [],
         "chunks": {},
         "solar_panels": [],
+        "obstacles": [],
         "drone_scans": [],
         "tick": 0,
         "bounds": {"min_x": -3, "max_x": 3, "min_y": -3, "max_y": 3},
@@ -411,10 +477,36 @@ def reset_world():
     logger.info("World reset")
 
 
+def _update_geysers():
+    """Tick all geyser state machines. Returns list of eruption events."""
+    events = []
+    for obs in WORLD.get("obstacles", []):
+        if obs["type"] != "air_geyser":
+            continue
+        obs["ticks_remaining"] -= 1
+        if obs["ticks_remaining"] <= 0:
+            if obs["active"]:
+                # Transition to dormant
+                obs["active"] = False
+                obs["ticks_remaining"] = GEYSER_DORMANT_TICKS
+            else:
+                # Transition to active (eruption!)
+                obs["active"] = True
+                obs["ticks_remaining"] = GEYSER_ACTIVE_TICKS
+                events.append(
+                    {
+                        "type": "eruption",
+                        "position": list(obs["position"]),
+                    }
+                )
+    return events
+
+
 def next_tick():
-    """Increment and return the current tick number."""
+    """Increment tick and update geysers. Returns (tick_number, geyser_events)."""
     WORLD["tick"] += 1
-    return WORLD["tick"]
+    geyser_events = _update_geysers()
+    return WORLD["tick"], geyser_events
 
 
 def check_ground(agent_id):
@@ -453,6 +545,31 @@ def move_agent(agent_id, x, y):
     if dx != 0 and dy != 0:
         return {"ok": False, "error": f"Not a straight line: ({ox}, {oy}) -> ({x}, {y})"}
 
+    # Check each intermediate tile for obstacles
+    step_dx = 1 if dx > 0 else (-1 if dx < 0 else 0)
+    step_dy = 1 if dy > 0 else (-1 if dy < 0 else 0)
+    for step in range(1, dist + 1):
+        check_x = ox + step_dx * step
+        check_y = oy + step_dy * step
+        obs = _obstacle_at(check_x, check_y)
+        if obs:
+            if obs["type"] == "ice_mountain":
+                return {
+                    "ok": False,
+                    "error": f"Path blocked by ice mountain at ({check_x}, {check_y})",
+                }
+            if obs["type"] == "air_geyser" and obs.get("active"):
+                if agent.get("type") == "drone":
+                    return {
+                        "ok": False,
+                        "error": f"Active geyser at ({check_x}, {check_y}) — drone deflected",
+                    }
+                # Rover: allow passage but drain battery
+                agent["battery"] = max(0.0, agent["battery"] - BATTERY_COST_GEYSER_ROVER)
+                record_memory(
+                    agent_id,
+                    f"Hit active geyser at ({check_x},{check_y}), lost {BATTERY_COST_GEYSER_ROVER:.0%} battery",
+                )
     # Ensure chunk exists at destination
     _ensure_chunk(*_chunk_key(x, y))
     _update_bounds(x, y)
@@ -571,6 +688,14 @@ def _find_stone_at(x, y):
     for stone in WORLD.get("stones", []):
         if stone["position"] == [x, y]:
             return stone
+    return None
+
+
+def _obstacle_at(x, y):
+    """Find an obstacle at (x, y), or None."""
+    for obs in WORLD.get("obstacles", []):
+        if obs["position"] == [x, y]:
+            return obs
     return None
 
 
@@ -1064,6 +1189,17 @@ def _update_rover_tasks(agent_id, agent):
                 f"Navigate to drone-scanned hotspot at ({hx},{hy}) — {hint}, {dist} tiles, concentration={conc:.2f}"
             )
 
+    # Obstacle warnings
+    for obs in WORLD.get("obstacles", []):
+        op = tuple(obs["position"])
+        if op in revealed_set:
+            dist = abs(op[0] - x) + abs(op[1] - y)
+            if dist <= 5 and obs["type"] == "air_geyser" and obs.get("active"):
+                hint = direction_hint(op[0] - x, op[1] - y)
+                tasks.append(
+                    f"\u26a0\ufe0f Active geyser erupting at ({op[0]},{op[1]}) \u2014 {hint}, {dist} tiles \u2014 AVOID"
+                )
+                break  # one warning is enough
     if not tasks:
         tasks.append("Explore unvisited tiles to find veins")
 
@@ -1156,6 +1292,20 @@ def observe_rover(agent_id):
                 label += f" qty={qty_info}"
             visible_stones.append(f"{label} ({status}) at ({sp[0]},{sp[1]}) — {hint}, {dist} tiles")
 
+    # Nearby obstacles within reveal radius
+    nearby_obstacles = []
+    for obs in WORLD.get("obstacles", []):
+        op = tuple(obs["position"])
+        if op in revealed_set:
+            dist = abs(op[0] - x) + abs(op[1] - y)
+            if dist <= ROVER_REVEAL_RADIUS * 2:  # slightly wider than visibility
+                nearby_obstacles.append(
+                    ObstacleInfo(
+                        type=obs["type"],
+                        position=list(obs["position"]),
+                        active=obs.get("active"),
+                    )
+                )
     # Mission info
     world_mission = WORLD.get("mission", {})
 
@@ -1183,6 +1333,7 @@ def observe_rover(agent_id):
             stone_line=stone_line,
             stone_here=stone_here,
             visible_stones=visible_stones,
+            nearby_obstacles=nearby_obstacles,
         ),
     )
 
@@ -1252,6 +1403,12 @@ def get_snapshot():
             s.pop("_true_quantity", None)
             visible.append(s)
     snap["stones"] = visible
+    # Filter obstacles to revealed cells only
+    visible_obstacles = []
+    for obs in snap.get("obstacles", []):
+        if tuple(obs["position"]) in revealed:
+            visible_obstacles.append(obs)
+    snap["obstacles"] = visible_obstacles
     # Ensure bounds are present
     if "bounds" not in snap:
         snap["bounds"] = {"min_x": 0, "max_x": GRID_W - 1, "min_y": 0, "max_y": GRID_H - 1}

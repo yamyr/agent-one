@@ -22,6 +22,12 @@ class StoneInfo(BaseModel):
     analyzed: bool = False
 
 
+class ObstacleInfo(BaseModel):
+    type: str
+    position: list[int]
+    active: bool | None = None
+
+
 # ── Rover Context (3 clear sections) ──
 
 
@@ -65,6 +71,7 @@ class RoverComputed(BaseModel):
     stone_here: StoneInfo | None = None
     visible_stones: list[str] = []
     pending_commands: list[PendingCommand] = []
+    nearby_obstacles: list[ObstacleInfo] = []
 
 
 class RoverContext(BaseModel):

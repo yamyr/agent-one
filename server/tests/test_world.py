@@ -16,6 +16,9 @@ from app.world import observe_rover, observe_station
 from app.world import VEIN_GRADES, VEIN_WEIGHTS, VEIN_QUANTITY_RANGES, TARGET_QUANTITY
 from app.world import MAX_INVENTORY_ROVER
 from app.models import RoverContext, StationContext, StoneInfo
+from app.world import GEYSER_ACTIVE_TICKS, GEYSER_DORMANT_TICKS, BATTERY_COST_GEYSER_ROVER
+from app.world import _ensure_chunk, CHUNK_SIZE
+from app.world import _update_geysers, next_tick
 
 
 def _make_vein(pos, grade="high", quantity=200, analyzed=False):
@@ -1601,3 +1604,240 @@ class TestWorldClass(unittest.TestCase):
             world.state["agents"]["rover-mistral"].get("model"),
             "independent-model",
         )
+
+
+# ── Ice Mountains & Air Geysers ──
+
+
+class TestIceMountain(unittest.TestCase):
+    """Movement blocked by ice mountains."""
+
+    def setUp(self):
+        world.state["agents"]["rover-mistral"]["position"] = [5, 5]
+        world.state["agents"]["rover-mistral"]["battery"] = 1.0
+        # Place an ice mountain directly in the rover's path
+        world.state.setdefault("obstacles", []).clear()
+        world.state["obstacles"].append({
+            "type": "ice_mountain",
+            "position": [6, 5],
+        })
+
+    def test_rover_blocked_by_mountain(self):
+        result = move_agent("rover-mistral", 6, 5)
+        self.assertFalse(result["ok"])
+        self.assertIn("ice mountain", result["error"])
+        # Rover should not have moved
+        self.assertEqual(world.state["agents"]["rover-mistral"]["position"], [5, 5])
+
+    def test_rover_blocked_by_mountain_on_path(self):
+        """Mountain on intermediate tile blocks multi-tile movement."""
+        result = move_agent("rover-mistral", 8, 5)
+        self.assertFalse(result["ok"])
+        self.assertIn("ice mountain", result["error"])
+
+    def test_drone_blocked_by_mountain(self):
+        world.state["agents"]["drone-mistral"]["position"] = [5, 5]
+        world.state["agents"]["drone-mistral"]["battery"] = 1.0
+        result = move_agent("drone-mistral", 6, 5)
+        self.assertFalse(result["ok"])
+        self.assertIn("ice mountain", result["error"])
+
+    def test_movement_without_mountain_ok(self):
+        """Moving in a direction without mountains still works."""
+        result = move_agent("rover-mistral", 5, 6)  # north, no mountain
+        self.assertTrue(result["ok"])
+
+
+class TestAirGeyser(unittest.TestCase):
+    """Geyser effects on agents."""
+
+    def setUp(self):
+        world.state["agents"]["rover-mistral"]["position"] = [5, 5]
+        world.state["agents"]["rover-mistral"]["battery"] = 1.0
+        world.state["agents"]["rover-mistral"]["memory"] = []
+        world.state.setdefault("obstacles", []).clear()
+
+    def test_rover_passes_dormant_geyser(self):
+        world.state["obstacles"].append({
+            "type": "air_geyser",
+            "position": [6, 5],
+            "active": False,
+            "ticks_remaining": 5,
+        })
+        result = move_agent("rover-mistral", 6, 5)
+        self.assertTrue(result["ok"])
+
+    def test_rover_active_geyser_drains_battery(self):
+        world.state["obstacles"].append({
+            "type": "air_geyser",
+            "position": [6, 5],
+            "active": True,
+            "ticks_remaining": 2,
+        })
+        initial_battery = world.state["agents"]["rover-mistral"]["battery"]
+        result = move_agent("rover-mistral", 6, 5)
+        self.assertTrue(result["ok"])
+        final_battery = world.state["agents"]["rover-mistral"]["battery"]
+        self.assertAlmostEqual(initial_battery - final_battery, BATTERY_COST_GEYSER_ROVER, places=5)
+
+    def test_drone_deflected_by_active_geyser(self):
+        world.state["agents"]["drone-mistral"]["position"] = [5, 5]
+        world.state["agents"]["drone-mistral"]["battery"] = 1.0
+        world.state["obstacles"].append({
+            "type": "air_geyser",
+            "position": [6, 5],
+            "active": True,
+            "ticks_remaining": 2,
+        })
+        result = move_agent("drone-mistral", 6, 5)
+        self.assertFalse(result["ok"])
+        self.assertIn("drone deflected", result["error"])
+
+    def test_drone_passes_dormant_geyser(self):
+        world.state["agents"]["drone-mistral"]["position"] = [5, 5]
+        world.state["agents"]["drone-mistral"]["battery"] = 1.0
+        world.state["obstacles"].append({
+            "type": "air_geyser",
+            "position": [6, 5],
+            "active": False,
+            "ticks_remaining": 5,
+        })
+        result = move_agent("drone-mistral", 6, 5)
+        self.assertTrue(result["ok"])
+
+
+class TestGeyserCycle(unittest.TestCase):
+    """Geyser state machine transitions."""
+
+    def setUp(self):
+        world.state.setdefault("obstacles", []).clear()
+
+    def test_dormant_to_active_eruption(self):
+        """A dormant geyser with ticks_remaining=1 erupts on next update."""
+        world.state["obstacles"].append({
+            "type": "air_geyser",
+            "position": [10, 10],
+            "active": False,
+            "ticks_remaining": 1,
+        })
+        events = _update_geysers()
+        geyser = world.state["obstacles"][0]
+        self.assertTrue(geyser["active"])
+        self.assertEqual(geyser["ticks_remaining"], GEYSER_ACTIVE_TICKS)
+        self.assertEqual(len(events), 1)
+        self.assertEqual(events[0]["type"], "eruption")
+        self.assertEqual(events[0]["position"], [10, 10])
+
+    def test_active_to_dormant(self):
+        """An active geyser with ticks_remaining=1 goes dormant."""
+        world.state["obstacles"].append({
+            "type": "air_geyser",
+            "position": [10, 10],
+            "active": True,
+            "ticks_remaining": 1,
+        })
+        events = _update_geysers()
+        geyser = world.state["obstacles"][0]
+        self.assertFalse(geyser["active"])
+        self.assertEqual(geyser["ticks_remaining"], GEYSER_DORMANT_TICKS)
+        self.assertEqual(len(events), 0)  # no eruption event on deactivation
+
+    def test_no_event_while_counting_down(self):
+        """Geyser with ticks_remaining > 1 just decrements."""
+        world.state["obstacles"].append({
+            "type": "air_geyser",
+            "position": [10, 10],
+            "active": False,
+            "ticks_remaining": 5,
+        })
+        events = _update_geysers()
+        geyser = world.state["obstacles"][0]
+        self.assertFalse(geyser["active"])
+        self.assertEqual(geyser["ticks_remaining"], 4)
+        self.assertEqual(len(events), 0)
+
+
+class TestObstacleGeneration(unittest.TestCase):
+    """Obstacle generation in _ensure_chunk()."""
+
+    def setUp(self):
+        world.state.setdefault("obstacles", []).clear()
+        world.state["chunks"] = {}
+
+    def test_origin_chunk_has_no_obstacles(self):
+        _ensure_chunk(0, 0)
+        # Filter obstacles to origin chunk area (0..15, 0..15)
+        origin_obstacles = [
+            o for o in world.state.get("obstacles", [])
+            if 0 <= o["position"][0] < CHUNK_SIZE and 0 <= o["position"][1] < CHUNK_SIZE
+        ]
+        self.assertEqual(len(origin_obstacles), 0)
+
+    def test_nonorigin_chunk_can_have_obstacles(self):
+        """Non-origin chunks should produce some obstacles with enough tries."""
+        # Generate multiple non-origin chunks to ensure statistical likelihood
+        for cx in range(1, 5):
+            _ensure_chunk(cx, 0)
+        all_obs = world.state.get("obstacles", [])
+        # With MOUNTAIN_PROBABILITY=0.008 and GEYSER_PROBABILITY=0.012,
+        # over 4 chunks of 256 tiles each, we expect ~5 mountains + ~12 geysers
+        self.assertGreater(len(all_obs), 0)
+
+    def test_obstacle_types_generated(self):
+        """Both ice_mountain and air_geyser types should be generated."""
+        for cx in range(1, 10):
+            _ensure_chunk(cx, 0)
+        all_obs = world.state.get("obstacles", [])
+        types = {o["type"] for o in all_obs}
+        self.assertIn("ice_mountain", types)
+        self.assertIn("air_geyser", types)
+
+
+class TestObstacleSnapshot(unittest.TestCase):
+    """Obstacles in get_snapshot() filtered by fog-of-war."""
+
+    def setUp(self):
+        world.state.setdefault("obstacles", []).clear()
+
+    def test_snapshot_only_shows_revealed_obstacles(self):
+        # Place obstacle at revealed position
+        world.state["obstacles"].append({
+            "type": "ice_mountain",
+            "position": [0, 0],
+        })
+        # Place obstacle at unrevealed position (far away)
+        world.state["obstacles"].append({
+            "type": "air_geyser",
+            "position": [100, 100],
+            "active": False,
+            "ticks_remaining": 5,
+        })
+        snap = get_snapshot()
+        # Only the one at (0,0) should be visible (station/rover at origin reveals it)
+        visible_obs = snap.get("obstacles", [])
+        positions = [tuple(o["position"]) for o in visible_obs]
+        self.assertIn((0, 0), positions)
+        self.assertNotIn((100, 100), positions)
+
+
+class TestNextTickGeyserIntegration(unittest.TestCase):
+    """next_tick() returns geyser events."""
+
+    def setUp(self):
+        world.state.setdefault("obstacles", []).clear()
+
+    def test_next_tick_returns_tuple(self):
+        result = next_tick()
+        self.assertIsInstance(result, tuple)
+        self.assertEqual(len(result), 2)
+
+    def test_next_tick_eruption_event(self):
+        world.state["obstacles"].append({
+            "type": "air_geyser",
+            "position": [20, 20],
+            "active": False,
+            "ticks_remaining": 1,
+        })
+        tick, events = next_tick()
+        self.assertEqual(len(events), 1)
+        self.assertEqual(events[0]["type"], "eruption")

@@ -4,6 +4,27 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [Unreleased]
+
+### Added (Ice Mountains & Air Geysers)
+
+- **Ice Mountain obstacles**: Static, impassable terrain features generated during chunk creation with configurable probability (`MOUNTAIN_PROBABILITY=0.008`) and clustering up to `MOUNTAIN_CLUSTER_MAX=3` adjacent tiles. Mountains block both rover and drone movement.
+- **Air Geyser hazards**: Dynamic, intermittent eruption hazards with a state machine cycling between dormant (`GEYSER_DORMANT_TICKS=8`) and active (`GEYSER_ACTIVE_TICKS=3`) phases. Active geysers drain rover battery (`BATTERY_COST_GEYSER_ROVER=8 fuel units`) and deflect drones entirely.
+- **Geyser eruption events**: `_update_geysers()` emits eruption events on dormant→active transitions, broadcast via WebSocket to all clients.
+- **`ObstacleInfo` pydantic model**: New model (`type`, `position`, `active`) in `models.py`; `nearby_obstacles` field added to `RoverComputed` for LLM context.
+- **Agent hazard awareness**: Rover and drone system prompts include hazard avoidance rules; `_build_context()` populates `== Hazards ==` section with nearby obstacles; `_fallback_turn()` filters out mountain-blocked directions.
+- **Fog-of-war obstacle filtering**: `get_snapshot()` only exposes obstacles on revealed tiles; `observe_rover()` populates nearby obstacles within 2× reveal radius.
+- **Frontend obstacle rendering**: `WorldMap.vue` renders ice mountains as triangles and air geysers as circles (with active pulse animation); `OBSTACLE_COLORS` added to `constants.js`.
+- **Eruption toast notifications**: `App.vue` handles `eruption` events with warning-level toast messages.
+- **15 new test cases**: `TestIceMountain` (4), `TestAirGeyser` (4), `TestGeyserCycle` (3), `TestObstacleGeneration` (3), `TestObstacleSnapshot` (1), `TestNextTickGeyserIntegration` (2).
+- **pytest added as dev dependency**: Added `pytest>=9.0.2` to `pyproject.toml` dev group.
+
+### Changed (Ice Mountains & Air Geysers)
+
+- **`next_tick()` signature**: Now returns `(int, list)` tuple instead of `int` — geyser eruption events returned alongside tick number.
+- **`RoverLoop.tick()` only**: Only the rover loop calls `next_tick()` to prevent double-ticking; drone loop reads tick passively.
+- **Origin chunk protection**: Origin chunk `(0,0)` skips obstacle generation to keep station area clear.
+
 ## [0.2.0](https://github.com/mhack-agent-one/agent-one/compare/v0.1.0...v0.2.0) (2026-02-28)
 
 
