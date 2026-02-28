@@ -11,6 +11,7 @@ from .agent import RoverMistralLoop, DroneMistralLoop
 from .broadcast import broadcaster
 from .config import settings
 from .db import init_db, close_db
+from .rag import init_rag
 from .host import Host
 from .narrator import Narrator
 from .views import router as views_router
@@ -48,6 +49,8 @@ def _register_agents():
 @asynccontextmanager
 async def lifespan(app):
     init_db()
+    if settings.rag_enabled:
+        await init_rag()
     _register_agents()
     await host.start()
     yield
