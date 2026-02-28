@@ -290,6 +290,29 @@ function trailSegments(trail) {
   return segs
 }
 
+// Tooltip helpers
+function agentTooltip(id) {
+  if (!props.worldState) return id
+  const a = props.worldState.agents[id]
+  if (!a) return id
+  const pos = `(${a.position[0]}, ${a.position[1]})`
+  const bat = Math.round((a.battery ?? 1) * 100)
+  const type = a.type || 'rover'
+  return `${id} [${type}]\nPosition: ${pos}\nBattery: ${bat}%\nTiles visited: ${(a.visited || []).length}`
+}
+
+function stoneTooltip(s) {
+  const grade = s.grade || 'unknown'
+  const qty = s.quantity ?? '?'
+  const pos = `(${s.position[0]}, ${s.position[1]})`
+  return `${grade.toUpperCase()} vein\nPosition: ${pos}\nQuantity: ${qty}`
+}
+
+function panelTooltip(p) {
+  const pos = `(${p.position[0]}, ${p.position[1]})`
+  return `Solar Panel ${p.depleted ? '(depleted)' : '(active)'}\nPosition: ${pos}`
+}
+
 // Fog-of-war: compute screen positions for each mobile agent's clear zone
 const fogAgents = computed(() => {
   if (!props.worldState) return []
@@ -419,7 +442,9 @@ defineExpose({ camX, camY, panCamera })
           :opacity="veinHasGlow(s) ? 0.95 : 0.85"
           :transform="stoneRotateCenter(s)"
           :filter="veinHasGlow(s) ? 'url(#vein-glow)' : undefined"
-        />
+        >
+          <title>{{ stoneTooltip(s) }}</title>
+        </rect>
       </template>
 
       <!-- solar panels -->
@@ -428,6 +453,7 @@ defineExpose({ camX, camY, panCamera })
         :key="'panel-'+i"
       >
         <g v-if="isPanelVisible(p)">
+          <title>{{ panelTooltip(p) }}</title>
           <rect
             :x="panelScreenX(p)"
             :y="panelScreenY(p)"
@@ -497,6 +523,7 @@ defineExpose({ camX, camY, panCamera })
         style="cursor:pointer"
         @click="emit('select-agent', id)"
       >
+        <title>{{ agentTooltip(id) }}</title>
         <rect
           x="-7"
           y="-7"
@@ -567,6 +594,7 @@ defineExpose({ camX, camY, panCamera })
         style="cursor:pointer"
         @click="emit('select-agent', id)"
       >
+        <title>{{ agentTooltip(id) }}</title>
         <circle
           r="7"
           :fill="agentColor(id)"
@@ -626,6 +654,7 @@ defineExpose({ camX, camY, panCamera })
         style="cursor:pointer"
         @click="emit('select-agent', id)"
       >
+        <title>{{ agentTooltip(id) }}</title>
         <polygon
           points="0,-9 8,6 -8,6"
           :fill="agentColor(id)"
