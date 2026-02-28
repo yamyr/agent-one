@@ -919,7 +919,9 @@ class RoverLoop(BaseAgent):
                     station_state = self._world.get_agents().get("station")
                     if station_state:
                         mem = station_state.setdefault("memory", [])
-                        mem.append(f"Radio from {self.agent_id} at ({pos[0]},{pos[1]}): {result['message']}")
+                        mem.append(
+                            f"Radio from {self.agent_id} at ({pos[0]},{pos[1]}): {result['message']}"
+                        )
                     station_log = make_message(
                         source="station",
                         type="event",
@@ -1059,7 +1061,9 @@ class DroneLoop(BaseAgent):
                     station_state = self._world.get_agents().get("station")
                     if station_state:
                         mem = station_state.setdefault("memory", [])
-                        mem.append(f"Radio from {self.agent_id} at ({pos[0]},{pos[1]}): {result['message']}")
+                        mem.append(
+                            f"Radio from {self.agent_id} at ({pos[0]},{pos[1]}): {result['message']}"
+                        )
                     station_log = make_message(
                         source="station",
                         type="event",
