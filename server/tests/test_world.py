@@ -748,15 +748,18 @@ class TestUpdateTasks(unittest.TestCase):
         self._orig_inv = WORLD["agents"]["rover-mock"].get("inventory", [])[:]
         self._orig_stones = WORLD.get("stones", [])[:]
         self._orig_tasks = WORLD["agents"]["rover-mock"].get("tasks", [])[:]
+        self._orig_discovered = WORLD["agents"]["rover-mock"].get("discovered_stones", [])[:]
         WORLD["agents"]["rover-mock"]["position"] = [5, 5]
         WORLD["agents"]["rover-mock"]["inventory"] = []
         WORLD["agents"]["rover-mock"]["tasks"] = []
+        WORLD["agents"]["rover-mock"]["discovered_stones"] = []
 
     def tearDown(self):
         WORLD["agents"]["rover-mock"]["position"] = self._orig_pos
         WORLD["agents"]["rover-mock"]["inventory"] = self._orig_inv
         WORLD["stones"] = self._orig_stones
         WORLD["agents"]["rover-mock"]["tasks"] = self._orig_tasks
+        WORLD["agents"]["rover-mock"]["discovered_stones"] = self._orig_discovered
 
     def test_explore_when_no_stones(self):
         WORLD["stones"] = []
@@ -779,17 +782,27 @@ class TestUpdateTasks(unittest.TestCase):
         self.assertEqual(len(tasks), 1)
         self.assertIn("Pick up", tasks[0])
 
-    def test_navigate_to_known_stone(self):
+    def test_navigate_to_discovered_stone(self):
         WORLD["stones"] = [{"position": [8, 5], "type": "core"}]
-        # Make sure the stone tile is revealed
         agent = WORLD["agents"]["rover-mock"]
-        if [8, 5] not in agent.get("revealed", []):
-            agent.setdefault("revealed", []).append([8, 5])
+        agent["discovered_stones"] = [[8, 5]]
         update_tasks("rover-mock")
         tasks = WORLD["agents"]["rover-mock"]["tasks"]
         self.assertEqual(len(tasks), 1)
         self.assertIn("Navigate", tasks[0])
         self.assertIn("east", tasks[0])
+
+    def test_no_navigate_to_undiscovered_stone(self):
+        WORLD["stones"] = [{"position": [8, 5], "type": "core"}]
+        agent = WORLD["agents"]["rover-mock"]
+        agent["discovered_stones"] = []
+        # Stone is on a revealed tile but not discovered
+        if [8, 5] not in agent.get("revealed", []):
+            agent.setdefault("revealed", []).append([8, 5])
+        update_tasks("rover-mock")
+        tasks = WORLD["agents"]["rover-mock"]["tasks"]
+        self.assertEqual(len(tasks), 1)
+        self.assertIn("Explore", tasks[0])
 
     def test_return_to_station_when_has_target(self):
         WORLD["agents"]["rover-mock"]["inventory"] = [{"type": "core"}]

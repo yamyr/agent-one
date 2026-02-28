@@ -80,11 +80,23 @@ def _init_revealed(cx, cy):
 
 
 def _expand_revealed(agent, cx, cy):
-    """Add newly visible cells around (cx, cy) to the agent's revealed list."""
+    """Add newly visible cells around (cx, cy) to the agent's revealed list.
+
+    Also discovers any stones on newly revealed tiles.
+    """
     current = {tuple(c) for c in agent.get("revealed", [])}
+    new_cells = set()
     for cell in _cells_in_radius(cx, cy, REVEAL_RADIUS):
         if cell not in current:
             agent.setdefault("revealed", []).append(list(cell))
+            new_cells.add(cell)
+    # Discover stones on newly revealed tiles
+    if new_cells:
+        known = {tuple(s) for s in agent.get("discovered_stones", [])}
+        for stone in WORLD.get("stones", []):
+            sp = tuple(stone["position"])
+            if sp in new_cells and sp not in known:
+                agent.setdefault("discovered_stones", []).append(list(stone["position"]))
 
 
 ROVER_TOOL_DEFS = [
@@ -106,6 +118,7 @@ def _make_rover(start_x, start_y):
         "inventory": [],
         "memory": [],
         "tasks": [],
+        "discovered_stones": [],
         "type": "rover",
         "tools": list(ROVER_TOOL_DEFS),
     }
@@ -413,11 +426,12 @@ def update_tasks(agent_id):
         agent["tasks"] = tasks
         return
 
-    # Known stones on revealed tiles → navigate to nearest target type first
+    # Discovered stones → navigate to nearest target type first
+    discovered_set = {tuple(s) for s in agent.get("discovered_stones", [])}
     known_stones = []
     for stone in WORLD.get("stones", []):
         sp = tuple(stone["position"])
-        if sp in revealed_set:
+        if sp in discovered_set:
             dist = abs(sp[0] - x) + abs(sp[1] - y)
             known_stones.append((dist, stone))
     known_stones.sort(key=lambda t: t[0])
