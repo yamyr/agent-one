@@ -426,7 +426,6 @@ def update_tasks(agent_id):
     mission = WORLD["mission"]
     target_type = mission["target_type"]
     inventory = agent.get("inventory", [])
-    revealed_set = {tuple(c) for c in agent.get("revealed", [])}
     tasks = []
 
     # Already collected target stone → return to station
@@ -451,11 +450,12 @@ def update_tasks(agent_id):
         agent["tasks"] = tasks
         return
 
-    # Known stones on revealed tiles → navigate to nearest target type first
+    # Discovered stones → navigate to nearest target type first
+    discovered_set = {tuple(s) for s in agent.get("discovered_stones", [])}
     known_stones = []
     for stone in WORLD.get("stones", []):
         sp = tuple(stone["position"])
-        if sp in revealed_set:
+        if sp in discovered_set:
             dist = abs(sp[0] - x) + abs(sp[1] - y)
             known_stones.append((dist, stone))
     known_stones.sort(key=lambda t: t[0])
