@@ -6,6 +6,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Changed (Battery & Fuel Rebalance)
+
+- **Fuel capacity system**: Rovers carry 350 fuel units, Drone carries 250 fuel units. Battery remains a 0.0–1.0 float (fraction of capacity)
+- **1 fuel unit per tile**: All agents now cost 1 fuel unit per tile moved (~0.29% battery for rovers, ~0.4% for drone)
+- **Action costs (in fuel units)**: move=1/tile, dig=6, analyze=3, pickup=2, scan=2. All expressed as fuel units divided by capacity
+- **Return-to-base at 67%**: Agents must return to station when battery drops to 67% or below (dual check: threshold + distance safety net with 6% margin)
+- **Constants centralized**: All battery costs use named constants from `world.py` — no more hardcoded magic numbers in `agent.py`
+- **Updated LLM prompts**: Rover and drone system prompts now describe costs in fuel units with percentage equivalents
+- **Updated tool descriptions**: All tool descriptions in `agent.py`, `world.py`, and `station.py` use fuel-unit-based costs
+- **Documentation updated**: `WORLD.md` reflects new fuel capacity system and return-to-base rules
+
 ### Changed (Runtime Upgrade)
 
 - **Python 3.12 → 3.14**: Updated `server/pyproject.toml` (`requires-python`), CI workflow (`python-version`), Dockerfile (`python:3.14-slim`), regenerated `uv.lock`

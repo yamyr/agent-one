@@ -27,13 +27,20 @@ DIRECTIONS = {
     "west": (-1, 0),
 }
 
-BATTERY_COST_MOVE = 0.02
-BATTERY_COST_MOVE_DRONE = 0.01
-BATTERY_COST_DIG = 0.06
-BATTERY_COST_PICKUP = 0.02
-BATTERY_COST_ANALYZE = 0.03
-BATTERY_COST_ANALYZE_GROUND = 0.03
-BATTERY_COST_SCAN = 0.02
+# --- Fuel & Battery ---
+# Battery is stored as 0.0–1.0 (fraction of max capacity).
+# Fuel capacity defines how many "units" of fuel an agent carries.
+# Cost per tile = 1 unit = 1/capacity as a fraction.
+FUEL_CAPACITY_ROVER = 350  # rover carries 350 fuel units
+FUEL_CAPACITY_DRONE = 250  # drone carries 250 fuel units
+
+BATTERY_COST_MOVE = 1 / FUEL_CAPACITY_ROVER  # ~0.00286 per tile
+BATTERY_COST_MOVE_DRONE = 1 / FUEL_CAPACITY_DRONE  # 0.004 per tile
+BATTERY_COST_DIG = 6 / FUEL_CAPACITY_ROVER  # 6 fuel units
+BATTERY_COST_PICKUP = 2 / FUEL_CAPACITY_ROVER  # 2 fuel units
+BATTERY_COST_ANALYZE = 3 / FUEL_CAPACITY_ROVER  # 3 fuel units
+BATTERY_COST_ANALYZE_GROUND = 3 / FUEL_CAPACITY_ROVER  # 3 fuel units
+BATTERY_COST_SCAN = 2 / FUEL_CAPACITY_DRONE  # 2 fuel units
 CHARGE_RATE = 0.20
 MAX_MOVE_DISTANCE = 3
 MAX_MOVE_DISTANCE_DRONE = 6
@@ -46,7 +53,13 @@ REVEAL_RADIUS = ROVER_REVEAL_RADIUS  # legacy alias
 TARGET_STONE_TYPE = "core"
 TARGET_STONE_COUNT = 1
 MEMORY_MAX = 8
-BATTERY_SAFETY_MARGIN = 0.06  # 6% safety buffer above minimum needed
+
+# --- Return-to-base policy ---
+# Agents return when battery <= RETURN_TO_BASE_THRESHOLD (67% capacity).
+# As an additional safety net, they also return if the remaining battery
+# is barely enough to cover the distance back + a small safety margin.
+RETURN_TO_BASE_THRESHOLD = 0.67  # return when battery drops to 67%
+BATTERY_SAFETY_MARGIN = 0.06  # extra margin above distance-based cost
 
 
 def _battery_to_reach_station(agent):
@@ -62,13 +75,18 @@ def _battery_to_reach_station(agent):
 def must_return_to_base(agent):
     """Check if agent must immediately return to base to avoid stranding.
 
-    Returns True if battery is at or below the cost to reach station + safety margin.
+    Returns True if:
+      1. Battery is at or below RETURN_TO_BASE_THRESHOLD (67%), OR
+      2. Battery is at or below the cost to reach station + safety margin.
     """
     if agent.get("type") == "station":
         return False
     station = WORLD.get("agents", {}).get("station")
     if station and agent["position"] == station["position"]:
         return False  # already at station
+    # Dual check: flat threshold OR distance-based safety net
+    if agent["battery"] <= RETURN_TO_BASE_THRESHOLD:
+        return True
     cost = _battery_to_reach_station(agent)
     return agent["battery"] <= cost + BATTERY_SAFETY_MARGIN
 
@@ -252,20 +270,23 @@ def _update_bounds(x, y):
 _ROVER_TOOL_DEFS = [
     {
         "name": "move",
-        "description": "Move 1-3 tiles in a cardinal direction (north/south/east/west). Costs 2% battery per tile. Ground is auto-scanned after each move.",
+        "description": "Move 1-3 tiles in a cardinal direction (north/south/east/west). Costs 1 fuel unit per tile (~0.29% battery). Ground is auto-scanned after each move.",
     },
     {
         "name": "analyze",
-        "description": "Analyze an unknown stone at current tile to reveal its true type. Costs 3% battery.",
+        "description": "Analyze an unknown stone at current tile to reveal its true type. Costs 3 fuel units (~0.86% battery).",
     },
     {
         "name": "dig",
-        "description": "Dig at current tile to extract a stone (costs 6% battery). Stone must be analyzed first.",
+        "description": "Dig at current tile to extract a stone. Costs 6 fuel units (~1.71% battery). Stone must be analyzed first.",
     },
-    {"name": "pickup", "description": "Pick up an extracted stone at current tile into inventory."},
+    {
+        "name": "pickup",
+        "description": "Pick up an extracted stone at current tile into inventory. Costs 2 fuel units (~0.57% battery).",
+    },
     {
         "name": "analyze_ground",
-        "description": "Analyze ground concentration at current tile to detect nearby core deposits. Costs 3% battery. Returns a 0.0-1.0 reading.",
+        "description": "Analyze ground concentration at current tile to detect nearby core deposits. Costs 3 fuel units (~0.86% battery). Returns a 0.0-1.0 reading.",
     },
 ]
 
@@ -273,11 +294,11 @@ _ROVER_TOOL_DEFS = [
 _DRONE_TOOL_DEFS = [
     {
         "name": "move",
-        "description": "Fly 1-6 tiles in a cardinal direction (north/south/east/west). Costs 1% battery per tile.",
+        "description": "Fly 1-6 tiles in a cardinal direction (north/south/east/west). Costs 1 fuel unit per tile (~0.4% battery).",
     },
     {
         "name": "scan",
-        "description": "Scan the area below and around the drone to sample concentration readings. Returns probability values for surrounding tiles indicating likelihood of precious stone deposits. Costs 2% battery.",
+        "description": "Scan the area below and around the drone to sample concentration readings. Returns probability values for surrounding tiles indicating likelihood of precious stone deposits. Costs 2 fuel units (~0.8% battery).",
     },
 ]
 

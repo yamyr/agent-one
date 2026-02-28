@@ -14,6 +14,16 @@ from .world import (
     DIRECTIONS,
     MAX_MOVE_DISTANCE,
     MAX_MOVE_DISTANCE_DRONE,
+    FUEL_CAPACITY_ROVER,
+    FUEL_CAPACITY_DRONE,
+    BATTERY_COST_MOVE,
+    BATTERY_COST_MOVE_DRONE,
+    BATTERY_COST_DIG,
+    BATTERY_COST_PICKUP,
+    BATTERY_COST_ANALYZE,
+    BATTERY_COST_ANALYZE_GROUND,
+    BATTERY_COST_SCAN,
+    RETURN_TO_BASE_THRESHOLD,
     check_ground,
     _direction_hint,
     _find_stone_at,
@@ -25,7 +35,7 @@ MOVE_TOOL = {
     "type": "function",
     "function": {
         "name": "move",
-        "description": f"Move the rover 1-{MAX_MOVE_DISTANCE} tiles in a cardinal direction. Costs 2% battery per tile.",
+        "description": f"Move the rover 1-{MAX_MOVE_DISTANCE} tiles in a cardinal direction. Costs 1 fuel unit per tile (~{BATTERY_COST_MOVE:.2%} battery).",
         "parameters": {
             "type": "object",
             "properties": {
@@ -50,7 +60,7 @@ DIG_TOOL = {
     "type": "function",
     "function": {
         "name": "dig",
-        "description": "Dig at current tile to extract a buried stone. Costs 6% battery. The stone must be present and not yet extracted.",
+        "description": f"Dig at current tile to extract a buried stone. Costs 6 fuel units (~{BATTERY_COST_DIG:.2%} battery). The stone must be present and not yet extracted.",
         "parameters": {"type": "object", "properties": {}},
     },
 }
@@ -68,7 +78,7 @@ ANALYZE_TOOL = {
     "type": "function",
     "function": {
         "name": "analyze",
-        "description": "Analyze an unknown stone at current tile to reveal its true type (core or basalt). Costs 3% battery. Must be done before dig/pickup.",
+        "description": f"Analyze an unknown stone at current tile to reveal its true type (core or basalt). Costs 3 fuel units (~{BATTERY_COST_ANALYZE:.2%} battery). Must be done before dig/pickup.",
         "parameters": {"type": "object", "properties": {}},
     },
 }
@@ -77,7 +87,7 @@ ANALYZE_GROUND_TOOL = {
     "type": "function",
     "function": {
         "name": "analyze_ground",
-        "description": "Analyze ground concentration at current tile to detect nearby core deposits. Returns a 0.0-1.0 reading (higher = closer to cores). Costs 3% battery.",
+        "description": f"Analyze ground concentration at current tile to detect nearby core deposits. Returns a 0.0-1.0 reading (higher = closer to cores). Costs 3 fuel units (~{BATTERY_COST_ANALYZE_GROUND:.2%} battery).",
         "parameters": {"type": "object", "properties": {}},
     },
 }
@@ -114,7 +124,7 @@ class RoverAgent:
         station = WORLD["agents"].get("station")
         station_pos = station["position"] if station else [0, 0]
         dist_to_station = abs(x - station_pos[0]) + abs(y - station_pos[1])
-        moves_on_battery = int(battery / 0.02)
+        moves_on_battery = int(battery / BATTERY_COST_MOVE)
 
         # Unvisited neighbors
         visited_set = {tuple(p) for p in agent.get("visited", [])}
@@ -162,11 +172,11 @@ class RoverAgent:
             "- Use analyze_ground to read concentration (0.0-1.0). Higher = closer to core deposits.\n"
             "\n"
             "RULES:\n"
-            "- Battery is your lifeline. Move costs 2%/tile, dig 6%, analyze 3%, pickup 2%.\n"
+            f"- Battery is your lifeline. Move costs 1 fuel unit/tile (~{BATTERY_COST_MOVE:.2%}), dig 6 units (~{BATTERY_COST_DIG:.2%}), analyze 3 units (~{BATTERY_COST_ANALYZE:.2%}), pickup 2 units (~{BATTERY_COST_PICKUP:.2%}).\n"
             "- Station is your base at ({sx},{sy}). Return there when battery is low — "
             "the station will recharge you automatically.\n"
-            "- ALWAYS keep enough battery to return to station. If distance_to_station * 2% "
-            "approaches your battery, head back immediately.\n"
+            "- ALWAYS keep enough battery to return to station. When your battery drops to 67% or below, \n"
+            "head back to station IMMEDIATELY — this is the return-to-base threshold.\n"
             "- If you find an unknown stone: analyze → dig → pickup. All on the same tile.\n"
             "- Once you have collected all target stones, RETURN TO STATION to complete the mission.\n"
             "- Prefer unvisited tiles when exploring. Don't backtrack aimlessly.\n"
@@ -196,9 +206,9 @@ class RoverAgent:
         parts.append(
             f"\n== State ==\n"
             f"Position: ({x}, {y})\n"
-            f"Battery: {battery:.0%} ({moves_on_battery} moves remaining)\n"
+            f"Battery: {battery:.0%} ({moves_on_battery} moves remaining, {FUEL_CAPACITY_ROVER} fuel capacity)\n"
             f"Distance to station: {dist_to_station} tiles\n"
-            f"Safety margin: {'OK' if moves_on_battery > dist_to_station + 3 else 'LOW — consider returning'}\n"
+            f"Safety margin: {'OK' if battery > RETURN_TO_BASE_THRESHOLD else 'LOW — return to station immediately'}\n"
             f"Inventory: {len(inventory)} stones"
             + (f" ({', '.join(s['type'] for s in inventory)})" if inventory else "")
         )
@@ -414,7 +424,7 @@ DRONE_MOVE_TOOL = {
     "type": "function",
     "function": {
         "name": "move",
-        "description": f"Fly 1-{MAX_MOVE_DISTANCE_DRONE} tiles in a cardinal direction. Costs 1% battery per tile.",
+        "description": f"Fly 1-{MAX_MOVE_DISTANCE_DRONE} tiles in a cardinal direction. Costs 1 fuel unit per tile (~{BATTERY_COST_MOVE_DRONE:.2%} battery).",
         "parameters": {
             "type": "object",
             "properties": {
@@ -441,7 +451,7 @@ SCAN_TOOL = {
         "name": "scan",
         "description": "Scan the area below to sample concentration readings from sensors. "
         "Returns probability values for surrounding tiles indicating likelihood of precious "
-        "stone deposits. Higher values mean closer to core deposits. Costs 2% battery.",
+        f"stone deposits. Higher values mean closer to core deposits. Costs 2 fuel units (~{BATTERY_COST_SCAN:.2%} battery).",
         "parameters": {"type": "object", "properties": {}},
     },
 }
@@ -476,7 +486,7 @@ class DroneAgent:
         station = WORLD["agents"].get("station")
         station_pos = station["position"] if station else [0, 0]
         dist_to_station = abs(x - station_pos[0]) + abs(y - station_pos[1])
-        moves_on_battery = int(battery / 0.01)
+        moves_on_battery = int(battery / BATTERY_COST_MOVE_DRONE)
 
         visited_set = {tuple(p) for p in agent.get("visited", [])}
         unvisited_dirs = []
@@ -509,7 +519,7 @@ class DroneAgent:
             "- Prioritize scanning unexplored areas far from previous scan positions.\n"
             "\n"
             "RULES:\n"
-            f"- Battery: move costs 1%/tile, scan costs 2%. You can fly up to {MAX_MOVE_DISTANCE_DRONE} tiles per move.\n"
+            f"- Battery: move costs 1 fuel unit/tile (~{BATTERY_COST_MOVE_DRONE:.2%}), scan costs 2 fuel units (~{BATTERY_COST_SCAN:.2%}). You can fly up to {MAX_MOVE_DISTANCE_DRONE} tiles per move.\n"
             "- Station is at ({sx},{sy}). Return when battery is low for recharge.\n"
             "- ALWAYS keep enough battery to return to station.\n"
             "- Follow your current tasks list.".format(sx=station_pos[0], sy=station_pos[1])
@@ -534,9 +544,9 @@ class DroneAgent:
         parts.append(
             f"\n== State ==\n"
             f"Position: ({x}, {y})\n"
-            f"Battery: {battery:.0%} ({moves_on_battery} moves remaining)\n"
+            f"Battery: {battery:.0%} ({moves_on_battery} moves remaining, {FUEL_CAPACITY_DRONE} fuel capacity)\n"
             f"Distance to station: {dist_to_station} tiles\n"
-            f"Safety margin: {'OK' if moves_on_battery > dist_to_station + 5 else 'LOW — return to station'}\n"
+            f"Safety margin: {'OK' if battery > RETURN_TO_BASE_THRESHOLD else 'LOW — return to station'}\n"
             f"Tiles visited: {len(agent.get('visited', []))}\n"
             f"Scans performed: {len(WORLD.get('drone_scans', []))}"
         )
