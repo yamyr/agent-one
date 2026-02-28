@@ -31,5 +31,8 @@ class Settings(BaseSettings):
     # World generation seed (empty = random)
     world_seed: str = ""
 
+    # Active agents (comma-separated: "rover-mock,rover-mistral")
+    active_agents: str = "rover-mistral"
+
 
 settings = Settings()

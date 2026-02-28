@@ -6,11 +6,12 @@ export const MAP_H = GRID_SIZE * TILE_SIZE
 export const STONE_COLORS = {
   'core': '#b8962a',
   'basalt': '#666666',
+  'unknown': '#4a4a6a',
 }
 
 export const AGENT_COLORS = {
   'station': '#44cc88',
-  'randy-rover': '#6688cc',
+  'rover-mock': '#6688cc',
   'rover-mistral': '#e06030',
 }
 

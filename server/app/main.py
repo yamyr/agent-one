@@ -153,11 +153,8 @@ async def agent_loop(agent, interval):
         await asyncio.sleep(interval)
 
 
-async def _start_simulation():
-    """Start station mission definition and agent loops."""
-    global simulation_paused
-    simulation_paused = False
-
+async def _station_startup():
+    """Run station mission definition in background."""
     try:
         station_events = await asyncio.to_thread(station.define_mission)
         for event in station_events:
@@ -173,13 +170,31 @@ async def _start_simulation():
     except Exception:
         logger.exception("Station startup failed")
 
-    _agent_tasks.clear()
-    _agent_tasks.append(asyncio.create_task(
-        agent_loop(MockRoverAgent(), interval=settings.agent_turn_interval_seconds)
-    ))
-    _agent_tasks.append(asyncio.create_task(
-        agent_loop(RoverAgent(), interval=settings.llm_turn_interval_seconds)
-    ))
+
+async def _start_simulation():
+    """Start station mission definition and agent loops."""
+    global simulation_paused
+    simulation_paused = False
+
+    _agent_tasks.append(asyncio.create_task(_station_startup()))
+
+    active = [a.strip() for a in settings.active_agents.split(",") if a.strip()]
+    agent_map = {
+        "rover-mock": lambda: MockRoverAgent(),
+        "rover-mistral": lambda: RoverAgent(),
+    }
+    interval_map = {
+        "rover-mock": settings.agent_turn_interval_seconds,
+        "rover-mistral": settings.llm_turn_interval_seconds,
+    }
+    for name in active:
+        factory = agent_map.get(name)
+        if factory:
+            interval = interval_map.get(name, settings.agent_turn_interval_seconds)
+            _agent_tasks.append(asyncio.create_task(agent_loop(factory(), interval=interval)))
+            logger.info("Started agent loop: %s (interval=%.1fs)", name, interval)
+        else:
+            logger.warning("Unknown agent in ACTIVE_AGENTS: %s", name)
 
 
 def _stop_simulation():
@@ -200,7 +215,7 @@ async def lifespan(app):
 
 app = FastAPI(
     title="Mars Mission API",
-    version="0.1.0",  # x-release-please-version
+    version="0.1.0",
     lifespan=lifespan,
 )
 

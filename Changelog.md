@@ -14,18 +14,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Station agent can charge rovers (new `charge_rover` tool) and auto-charges them on arrival
 - Mock rover now digs/picks up stones and navigates back to station when carrying target stone
 - Updated rover system prompt with auto-charge and return-to-base instructions
+- **Coordinate system flipped to math convention**: north = +Y, south = -Y; (0,0) renders at bottom-left of the map
+- **Stone types are now hidden**: all stones spawn as `"unknown"` with a hidden `_true_type`; rovers must `analyze` before digging/picking up
+- Stone generation uses **preferential attachment clustering** — core stones cluster together instead of uniform random placement
 
 ### Added
 
+- **`analyze` action**: reveals a stone's true type (core/basalt), costs 3% battery; dig/pickup now require prior analysis
+- **`analyze_ground` action**: reads ground concentration at current tile (0.0–1.0 indicating proximity to core deposits), costs 3% battery; readings stored in agent memory
+- **Concentration map**: computed from core positions using Gaussian falloff (`exp(-d²/σ²)`, σ=4.0), serialized in snapshots for UI access
+- Dynamic **task priority system** in `update_tasks()`: return-to-station > analyze > dig > pickup > navigate-to-stone > explore
+- `_direction_hint()` helper for human-readable navigation hints in agent context
 - GitHub Actions CI pipeline (`.github/workflows/ci.yml`) with 5 jobs: change detection, server lint (ruff), server test (rut + SurrealDB), UI lint + build (eslint + vite), and Docker build verification
 - ESLint 9 flat config for Vue 3 frontend (`ui/eslint.config.js`)
-- RoverAgent default model upgraded from `mistral-small-latest` to `magistral-medium-latest` for improved reasoning
-- GitHub Actions release workflow (`.github/workflows/release.yml`) using Release Please for automated versioning, release PRs, and GitHub Releases on `main`
-- Release Please config (`release-please-config.json`, `.release-please-manifest.json`, `version.txt`) to keep version updates consistent across API and UI metadata
-
-### Changed
-
-- Renamed mock rover agent ID from `rover-mock` to `randy-rover` across all files (world state, agent code, tests, station prompts, UI constants)
+- `unknown` stone color (`#4a4a6a`) in UI constants and AgentDetailModal CSS
+- Snapshot filtering: `_true_type` stripped from broadcast to prevent UI leaking hidden info
 
 ### Fixed
 

@@ -6,10 +6,10 @@ from app.agent import MockRoverAgent
 
 class TestMockRoverAgent(unittest.TestCase):
     def setUp(self):
-        WORLD["agents"]["randy-rover"]["position"] = [10, 10]
-        WORLD["agents"]["randy-rover"]["battery"] = 1.0
-        WORLD["agents"]["randy-rover"]["mission"] = {"objective": "Explore the terrain", "plan": []}
-        WORLD["agents"]["randy-rover"]["visited"] = [[10, 10]]
+        WORLD["agents"]["rover-mock"]["position"] = [10, 10]
+        WORLD["agents"]["rover-mock"]["battery"] = 1.0
+        WORLD["agents"]["rover-mock"]["mission"] = {"objective": "Explore the terrain", "plan": []}
+        WORLD["agents"]["rover-mock"]["visited"] = [[10, 10]]
 
     def test_run_turn_returns_dict(self):
         agent = MockRoverAgent()
@@ -35,26 +35,26 @@ class TestMockRoverAgent(unittest.TestCase):
 
     def test_run_turn_does_not_mutate_world(self):
         agent = MockRoverAgent()
-        pos_before = list(WORLD["agents"]["randy-rover"]["position"])
+        pos_before = list(WORLD["agents"]["rover-mock"]["position"])
         agent.run_turn()
-        self.assertEqual(WORLD["agents"]["randy-rover"]["position"], pos_before)
+        self.assertEqual(WORLD["agents"]["rover-mock"]["position"], pos_before)
 
     def test_run_turn_at_corner(self):
-        WORLD["agents"]["randy-rover"]["position"] = [0, 0]
+        WORLD["agents"]["rover-mock"]["position"] = [0, 0]
         agent = MockRoverAgent()
         turn = agent.run_turn()
-        self.assertIn(turn["action"]["params"]["direction"], ["south", "east"])
+        self.assertIn(turn["action"]["params"]["direction"], ["north", "east"])
 
     def test_run_turn_at_bottom_right(self):
-        WORLD["agents"]["randy-rover"]["position"] = [GRID_W - 1, GRID_H - 1]
-        WORLD["agents"]["randy-rover"]["visited"] = [[GRID_W - 1, GRID_H - 1]]
+        WORLD["agents"]["rover-mock"]["position"] = [GRID_W - 1, GRID_H - 1]
+        WORLD["agents"]["rover-mock"]["visited"] = [[GRID_W - 1, GRID_H - 1]]
         agent = MockRoverAgent()
         turn = agent.run_turn()
-        self.assertIn(turn["action"]["params"]["direction"], ["north", "west"])
+        self.assertIn(turn["action"]["params"]["direction"], ["south", "west"])
 
     def test_mock_prefers_unvisited(self):
-        WORLD["agents"]["randy-rover"]["position"] = [10, 10]
-        WORLD["agents"]["randy-rover"]["visited"] = [
+        WORLD["agents"]["rover-mock"]["position"] = [10, 10]
+        WORLD["agents"]["rover-mock"]["visited"] = [
             [10, 10],
             [11, 10],
             [10, 9],
@@ -62,4 +62,4 @@ class TestMockRoverAgent(unittest.TestCase):
         ]
         agent = MockRoverAgent()
         turn = agent.run_turn()
-        self.assertEqual(turn["action"]["params"]["direction"], "south")
+        self.assertEqual(turn["action"]["params"]["direction"], "north")

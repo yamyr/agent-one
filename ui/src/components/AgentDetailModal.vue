@@ -202,6 +202,11 @@ function batteryPct() {
   border-color: #333;
 }
 
+.inv-stone.unknown {
+  color: #4a4a6a;
+  border-color: #2a2a3a;
+}
+
 .modal-context {
   font-size: 0.7rem;
   color: #8a9a8a;

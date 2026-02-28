@@ -16,6 +16,14 @@ function onWsConnect() {
   fetch('/api/simulation/reset', { method: 'POST' })
 }
 
+async function resetSimulation() {
+  const res = await fetch('/api/simulation/reset', { method: 'POST' })
+  if (res.ok) {
+    paused.value = false
+    events.value = []
+  }
+}
+
 const { events, connected, worldState, agentIds, agentEvents } = useWebSocket({ onConnect: onWsConnect })
 
 async function togglePause() {
@@ -41,7 +49,7 @@ function agentData(id) {
 
 <template>
   <div class="app">
-    <AppHeader :connected="connected" :paused="paused" @toggle-pause="togglePause" />
+    <AppHeader :connected="connected" :paused="paused" @toggle-pause="togglePause" @reset="resetSimulation" />
 
     <MissionBar :mission="worldState ? worldState.mission : null" />
 
