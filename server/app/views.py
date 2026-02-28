@@ -15,6 +15,7 @@ router = APIRouter()
 
 I18N_TABLE = "i18n_entry"
 
+
 def _entry_id(key: str) -> str:
     return re.sub(r"[^a-zA-Z0-9_-]", "_", key)
 
@@ -24,12 +25,18 @@ def _safe_db_seed(db: Surreal) -> None:
         try:
             db.query(
                 "UPSERT type::thing($table, $key) CONTENT $translations;",
-                {"table": I18N_TABLE, "key": _entry_id(key), "translations": {"key": key, "translations": translations}},
+                {
+                    "table": I18N_TABLE,
+                    "key": _entry_id(key),
+                    "translations": {"key": key, "translations": translations},
+                },
             )
         except Exception:
             # Fall back to create if UPSERT not available
             try:
-                db.create(f"{I18N_TABLE}:{_entry_id(key)}", {"key": key, "translations": translations})
+                db.create(
+                    f"{I18N_TABLE}:{_entry_id(key)}", {"key": key, "translations": translations}
+                )
             except Exception:
                 continue
 
