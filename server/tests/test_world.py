@@ -3,7 +3,7 @@ import unittest
 from app.world import WORLD, move_agent, execute_action, get_snapshot, check_ground
 from app.world import check_mission_status
 from app.world import BATTERY_COST_MOVE, BATTERY_COST_DIG, BATTERY_COST_PICKUP
-from app.world import CHARGE_RATE, REVEAL_RADIUS, GRID_W, GRID_H, AGENT_STARTS, MAX_MOVE_DISTANCE
+from app.world import CHARGE_RATE, REVEAL_RADIUS, GRID_W, GRID_H, AGENT_STARTS
 from app.world import assign_mission, _cells_in_radius, record_memory, MEMORY_MAX
 from app.world import update_tasks, _direction_hint
 
@@ -146,7 +146,9 @@ class TestExecuteAction(unittest.TestCase):
         result = execute_action("rover-mock", "move", {"direction": "east", "distance": 3})
         self.assertTrue(result["ok"])
         self.assertEqual(WORLD["agents"]["rover-mock"]["position"], [13, 10])
-        self.assertAlmostEqual(WORLD["agents"]["rover-mock"]["battery"], 1.0 - BATTERY_COST_MOVE * 3)
+        self.assertAlmostEqual(
+            WORLD["agents"]["rover-mock"]["battery"], 1.0 - BATTERY_COST_MOVE * 3
+        )
 
     def test_execute_move_multi_visits_intermediate(self):
         WORLD["agents"]["rover-mock"]["position"] = [10, 10]
@@ -165,7 +167,6 @@ class TestExecuteAction(unittest.TestCase):
 
 
 class TestStones(unittest.TestCase):
-
     def test_stones_generated(self):
         stones = WORLD["stones"]
         self.assertGreaterEqual(len(stones), 5)
@@ -300,7 +301,6 @@ class TestStationInWorld(unittest.TestCase):
 
 
 class TestDig(unittest.TestCase):
-
     def setUp(self):
         WORLD["agents"]["rover-mock"]["position"] = [5, 5]
         WORLD["agents"]["rover-mock"]["battery"] = 1.0
@@ -349,7 +349,6 @@ class TestDig(unittest.TestCase):
 
 
 class TestPickup(unittest.TestCase):
-
     def setUp(self):
         WORLD["agents"]["rover-mock"]["position"] = [5, 5]
         WORLD["agents"]["rover-mock"]["battery"] = 1.0
@@ -410,7 +409,6 @@ class TestPickup(unittest.TestCase):
 
 
 class TestCharge(unittest.TestCase):
-
     def setUp(self):
         WORLD["agents"]["rover-mock"]["position"] = [0, 0]
         WORLD["agents"]["rover-mock"]["battery"] = 0.5
@@ -454,13 +452,14 @@ class TestCharge(unittest.TestCase):
 
 
 class TestFogOfWar(unittest.TestCase):
-
     def setUp(self):
         WORLD["agents"]["rover-mock"]["position"] = [10, 10]
         WORLD["agents"]["rover-mock"]["battery"] = 1.0
         WORLD["agents"]["rover-mock"]["inventory"] = []
         WORLD["agents"]["rover-mock"]["visited"] = [[10, 10]]
-        WORLD["agents"]["rover-mock"]["revealed"] = [[x, y] for x, y in sorted(_cells_in_radius(10, 10, REVEAL_RADIUS))]
+        WORLD["agents"]["rover-mock"]["revealed"] = [
+            [x, y] for x, y in sorted(_cells_in_radius(10, 10, REVEAL_RADIUS))
+        ]
         # Give rover-mistral an empty revealed so it doesn't interfere
         WORLD["agents"]["rover-mistral"]["revealed"] = []
         self._original_stones = WORLD.get("stones", [])
@@ -468,7 +467,9 @@ class TestFogOfWar(unittest.TestCase):
     def tearDown(self):
         WORLD["stones"] = self._original_stones
         # Restore rover-mistral revealed
-        WORLD["agents"]["rover-mistral"]["revealed"] = WORLD["agents"]["rover-mistral"].get("revealed", [])
+        WORLD["agents"]["rover-mistral"]["revealed"] = WORLD["agents"]["rover-mistral"].get(
+            "revealed", []
+        )
 
     def test_initial_revealed_cells_count(self):
         revealed = WORLD["agents"]["rover-mock"]["revealed"]
@@ -551,7 +552,6 @@ class TestFogOfWar(unittest.TestCase):
 
 
 class TestMissionCompletion(unittest.TestCase):
-
     def setUp(self):
         WORLD["agents"]["rover-mock"]["position"] = [5, 5]
         WORLD["agents"]["rover-mock"]["battery"] = 1.0
@@ -650,7 +650,6 @@ class TestMissionCompletion(unittest.TestCase):
 
 
 class TestMemory(unittest.TestCase):
-
     def setUp(self):
         WORLD["agents"]["rover-mock"]["position"] = [10, 10]
         WORLD["agents"]["rover-mock"]["battery"] = 1.0
@@ -727,7 +726,6 @@ class TestMemory(unittest.TestCase):
 
 
 class TestDirectionHint(unittest.TestCase):
-
     def test_north(self):
         self.assertEqual(_direction_hint(0, -3), "north")
 
@@ -742,7 +740,6 @@ class TestDirectionHint(unittest.TestCase):
 
 
 class TestUpdateTasks(unittest.TestCase):
-
     def setUp(self):
         self._orig_pos = WORLD["agents"]["rover-mock"]["position"][:]
         self._orig_inv = WORLD["agents"]["rover-mock"].get("inventory", [])[:]
