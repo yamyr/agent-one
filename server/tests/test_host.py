@@ -129,6 +129,39 @@ class TestHostStationRouting(unittest.TestCase):
                 mock_bc.send.assert_called()
 
 
+class TestHostAbortMission(unittest.TestCase):
+    def setUp(self):
+        from app.world import WORLD
+        self._original_status = WORLD["mission"]["status"]
+
+    def tearDown(self):
+        from app.world import WORLD
+        WORLD["mission"]["status"] = self._original_status
+
+    def test_abort_broadcasts_event(self):
+        from app.world import WORLD
+        WORLD["mission"]["status"] = "running"
+        host = _make_host()
+
+        with patch("app.host.broadcaster") as mock_bc:
+            mock_bc.send = AsyncMock()
+            result = asyncio.run(host.abort_mission("test abort"))
+
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["status"], "aborted")
+        self.assertEqual(result["reason"], "test abort")
+        host._narrator.feed.assert_called_once()
+
+    def test_abort_already_ended(self):
+        from app.world import WORLD
+        WORLD["mission"]["status"] = "success"
+        host = _make_host()
+
+        result = asyncio.run(host.abort_mission("too late"))
+        self.assertFalse(result["ok"])
+        self.assertIn("already ended", result["error"])
+
+
 class TestHostRecall(unittest.TestCase):
     def test_recall_enqueues_command(self):
         host = _make_host()

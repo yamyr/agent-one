@@ -862,6 +862,34 @@ def check_mission_status():
     return None
 
 
+def abort_mission(reason="Manual abort from mission control"):
+    """Manually abort the running mission. Returns event dict or None if already terminal."""
+    mission = WORLD["mission"]
+    if mission["status"] in ("success", "failed", "aborted"):
+        return None
+    mission["status"] = "aborted"
+    # Override each agent's mission objective so it shows in UI
+    for agent in WORLD["agents"].values():
+        if agent.get("type") in ("rover", "drone"):
+            agent["mission"]["objective"] = "ABORTED — return to station"
+    logger.info("Mission ABORTED: %s", reason)
+    return {"status": "aborted", "reason": reason}
+
+
+def all_agents_at_station():
+    """Check if all mobile agents are at the station. Used to finalize abort."""
+    station = WORLD["agents"].get("station")
+    if not station:
+        return True
+    sp = station["position"]
+    for agent in WORLD["agents"].values():
+        if agent.get("type") not in ("rover", "drone"):
+            continue
+        if agent["position"] != sp:
+            return False
+    return True
+
+
 def record_memory(agent_id, text):
     """Append a short-term memory entry to an agent's memory log."""
     agent = WORLD["agents"].get(agent_id)
@@ -894,6 +922,18 @@ def update_tasks(agent_id):
     """Recompute short-term tasks for an agent based on current world state."""
     agent = WORLD["agents"].get(agent_id)
     if agent is None:
+        return
+    # Mission aborted — only task is return to station
+    if WORLD["mission"]["status"] == "aborted":
+        station = WORLD["agents"].get("station")
+        sp = station["position"] if station else [0, 0]
+        x, y = agent["position"]
+        if [x, y] == sp:
+            agent["tasks"] = ["At station — mission aborted, standing by"]
+        else:
+            dist = abs(sp[0] - x) + abs(sp[1] - y)
+            hint = _direction_hint(sp[0] - x, sp[1] - y)
+            agent["tasks"] = [f"MISSION ABORTED — return to station at ({sp[0]},{sp[1]}) — {hint}, {dist} tiles"]
         return
     if agent.get("type") == "drone":
         _update_drone_tasks(agent_id, agent)
