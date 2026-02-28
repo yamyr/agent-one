@@ -1,5 +1,6 @@
 <script setup>
 import BatteryBar from './BatteryBar.vue'
+import { useI18n } from '../composables/useI18n.js'
 
 defineProps({
   agentId: {
@@ -45,6 +46,7 @@ defineProps({
 })
 
 const emit = defineEmits(['select-agent'])
+const { t } = useI18n()
 </script>
 
 <template>
@@ -84,7 +86,7 @@ const emit = defineEmits(['select-agent'])
         v-if="(!memory || memory.length === 0) && (!events || events.length === 0)"
         class="empty"
       >
-        No activity yet
+        {{ t('agentpane.no_activity') }}
       </div>
       <!-- Memory (recent actions from world state) -->
       <div
@@ -103,11 +105,11 @@ const emit = defineEmits(['select-agent'])
         <span
           v-if="e.name === 'thinking'"
           class="ae-type think"
-        >think</span>
+        >{{ t('agentpane.think') }}</span>
         <span
           v-else
           class="ae-type action"
-        >{{ e.name }}</span>
+        >{{ t('agentpane.action') }}</span>
         <span
           v-if="e.name === 'thinking'"
           class="ae-text"

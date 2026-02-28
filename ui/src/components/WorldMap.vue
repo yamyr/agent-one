@@ -2,6 +2,7 @@
 import { computed, ref, watch, onMounted, onUnmounted } from 'vue'
 import { TILE_SIZE, VIEWPORT_W, VIEWPORT_H, VEIN_COLORS, VEIN_SIZES, SOLAR_PANEL_COLOR, SOLAR_PANEL_DEPLETED_COLOR, agentColor, revealRadius } from '../constants.js'
 import { usePreferences } from '../composables/usePreferences.js'
+import { useI18n } from '../composables/useI18n.js'
 
 const props = defineProps({
   worldState: {
@@ -29,6 +30,7 @@ const targetCamX = ref(camX.value)
 const targetCamY = ref(camY.value)
 let rafId = null
 const { prefs } = usePreferences()
+const { t } = useI18n()
 const ZOOM_MIN = 0.7
 const ZOOM_MAX = 2.2
 const ZOOM_STEP = 0.1
@@ -354,20 +356,21 @@ function agentTooltip(id) {
   if (!a) return id
   const pos = `(${a.position[0]}, ${a.position[1]})`
   const bat = Math.round((a.battery ?? 1) * 100)
-  const type = a.type || 'rover'
-  return `${id} [${type}]\nPosition: ${pos}\nBattery: ${bat}%\nTiles visited: ${(a.visited || []).length}`
+  const type = a.type || t('agent.type.rover')
+  return t('world.agent_tooltip', { id, type, pos, bat, visited: (a.visited || []).length })
 }
 
 function stoneTooltip(s) {
-  const grade = s.grade || 'unknown'
+  const grade = (s.grade || 'unknown').toUpperCase()
   const qty = s.quantity ?? '?'
   const pos = `(${s.position[0]}, ${s.position[1]})`
-  return `${grade.toUpperCase()} vein\nPosition: ${pos}\nQuantity: ${qty}`
+  return t('world.stone_tooltip', { grade, pos, qty })
 }
 
 function panelTooltip(p) {
   const pos = `(${p.position[0]}, ${p.position[1]})`
-  return `Solar Panel ${p.depleted ? '(depleted)' : '(active)'}\nPosition: ${pos}`
+  const state = p.depleted ? t('world.panel_depleted') : t('world.panel_active')
+  return t('world.panel_tooltip', { state, pos })
 }
 
 function roverInventory(id) {
@@ -421,22 +424,22 @@ defineExpose({ camX, camY, visibleW, visibleH, panCamera, navigateTo })
 <template>
   <section class="world-map">
     <h2>
-      Surface Map
+      {{ t('world.surface_map') }}
       <span
         v-if="followAgent"
         class="cam-hint"
-      >(following {{ followAgent }})</span>
+      >{{ t('world.following', { agent: followAgent }) }}</span>
       <span
         v-else
         class="cam-hint"
-      >(free camera · drag to pan)</span>
+      >{{ t('world.free_camera_hint') }}</span>
     </h2>
     <div class="map-controls">
       <button
         class="zoom-btn"
-        title="Zoom out"
+        :title="t('world.zoom_out')"
         type="button"
-        aria-label="Zoom out map"
+        :aria-label="t('world.zoom_out_aria')"
         @click="zoomOut"
       >
         −
@@ -444,21 +447,21 @@ defineExpose({ camX, camY, visibleW, visibleH, panCamera, navigateTo })
       <span class="zoom-label">{{ Math.round(prefs.zoom * 100) }}%</span>
       <button
         class="zoom-btn"
-        title="Zoom in"
+        :title="t('world.zoom_in')"
         type="button"
-        aria-label="Zoom in map"
+        :aria-label="t('world.zoom_in_aria')"
         @click="zoomIn"
       >
         +
       </button>
       <button
         class="zoom-btn reset"
-        title="Reset zoom"
+        :title="t('world.zoom_reset')"
         type="button"
-        aria-label="Reset map zoom"
+        :aria-label="t('world.zoom_reset_aria')"
         @click="resetZoom"
       >
-        Reset
+        {{ t('world.reset') }}
       </button>
     </div>
     <svg
@@ -466,7 +469,7 @@ defineExpose({ camX, camY, visibleW, visibleH, panCamera, navigateTo })
       :viewBox="mapViewBox"
       class="map-svg"
       role="img"
-      aria-label="Interactive world map. Drag or use keyboard arrows/WASD to pan, mouse wheel to zoom."
+      :aria-label="t('world.aria_map')"
       @mousedown.prevent="onMouseDown"
       @mousemove="onMouseMove"
       @mouseup="onMouseUp"
@@ -475,14 +478,14 @@ defineExpose({ camX, camY, visibleW, visibleH, panCamera, navigateTo })
     >
       <!-- grid tiles -->
       <rect
-        v-for="t in tiles"
-        :key="t.key"
-        :x="t.sx"
-        :y="t.sy"
+        v-for="tile in tiles"
+        :key="tile.key"
+        :x="tile.sx"
+        :y="tile.sy"
         :width="TILE_SIZE"
         :height="TILE_SIZE"
-        :class="isRevealed(t.x, t.y) ? 'grid-tile revealed' : 'grid-tile'"
-        :fill="tileFill(t) || undefined"
+        :class="isRevealed(tile.x, tile.y) ? 'grid-tile revealed' : 'grid-tile'"
+        :fill="tileFill(tile) || undefined"
       />
 
       <!-- SVG defs: filters, gradients, masks -->
@@ -838,7 +841,7 @@ defineExpose({ camX, camY, visibleW, visibleH, panCamera, navigateTo })
         />
       </div>
       <div class="skeleton-message">
-        Connecting to satellite feed...
+        {{ t('world.connecting') }}
       </div>
     </div>
   </section>

@@ -1,5 +1,6 @@
 <script setup>
 import { agentColor, VEIN_COLORS } from '../constants.js'
+import { useI18n } from '../composables/useI18n.js'
 
 const props = defineProps({
   agent: {
@@ -13,6 +14,7 @@ const props = defineProps({
 })
 
 const emit = defineEmits(['close'])
+const { t } = useI18n()
 
 function position() {
   if (!props.agent) return '?'
@@ -30,7 +32,7 @@ function batteryPct() {
     class="modal-overlay"
     role="dialog"
     aria-modal="true"
-    :aria-label="`Agent details for ${agentId}`"
+    :aria-label="t('agentdetail.dialog_aria', { agent: agentId })"
     @click.self="emit('close')"
   >
     <div
@@ -45,7 +47,7 @@ function batteryPct() {
         <button
           class="modal-close"
           type="button"
-          aria-label="Close agent details"
+          :aria-label="t('agentdetail.close')"
           @click="emit('close')"
         >
           x
@@ -54,15 +56,15 @@ function batteryPct() {
       <div class="modal-body">
         <div class="modal-section">
           <div class="modal-label">
-            Type
+            {{ t('agentdetail.type') }}
           </div>
           <div class="modal-value">
-            {{ agent.type || 'rover' }}
+            {{ agent.type || t('agent.type.rover') }}
           </div>
         </div>
         <div class="modal-section">
           <div class="modal-label">
-            Mission
+            {{ t('agentdetail.mission') }}
           </div>
           <div class="modal-value">
             {{ agent.mission.objective }}
@@ -73,7 +75,7 @@ function batteryPct() {
           class="modal-section"
         >
           <div class="modal-label">
-            Current Task
+            {{ t('agentdetail.current_task') }}
           </div>
           <div class="modal-value task-value">
             {{ agent.tasks[0] }}
@@ -81,7 +83,7 @@ function batteryPct() {
         </div>
         <div class="modal-section">
           <div class="modal-label">
-            Position
+            {{ t('agentdetail.position') }}
           </div>
           <div class="modal-value">
             {{ position() }}
@@ -89,7 +91,7 @@ function batteryPct() {
         </div>
         <div class="modal-section">
           <div class="modal-label">
-            Battery
+            {{ t('agentdetail.battery') }}
           </div>
           <div class="modal-value">
             {{ batteryPct() }}
@@ -97,7 +99,7 @@ function batteryPct() {
         </div>
         <div class="modal-section">
           <div class="modal-label">
-            Tiles visited
+            {{ t('agentdetail.tiles_visited') }}
           </div>
           <div class="modal-value">
             {{ agent.visited.length }}
@@ -108,13 +110,13 @@ function batteryPct() {
           class="modal-section"
         >
           <div class="modal-label">
-            Inventory
+            {{ t('agentdetail.inventory') }}
           </div>
           <div
             v-if="agent.inventory.length === 0"
             class="modal-value"
           >
-            Empty
+            {{ t('agentdetail.empty') }}
           </div>
           <div
             v-else
@@ -132,7 +134,7 @@ function batteryPct() {
         </div>
         <div class="modal-section">
           <div class="modal-label">
-            Tools
+            {{ t('agentdetail.tools') }}
           </div>
           <div class="modal-tools">
             <div
@@ -147,7 +149,7 @@ function batteryPct() {
               v-if="!agent.tools || agent.tools.length === 0"
               class="empty"
             >
-              No tools
+              {{ t('agentdetail.no_tools') }}
             </div>
           </div>
         </div>
@@ -156,7 +158,7 @@ function batteryPct() {
           class="modal-section"
         >
           <div class="modal-label">
-            System Prompt
+            {{ t('agentdetail.system_prompt') }}
           </div>
           <pre class="modal-context">{{ agent.last_context }}</pre>
         </div>

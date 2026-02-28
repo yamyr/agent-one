@@ -1,8 +1,10 @@
 <script setup>
 import { AGENT_COLORS, VEIN_COLORS } from '../constants.js'
 import { usePreferences } from '../composables/usePreferences.js'
+import { useI18n } from '../composables/useI18n.js'
 
 const { prefs } = usePreferences()
+const { t } = useI18n()
 
 function toggle() {
   prefs.showLegend = !prefs.showLegend
@@ -14,7 +16,7 @@ function toggle() {
     <button
       class="legend-toggle"
       :class="{ active: prefs.showLegend }"
-      title="Toggle Map Legend"
+      :title="t('legend.toggle')"
       type="button"
       :aria-expanded="prefs.showLegend"
       aria-controls="map-legend-content"
@@ -29,33 +31,33 @@ function toggle() {
         class="legend-content"
       >
         <div class="legend-section">
-          <h4>Agents</h4>
+          <h4>{{ t('stats.agents') }}</h4>
           <div class="legend-grid">
             <div class="legend-item">
               <span
                 class="dot agent"
                 :style="{ background: AGENT_COLORS['station'] }"
               />
-              <span>Station</span>
+              <span>{{ t('legend.station') }}</span>
             </div>
             <div class="legend-item">
               <span
                 class="dot agent"
                 :style="{ background: AGENT_COLORS['rover-mistral'] }"
               />
-              <span>Rover</span>
+              <span>{{ t('legend.rover') }}</span>
             </div>
             <div class="legend-item">
               <span
                 class="dot agent"
                 :style="{ background: AGENT_COLORS['drone-mistral'] }"
               />
-              <span>Drone</span>
+              <span>{{ t('legend.drone') }}</span>
             </div>
           </div>
         </div>
         <div class="legend-section">
-          <h4>Veins</h4>
+          <h4>{{ t('stats.veins') }}</h4>
           <div class="legend-grid">
             <div
               v-for="(color, grade) in VEIN_COLORS"

@@ -1,5 +1,6 @@
 <script setup>
 import { ref, watch, onUnmounted } from 'vue'
+import { useI18n } from '../composables/useI18n.js'
 
 const props = defineProps({
   narration: {
@@ -16,6 +17,7 @@ const props = defineProps({
 const emit = defineEmits(['toggle-narration'])
 
 const isPlaying = ref(false)
+const { t } = useI18n()
 const currentText = ref('')
 const dialogueLines = ref([])
 const audioQueue = ref([])
@@ -158,7 +160,7 @@ function skipAudio() {
         class="narrator-icon"
         :class="{ active: isPlaying }"
       >🎙</span>
-      <span class="narrator-label">MISSION COMMS</span>
+      <span class="narrator-label">{{ t('narration.mission_comms') }}</span>
     </div>
 
     <Transition
@@ -195,7 +197,7 @@ function skipAudio() {
         :key="'idle'"
         class="narration-text idle"
       >
-        Awaiting mission events...
+        {{ t('narration.awaiting_events') }}
       </div>
     </Transition>
 
@@ -203,18 +205,18 @@ function skipAudio() {
       <button
         v-if="isPlaying"
         class="skip-btn"
-        title="Skip narration"
+        :title="t('narration.skip_title')"
         @click="skipAudio"
       >
-        SKIP
+        {{ t('narration.skip') }}
       </button>
       <button
         class="toggle-btn"
         :class="{ off: !narrationEnabled }"
-        :title="narrationEnabled ? 'Turn voice off' : 'Turn voice on'"
+        :title="narrationEnabled ? t('narration.voice_turn_off') : t('narration.voice_turn_on')"
         @click="emit('toggle-narration')"
       >
-        {{ narrationEnabled ? 'Voice ON' : 'Voice OFF' }}
+        {{ narrationEnabled ? t('narration.voice_on') : t('narration.voice_off') }}
       </button>
     </div>
   </div>

@@ -1,5 +1,6 @@
 <script setup>
 import { computed } from 'vue'
+import { useI18n } from '../composables/useI18n.js'
 import MapLegend from './MapLegend.vue'
 import { VIEWPORT_W, VIEWPORT_H, VEIN_COLORS, agentColor } from '../constants.js'
 
@@ -31,6 +32,7 @@ const veins = computed(() => {
 })
 
 const emit = defineEmits(['navigate'])
+const { t } = useI18n()
 
 const MINI_TILE = 3 // pixels per tile on minimap
 const PADDING = 2   // extra tiles around bounds
@@ -114,7 +116,7 @@ function onClick(e) {
 
 <template>
   <section class="minimap">
-    <h2>Overview</h2>
+    <h2>{{ t('overview.title') }}</h2>
     <svg
       v-if="worldState"
       :viewBox="`0 0 ${mapW} ${mapH}`"
@@ -132,10 +134,10 @@ function onClick(e) {
 
       <!-- Revealed tiles -->
       <rect
-        v-for="t in revealedTiles"
-        :key="t.key"
-        :x="t.sx"
-        :y="t.sy"
+        v-for="tile in revealedTiles"
+        :key="tile.key"
+        :x="tile.sx"
+        :y="tile.sy"
         :width="MINI_TILE"
         :height="MINI_TILE"
         fill="var(--bg-minimap-revealed)"
@@ -179,7 +181,7 @@ function onClick(e) {
       v-else
       class="empty"
     >
-      No data
+      {{ t('overview.no_data') }}
     </div>
     <MapLegend />
   </section>

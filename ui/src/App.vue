@@ -15,6 +15,7 @@ import NarrationPlayer from './components/NarrationPlayer.vue'
 import StatsBar from './components/StatsBar.vue'
 import ToastOverlay from './components/ToastOverlay.vue'
 import HelpModal from './components/HelpModal.vue'
+import { useI18n } from './composables/useI18n.js'
 
 const selectedAgent = ref(null)
 const helpVisible = ref(false)
@@ -70,21 +71,22 @@ async function resetSimulation() {
 }
 
 const { toasts, addToast, dismiss: dismissToast } = useToasts()
+const { t } = useI18n()
 
 function onSimEvent(event) {
   switch (event.name) {
     case 'mission_success':
-      addToast(`Mission complete — ${event.payload?.collected_quantity ?? '?'} collected`, { type: 'success', duration: 6000 })
+      addToast(t('toast.mission_complete', { count: event.payload?.collected_quantity ?? '?' }), { type: 'success', duration: 6000 })
       break
     case 'mission_aborted':
-      addToast(`Mission aborted — ${event.payload?.reason || 'unknown'}`, { type: 'error', duration: 6000 })
+      addToast(t('toast.mission_aborted', { reason: event.payload?.reason || 'unknown' }), { type: 'error', duration: 6000 })
       break
     case 'alert':
-      addToast(`${event.source}: ${event.payload?.message || 'Alert'}`, { type: 'warning' })
+      addToast(`${event.source}: ${event.payload?.message || t('toast.alert_default')}`, { type: 'warning' })
       break
     case 'analyze':
       if (event.payload?.stone)
-        addToast(`${event.source}: found ${event.payload.stone.grade} vein`, { type: 'info' })
+        addToast(t('toast.found_vein', { source: event.source, grade: event.payload.stone.grade }), { type: 'info' })
       break
     default:
       break
@@ -182,13 +184,13 @@ useKeyboard({
       <div class="left-col">
         <!-- Entity follow selector -->
         <div class="follow-bar">
-          <span class="follow-label">Follow:</span>
+          <span class="follow-label">{{ t('ui.follow') }}</span>
           <button
             v-for="id in mobileAgents"
             :key="id"
             :class="['follow-btn', { active: followAgent === id }]"
             :style="{ borderColor: agentColor(id), color: followAgent === id ? 'var(--bg-primary)' : agentColor(id), backgroundColor: followAgent === id ? agentColor(id) : 'transparent' }"
-            :aria-label="`Follow ${id}`"
+            :aria-label="t('ui.follow_agent', { agent: id })"
             @click="setFollowAgent(id)"
           >
             {{ id }}
@@ -196,10 +198,10 @@ useKeyboard({
           <button
             :class="['follow-btn', { active: !followAgent }]"
             :style="{ borderColor: 'var(--accent-free)', color: !followAgent ? 'var(--bg-primary)' : 'var(--accent-free)', backgroundColor: !followAgent ? 'var(--accent-free)' : 'transparent' }"
-            aria-label="Switch to free camera"
+            :aria-label="t('ui.switch_free_camera')"
             @click="followAgent = null"
           >
-            Free
+            {{ t('ui.free') }}
           </button>
         </div>
         <WorldMap

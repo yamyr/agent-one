@@ -32,7 +32,10 @@ const ICONS = {
       >
         <span class="toast-icon">{{ ICONS[toast.type] || ICONS.info }}</span>
         <span class="toast-msg">{{ toast.message }}</span>
-        <span v-if="toast.count > 1" class="toast-count">&times;{{ toast.count }}</span>
+        <span
+          v-if="toast.count > 1"
+          class="toast-count"
+        >&times;{{ toast.count }}</span>
       </div>
     </TransitionGroup>
   </div>

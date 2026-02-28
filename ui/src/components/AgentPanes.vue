@@ -1,6 +1,7 @@
 <script setup>
 import AgentPane from './AgentPane.vue'
 import { agentColor } from '../constants.js'
+import { useI18n } from '../composables/useI18n.js'
 
 const props = defineProps({
   worldState: {
@@ -18,6 +19,7 @@ const props = defineProps({
 })
 
 const emit = defineEmits(['select-agent'])
+const { t } = useI18n()
 
 function batteryPct(id) {
   if (!props.worldState) return '?'
@@ -49,7 +51,7 @@ function inventorySummary(id) {
   const a = props.worldState.agents[id]
   if (!a || !a.inventory || a.inventory.length === 0) return ''
   const qtys = a.inventory.map(s => s.quantity || 0)
-  return 'inv (' + qtys.join(' + ') + ')'
+  return t('agentpane.inventory_prefix', { quantities: qtys.join(' + ') })
 }
 
 function missionObjective(id) {

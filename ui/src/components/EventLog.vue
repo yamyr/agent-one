@@ -1,6 +1,7 @@
 <script setup>
 import { ref, computed, watch, nextTick, onMounted, onBeforeUnmount } from 'vue'
 import { agentColor } from '../constants.js'
+import { useI18n } from '../composables/useI18n.js'
 
 const props = defineProps({
   events: {
@@ -19,6 +20,7 @@ const pinnedToTop = ref(true)
 const newEventKeys = ref(new Set())
 
 let lastSeenUid = 0
+const { t } = useI18n()
 
 function onScroll() {
   const el = container.value
@@ -173,7 +175,7 @@ function formatPayload(event) {
     aria-live="polite"
     aria-relevant="additions"
   >
-    <h2>Event Log</h2>
+    <h2>{{ t('log.title') }}</h2>
     <div
       v-if="events.length === 0"
       class="skeleton-container"
