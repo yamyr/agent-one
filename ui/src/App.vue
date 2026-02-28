@@ -14,8 +14,10 @@ import AgentDetailModal from './components/AgentDetailModal.vue'
 import NarrationPlayer from './components/NarrationPlayer.vue'
 import StatsBar from './components/StatsBar.vue'
 import ToastOverlay from './components/ToastOverlay.vue'
+import HelpModal from './components/HelpModal.vue'
 
 const selectedAgent = ref(null)
+const helpVisible = ref(false)
 const paused = ref(false)
 const narrationEnabled = ref(true)
 const worldMapRef = ref(null)
@@ -141,7 +143,11 @@ useKeyboard({
     }
   },
   onFreeCamera: () => { followAgent.value = null },
-  onCloseModal: () => { selectedAgent.value = null },
+  onCloseModal: () => {
+    if (selectedAgent.value) selectedAgent.value = null
+    else if (helpVisible.value) helpVisible.value = false
+  },
+  onToggleHelp: () => { helpVisible.value = !helpVisible.value },
 })
 </script>
 
@@ -226,6 +232,11 @@ useKeyboard({
     <ToastOverlay
       :toasts="toasts"
       @dismiss="dismissToast"
+    />
+
+    <HelpModal
+      :visible="helpVisible"
+      @close="helpVisible = false"
     />
 
     <Transition name="modal">
