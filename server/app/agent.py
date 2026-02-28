@@ -334,6 +334,13 @@ class MistralRoverReasoner:
             for entry in recent:
                 parts.append(f"- {entry}")
 
+        # --- Strategic Insights ---
+        sm = agent.get("strategic_memory", [])
+        if sm:
+            parts.append("# Strategic Insights (from past experience)")
+            for s in sm:
+                parts.append(f"- [tick {s['tick']}] {s['insight']}")
+
         # Urgent commands from Host inbox
         pending = agent.get("pending_commands", [])
         if pending:
@@ -644,6 +651,13 @@ class DroneAgent:
             parts.append("\n== Recent actions ==")
             for entry in recent:
                 parts.append(f"- {entry}")
+
+        # --- Strategic Insights ---
+        sm = agent.get("strategic_memory", [])
+        if sm:
+            parts.append("# Strategic Insights (from past experience)")
+            for s in sm:
+                parts.append(f"- [tick {s['tick']}] {s['insight']}")
 
         # -- Urgent commands from Host inbox --
         pending = agent.get("pending_commands", [])
@@ -989,6 +1003,35 @@ class RoverLoop(BaseAgent):
             await host.broadcast(msg.to_dict())
 
         await broadcaster.send(make_message("world", "event", "state", get_snapshot()).to_dict())
+
+        # --- Periodic memory summarization ---
+        current_tick = self._world.get_tick()
+        if current_tick % 20 == 0:
+            from .world import summarize_memories, record_strategic_insight
+
+            prompt = summarize_memories(self.rover_id)
+            if prompt:
+                try:
+                    client = Mistral(api_key=settings.mistral_api_key)
+                    resp = await asyncio.to_thread(
+                        client.chat.complete,
+                        model="mistral-small-latest",
+                        messages=[{"role": "user", "content": prompt}],
+                        max_tokens=150,
+                    )
+                    insight_text = resp.choices[0].message.content.strip()
+                    record_strategic_insight(self.rover_id, insight_text, current_tick)
+                    await broadcaster.broadcast(
+                        {
+                            "type": "event",
+                            "name": "insight",
+                            "source": self.rover_id,
+                            "payload": {"text": insight_text},
+                        }
+                    )
+                    logger.info("Strategic insight for %s: %s", self.rover_id, insight_text)
+                except Exception as exc:
+                    logger.warning("Memory summarization failed for %s: %s", self.rover_id, exc)
 
         # Auto-charge rover when it arrives at station
         rover = self._world.get_agents().get(self.agent_id)

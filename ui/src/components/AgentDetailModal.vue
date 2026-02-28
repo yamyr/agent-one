@@ -169,6 +169,24 @@ function batteryPct() {
           </div>
         </div>
         <div
+          v-if="agent.strategic_memory && agent.strategic_memory.length"
+          class="modal-section"
+        >
+          <div class="modal-label">
+            💡 Strategic Insights
+          </div>
+          <div class="modal-memory">
+            <div
+              v-for="s in agent.strategic_memory"
+              :key="s.tick"
+              class="insight-entry"
+            >
+              <span class="insight-tick">Tick {{ s.tick }}</span>
+              <span>{{ s.insight }}</span>
+            </div>
+          </div>
+        </div>
+        <div
           v-if="agent.last_context"
           class="modal-section"
         >
@@ -333,6 +351,21 @@ function batteryPct() {
   background: var(--bg-revealed);
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-sm);
+}
+
+.insight-entry {
+  font-size: 0.7rem;
+  color: #f59e0b;
+  padding: 0.2rem 0.4rem;
+  background: rgba(245, 158, 11, 0.08);
+  border-left: 2px solid #f59e0b;
+  border-radius: var(--radius-sm);
+}
+
+.insight-tick {
+  font-size: 0.6rem;
+  color: var(--text-muted);
+  margin-right: 0.4rem;
 }
 
 .modal-context {

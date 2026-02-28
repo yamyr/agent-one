@@ -1,5 +1,17 @@
 # Changelog
 
+## [Unreleased]
+
+### Added
+- **Agent Memory & Learning (Feature F)**: Persistent strategic memory system where agents periodically summarize exploration memories into strategic insights via LLM
+  - `summarize_memories()` generates summary prompts from agent memories (triggers when >= 6 memories)
+  - `record_strategic_insight()` stores insights with sliding window (capped at 5)
+  - Strategic insights injected into rover and drone `_build_context()` for LLM reasoning
+  - Auto-summarization every 20 ticks via `mistral-small-latest`
+  - Insight events broadcast via WebSocket with 💡 icon and gold styling
+  - Strategic Insights section in Agent Detail Modal
+  - 9 unit tests for all memory functions
+
 All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).

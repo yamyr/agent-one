@@ -120,6 +120,8 @@ function eventNameClass(event) {
       return 'event-name-map'
     case 'thinking':
       return 'event-name-think'
+    case 'insight':
+      return 'event-name-insight'
     default:
       return 'event-name-default'
   }
@@ -169,6 +171,9 @@ function formatPayload(event) {
       break
     case 'recall':
       result = `recall ${p.rover_id || ''}${p.reason ? ' \u2014 ' + p.reason : ''}`
+      break
+    case 'insight':
+      result = `💡 ${p.text || ''}`
       break
     default:
       result = JSON.stringify(p, null, 2)
@@ -292,6 +297,7 @@ function formatPayload(event) {
 .event-name-resource { color: var(--accent-amber); }
 .event-name-map { color: var(--accent-blue); }
 .event-name-think { color: var(--accent-teal); }
+.event-name-insight { color: #f59e0b; }
 
 .event-payload {
   font-size: 0.7rem;

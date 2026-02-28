@@ -283,6 +283,7 @@ def _make_drone(start_x, start_y):
         "revealed": _init_revealed(start_x, start_y, DRONE_REVEAL_RADIUS),
         "inventory": [],
         "memory": [],
+        "strategic_memory": [],
         "tasks": [],
         "type": "drone",
         "tools": None,  # populated lazily via _ensure_agent_tools()
@@ -298,6 +299,7 @@ def _make_rover(start_x, start_y):
         "revealed": _init_revealed(start_x, start_y),
         "inventory": [],
         "memory": [],
+        "strategic_memory": [],
         "tasks": [],
         "type": "rover",
         "tools": None,  # populated lazily via _ensure_agent_tools()
@@ -440,6 +442,12 @@ class World:
 
     def get_generation_id(self) -> int:
         return self._state.get("generation_id", 0)
+
+    def summarize_memories(self, agent_id: str) -> str | None:
+        return summarize_memories(agent_id)
+
+    def record_strategic_insight(self, agent_id: str, insight: str, tick: int):
+        record_strategic_insight(agent_id, insight, tick)
 
 
 # Module-level singleton wrapping the global WORLD dict
@@ -944,6 +952,34 @@ def record_memory(agent_id, text):
     mem.append(text)
     if len(mem) > MEMORY_MAX:
         del mem[: len(mem) - MEMORY_MAX]
+
+
+def summarize_memories(agent_id: str) -> str | None:
+    """Return a summary prompt for the agent's memories, or None if too few."""
+    agent = WORLD["agents"].get(agent_id)
+    if agent is None:
+        return None
+    memories = agent.get("memory", [])
+    if len(memories) < 6:
+        return None
+    mem_text = "\n".join(f"- {m}" for m in memories[-8:])
+    return (
+        "Summarize the following rover exploration memories into 1-2 strategic "
+        "insights (e.g., 'Zone B3 consistently yields high-grade minerals', "
+        "'Storms from the north tend to last 3 ticks'). Be concise.\n\n"
+        f"{mem_text}"
+    )
+
+
+def record_strategic_insight(agent_id: str, insight: str, tick: int):
+    """Store a strategic insight for the agent, capped at 5."""
+    agent = WORLD["agents"].get(agent_id)
+    if agent is None:
+        return
+    sm = agent.setdefault("strategic_memory", [])
+    sm.append({"insight": insight, "tick": tick})
+    if len(sm) > 5:
+        agent["strategic_memory"] = sm[-5:]
 
 
 def direction_hint(dx, dy):
