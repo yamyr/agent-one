@@ -18,9 +18,9 @@ defineProps({
     type: Number,
     default: 0,
   },
-  inventoryCount: {
-    type: Number,
-    default: 0,
+  inventorySummary: {
+    type: String,
+    default: '',
   },
   mission: {
     type: String,
@@ -55,12 +55,12 @@ const emit = defineEmits(['select-agent'])
         :style="{ color }"
       >{{ agentId }}</span>
       <span class="agent-stats">
-        {{ position }} &middot;
-        <BatteryBar :level="batteryLevel" />
+        {{ position }}
         <span
-          v-if="inventoryCount > 0"
+          v-if="inventorySummary"
           class="agent-inv"
-        >&middot; inv {{ inventoryCount }}</span>
+        >&middot; {{ inventorySummary }}</span>
+        &middot; <BatteryBar :level="batteryLevel" />
       </span>
     </div>
     <div

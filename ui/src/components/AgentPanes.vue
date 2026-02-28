@@ -38,10 +38,12 @@ function agentPosition(id) {
   return `(${a.position[0]}, ${a.position[1]})`
 }
 
-function inventoryCount(id) {
-  if (!props.worldState) return 0
+function inventorySummary(id) {
+  if (!props.worldState) return ''
   const a = props.worldState.agents[id]
-  return a && a.inventory ? a.inventory.length : 0
+  if (!a || !a.inventory || a.inventory.length === 0) return ''
+  const qtys = a.inventory.map(s => s.quantity || 0)
+  return 'inv (' + qtys.join(' + ') + ')'
 }
 
 function missionObjective(id) {
@@ -69,7 +71,7 @@ function agentMemory(id) {
       :position="agentPosition(id)"
       :battery="batteryPct(id)"
       :battery-level="batteryRaw(id)"
-      :inventory-count="inventoryCount(id)"
+      :inventory-summary="inventorySummary(id)"
       :mission="missionObjective(id)"
       :memory="agentMemory(id)"
       :events="agentEvents[id]"
