@@ -10,6 +10,9 @@ export function useToasts() {
   const toasts = ref([])
 
   function addToast(message, { type = 'info', duration = 4000 } = {}) {
+    // Deduplicate: if duplicate message exists, ignore
+    if (toasts.value.some(t => t.message === message)) return
+
     const id = ++toastId
     toasts.value.push({ id, message, type })
     setTimeout(() => {

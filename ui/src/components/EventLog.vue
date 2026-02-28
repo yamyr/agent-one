@@ -186,7 +186,10 @@ function formatPayload(event) {
       class="event-scroll-container"
       @scroll.passive="onScroll"
     >
-      <div :style="{ height: topSpacerHeight + 'px' }" aria-hidden="true" />
+      <div
+        :style="{ height: topSpacerHeight + 'px' }"
+        aria-hidden="true"
+      />
       <div
         v-for="(event, i) in visibleEvents"
         :key="event._uid ?? (startIdx + i)"
@@ -208,7 +211,10 @@ function formatPayload(event) {
           class="event-payload"
         >{{ formatPayload(event) }}</span>
       </div>
-      <div :style="{ height: bottomSpacerHeight + 'px' }" aria-hidden="true" />
+      <div
+        :style="{ height: bottomSpacerHeight + 'px' }"
+        aria-hidden="true"
+      />
     </div>
   </section>
 </template>

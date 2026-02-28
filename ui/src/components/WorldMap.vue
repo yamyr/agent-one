@@ -26,7 +26,6 @@ const camY = ref(-Math.floor(VIEWPORT_H / 2))
 // Smooth camera: targets that camX/camY interpolate toward
 const targetCamX = ref(camX.value)
 const targetCamY = ref(camY.value)
-const LERP_SPEED = 0.15 // fraction per frame (higher = snappier)
 let rafId = null
 const zoom = ref(1)
 const ZOOM_MIN = 0.7
@@ -42,9 +41,14 @@ const dynamicMapH = computed(() => visibleH.value * TILE_SIZE)
 function cameraLoop() {
   const dx = targetCamX.value - camX.value
   const dy = targetCamY.value - camY.value
-  if (Math.abs(dx) > 0.01 || Math.abs(dy) > 0.01) {
-    camX.value += dx * LERP_SPEED
-    camY.value += dy * LERP_SPEED
+  const dist = Math.sqrt(dx * dx + dy * dy)
+
+  if (dist > 0.01) {
+    // Adaptive speed: slower start/end (0.1), faster when far (up to 0.3)
+    const speed = Math.min(0.3, 0.1 + dist * 0.02)
+    camX.value += dx * speed
+    camY.value += dy * speed
+
     // Snap when very close
     if (Math.abs(dx) < 0.05) camX.value = targetCamX.value
     if (Math.abs(dy) < 0.05) camY.value = targetCamY.value
@@ -823,9 +827,18 @@ defineExpose({ camX, camY, visibleW, visibleH, panCamera, navigateTo })
     </svg>
     <div
       v-else
-      class="empty"
+      class="map-skeleton"
     >
-      Waiting for world state...
+      <div class="skeleton-grid">
+        <div
+          v-for="i in 100"
+          :key="i"
+          class="skeleton-tile"
+        />
+      </div>
+      <div class="skeleton-message">
+        Connecting to satellite feed...
+      </div>
     </div>
   </section>
 </template>
@@ -917,5 +930,52 @@ defineExpose({ camX, camY, visibleW, visibleH, panCamera, navigateTo })
 }
 .map-svg:active {
   cursor: grabbing;
+}
+
+.map-skeleton {
+  width: 100%;
+  aspect-ratio: 1;
+  background: var(--bg-primary);
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.skeleton-grid {
+  display: grid;
+  grid-template-columns: repeat(10, 1fr);
+  grid-template-rows: repeat(10, 1fr);
+  width: 100%;
+  height: 100%;
+  opacity: 0.1;
+}
+
+.skeleton-tile {
+  border: 1px solid var(--accent-blue);
+  animation: pulse-grid 2s infinite;
+}
+
+.skeleton-message {
+  position: absolute;
+  color: var(--accent-blue);
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  background: rgba(10, 10, 15, 0.8);
+  padding: 0.5rem 1rem;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--accent-blue);
+  animation: pulse-text 1.5s infinite alternate;
+}
+
+@keyframes pulse-grid {
+  0%, 100% { opacity: 0.1; }
+  50% { opacity: 0.3; }
+}
+
+@keyframes pulse-text {
+  from { opacity: 0.7; }
+  to { opacity: 1; }
 }
 </style>
