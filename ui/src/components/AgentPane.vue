@@ -77,14 +77,36 @@ const emit = defineEmits(['select-agent'])
       >
         {{ m }}
       </div>
-      <!-- Thinking events -->
+      <!-- All events chronologically -->
       <div
-        v-for="(e, i) in (events || []).filter(e => e.name === 'thinking')"
+        v-for="(e, i) in (events || [])"
         :key="'e-'+i"
         class="agent-event"
       >
-        <span class="ae-type">think</span>
-        <span class="ae-text">{{ e.payload.text }}</span>
+        <span
+          v-if="e.name === 'thinking'"
+          class="ae-type think"
+        >think</span>
+        <span
+          v-else
+          class="ae-type action"
+        >{{ e.name }}</span>
+        <span
+          v-if="e.name === 'thinking'"
+          class="ae-text"
+        >{{ e.payload.text }}</span>
+        <span
+          v-else-if="e.name === 'move' && e.payload && e.payload.from"
+          class="ae-text action-text"
+        >
+          ({{ e.payload.from[0] }},{{ e.payload.from[1] }}) → ({{ e.payload.to[0] }},{{ e.payload.to[1] }})
+        </span>
+        <span
+          v-else
+          class="ae-text action-text"
+        >
+          {{ e.payload && e.payload.result ? e.payload.result : '' }}
+        </span>
       </div>
     </div>
   </div>
@@ -163,6 +185,10 @@ const emit = defineEmits(['select-agent'])
   flex-shrink: 0;
 }
 
+.ae-type.think {
+  color: #668;
+}
+
 .ae-type.action {
   color: #c86040;
 }
@@ -177,5 +203,9 @@ const emit = defineEmits(['select-agent'])
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.ae-text.action-text {
+  color: #7a9a7a;
 }
 </style>

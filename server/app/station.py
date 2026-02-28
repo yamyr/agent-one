@@ -21,7 +21,7 @@ ASSIGN_MISSION_TOOL = {
             "properties": {
                 "agent_id": {
                     "type": "string",
-                    "description": "The rover agent to assign (e.g. 'rover-mock', 'rover-mistral').",
+                    "description": "The rover agent to assign (e.g. 'rover-mistral').",
                 },
                 "objective": {
                     "type": "string",
@@ -61,7 +61,7 @@ CHARGE_ROVER_TOOL = {
             "properties": {
                 "rover_id": {
                     "type": "string",
-                    "description": "The rover agent to charge (e.g. 'rover-mock', 'rover-mistral').",
+                    "description": "The rover agent to charge (e.g. 'rover-mistral').",
                 },
             },
             "required": ["rover_id"],
@@ -75,7 +75,7 @@ SYSTEM_PROMPT = (
     "You are the Mars base station. You coordinate the Mars mission.\n"
     "Your role is to assign missions to rover agents, respond to field reports, "
     "and recharge rovers when they return to the station.\n"
-    "You have two rovers available: 'rover-mock' and 'rover-mistral'.\n"
+    "You have one rover available: 'rover-mistral' and one drone: 'drone-mistral'.\n"
     "Keep responses short (1-2 sentences of reasoning, then act).\n"
     "Always assign missions to at least one rover when defining the initial mission.\n"
     "When a rover arrives at the station with low battery, charge it.\n"
