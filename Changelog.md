@@ -21,6 +21,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   - **MiniMap component**: Reduced-scale overview of all explored terrain with viewport rectangle overlay and click-to-navigate
   - 7 new chunk system tests (149 total pass)
 
+- **Entity Follow Selector**: UI controls to select which agent the camera tracks
+  - Follow buttons for each mobile agent (rovers, drone) plus "Free" camera mode
+  - Buttons styled with agent colors, highlight when active
+  - Drag-to-pan automatically switches to free camera mode
+  - No auto-follow by default — user chooses which entity to track
+
+- **Battery Safety Return-to-Base**: Critical safety feature ensuring agents never strand
+  - `must_return_to_base()` function calculates Manhattan distance to station × move cost + 6% safety margin
+  - Battery check is the FIRST priority in both `_update_rover_tasks` and `_update_drone_tasks`
+  - Overrides ALL other tasks (exploration, stone collection, scanning) when battery is critical
+  - MockRoverAgent and MockDroneAgent enforce return-to-base at agent level (hard override)
+  - Task system generates urgent "⚠️ LOW BATTERY" messages for LLM agents
+
 - **Drone Scout Agent**: Aerial drone entity that scouts terrain for precious stone deposits
   - `DroneAgent` (LLM-powered via Mistral) + `MockDroneAgent` (deterministic fallback) in `agent.py`
   - Drone flies 1-6 tiles per move at 1% battery/tile (rovers: 1-3 tiles at 2%)
@@ -42,6 +55,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Rover visibility radius reduced from 5 to 3 tiles (balanced by drone's 6-tile radius)
 - `update_tasks()` split into `_update_rover_tasks()` and `_update_drone_tasks()`
 - Rovers now check `drone_scans` for hotspots when no visible stones are found
+- WorldMap camera control changed from auto-follow to parent-driven `followAgent` prop
+- MockRoverAgent and MockDroneAgent exploration now works with infinite grid (removed boundary clamping)
 
 - **ElevenLabs AI Narration**: Real-time narration of Mars mission events via ElevenLabs TTS
   - `server/app/narrator.py` — narration engine with event filtering (drama weights 1-3), Mistral LLM text generation ("David Attenborough meets space podcaster" persona), ElevenLabs TTS audio conversion, async event batching, and rate limiting
