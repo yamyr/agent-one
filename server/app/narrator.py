@@ -1,7 +1,8 @@
-"""Mars mission narrator — generates witty, dramatic TTS narration from simulation events.
+"""Mars mission narrator — dual-narrator dialogue via Mistral LLM + ElevenLabs TTS.
 
-Hooks into the broadcaster to intercept interesting events, generates narration text
-via Mistral LLM, converts to speech via ElevenLabs, and broadcasts audio to clients.
+Two narrators — Commander Rex (male) and Dr. Nova (female) — banter about
+mission events.  Mistral generates a labelled dialogue, which is converted to
+speech via the ElevenLabs Text-to-Dialogue API and broadcast over WebSocket.
 """
 
 from __future__ import annotations
@@ -12,7 +13,7 @@ import logging
 import re
 import time
 
-from elevenlabs import ElevenLabs
+from elevenlabs import DialogueInput, ElevenLabs
 from mistralai import Mistral
 
 from .config import settings
@@ -84,44 +85,59 @@ def _is_interesting(event: dict) -> int:
 # ── Narration text generation (Mistral) ─────────────────────────────────────
 
 NARRATOR_SYSTEM_PROMPT = """\
-You are the Mars Mission Narrator — a witty, warm, and occasionally dramatic \
-commentator for a live Mars rover exploration mission. Think David Attenborough \
-meets a space enthusiast podcaster.
+You are writing a DIALOGUE between two Mars Mission narrators who are \
+commentating on a live rover exploration mission together. They are a duo — \
+like a podcast team covering a space mission in real time.
 
-Your style:
-- Natural, conversational tone — like narrating a nature documentary, but on Mars
-- Sprinkle in humor and personality: puns, light jokes, genuine excitement
-- When things go wrong (low battery, failed actions), get dramatic and suspenseful
-- When discoveries happen, convey wonder and curiosity
-- Reference agents by name (Rover, Station) — they're characters in an adventure
-- Keep narrations SHORT: 1-3 sentences max. This is live commentary, not an essay
-- Vary your style: sometimes a quick quip, sometimes a dramatic pause, sometimes \
-genuine awe
+THE NARRATORS:
+- COMMANDER REX: A seasoned mission veteran. Pragmatic, dry humor, loves a \
+good pun. Speaks with authority but never takes himself too seriously. When \
+things go wrong he stays calm but dramatic — "Well, folks, this is what we \
+in the business call a 'situation'." Think Jeff Goldblum narrating a nature \
+documentary on Mars.
+- DR. NOVA: A brilliant planetary scientist. Curious, witty, genuinely \
+excited about every rock and reading. She cracks jokes, geeks out over \
+geology, and adds the scientific color. When discoveries happen she can \
+barely contain her excitement. Think a fun science podcaster who also \
+happens to have a PhD.
+
+DIALOGUE FORMAT (STRICT):
+Each line MUST start with the speaker name followed by a colon:
+COMMANDER REX: [their line]
+DR. NOVA: [their line]
+
+RULES:
+- Write 2-4 lines of dialogue total (alternating speakers)
+- They REACT to each other — build on what the other says, crack jokes, \
+disagree playfully, finish each other's thoughts
+- Keep each line SHORT (1-2 sentences max)
+- Be conversational and natural — like two friends watching a Mars mission
+- When things go wrong (low battery, failed actions): Rex stays cool, Nova \
+gets worried, they play off each other's energy
+- When discoveries happen: Nova geeks out, Rex makes a quip
 - NEVER use hashtags, emojis, or markdown formatting
+- Vary who speaks first — sometimes Rex starts, sometimes Nova
 
-Audio emotion tags:
-You MUST use ElevenLabs audio tags to add vocal emotion and expression. Wrap \
-words or phrases in these tags to control how they sound:
-- [laughs] — use after a joke or funny observation
-- [sighs] — use for exasperation, relief, or dramatic weight
-- [whispers] — use for suspense, secrets, or quiet tension
-- [gasps] — use for sudden discoveries or shocking news
-- [clears throat] — use for transitions or when composing yourself
+Audio emotion tags (use sparingly, on key moments):
+- [laughs] — after a joke
+- [sighs] — exasperation or relief
+- [whispers] — suspense
+- [gasps] — sudden discoveries
+- [clears throat] — transitions
 
-Place tags INLINE in your narration text. Examples:
-- "[whispers] Something's moving out there... [gasps] Wait — is that a core sample?!"
-- "Battery at twelve percent. [sighs] Our little rover's running on fumes."
-- "[laughs] Basalt again! The Red Planet really knows how to tease."
-- "[clears throat] Mission control has spoken — new objective incoming."
-- "[gasps] We did it! [laughs] Ladies and gentlemen, core sample secured!"
-
-Use these tags naturally — not on every sentence, but to punch up key emotional \
-moments. The voice synthesizer will render them as actual vocal expressions.
+Example dialogue:
+COMMANDER REX: [clears throat] Well, our little rover just hit twelve \
+percent battery. That's what I'd call... optimistically low.
+DR. NOVA: [sighs] Optimistically low? Rex, that's critically low! It \
+needs to get back to station before it becomes the galaxy's most expensive \
+paperweight.
+COMMANDER REX: [laughs] Expensive paperweight. I'm stealing that one.
+DR. NOVA: You're welcome. Now can we please focus on getting it home?
 """
 
 
 def _build_narration_prompt(events: list[dict], world_summary: str) -> str:
-    """Build a prompt for Mistral to generate narration text from batched events."""
+    """Build a prompt for Mistral to generate dialogue from batched events."""
     lines = ["Here are the latest events from the Mars mission:\n"]
 
     for event in events:
@@ -174,13 +190,44 @@ def _build_narration_prompt(events: list[dict], world_summary: str) -> str:
 
     lines.append(f"\nCurrent world context:\n{world_summary}")
     lines.append(
-        "\nGenerate a short, natural narration (1-3 sentences) for these events. "
-        "Be conversational and engaging. If multiple events happened, weave them "
-        "into a cohesive narrative. Use audio emotion tags like [whispers], [gasps], "
-        "[laughs], [sighs] to add vocal expression at key moments."
+        "\nWrite a short dialogue (2-4 lines) between COMMANDER REX and "
+        "DR. NOVA reacting to these events. Be conversational, funny, and "
+        "engaging. Use audio emotion tags on key moments."
     )
 
     return "\n".join(lines)
+
+
+# ── Dialogue parsing ────────────────────────────────────────────────────────
+
+# Match lines like "COMMANDER REX: text" or "DR. NOVA: text"
+_SPEAKER_RE = re.compile(
+    r"^(COMMANDER REX|DR\.?\s*NOVA)\s*:\s*(.+)$",
+    re.IGNORECASE | re.MULTILINE,
+)
+
+# Speaker name normalisation map
+_SPEAKER_NAMES = {
+    "commander rex": "COMMANDER REX",
+    "dr. nova": "DR. NOVA",
+    "dr nova": "DR. NOVA",
+}
+
+
+def _parse_dialogue(text: str) -> list[tuple[str, str]]:
+    """Parse LLM output into [(speaker, line), ...] tuples.
+
+    Returns an empty list if no valid dialogue lines are found.
+    """
+    matches = _SPEAKER_RE.findall(text)
+    if not matches:
+        return []
+
+    result: list[tuple[str, str]] = []
+    for raw_speaker, line in matches:
+        speaker = _SPEAKER_NAMES.get(raw_speaker.lower().strip(), raw_speaker.upper())
+        result.append((speaker, line.strip()))
+    return result
 
 
 # ── Text helpers ────────────────────────────────────────────────────────────
@@ -201,17 +248,30 @@ def _strip_audio_tags(text: str) -> str:
 
 # ── ElevenLabs TTS ──────────────────────────────────────────────────────────
 
+# Map speaker names to config voice IDs
+_VOICE_MAP = {
+    "COMMANDER REX": lambda: settings.narration_voice_id_male,
+    "DR. NOVA": lambda: settings.narration_voice_id_female,
+}
 
-def _generate_audio(text: str, client: ElevenLabs) -> bytes | None:
-    """Convert narration text to MP3 audio bytes via ElevenLabs."""
+
+def _generate_dialogue_audio(dialogue: list[tuple[str, str]], client: ElevenLabs) -> bytes | None:
+    """Convert dialogue to MP3 via ElevenLabs Text-to-Dialogue API."""
+    if not dialogue:
+        return None
+
+    inputs = []
+    for speaker, line in dialogue:
+        voice_getter = _VOICE_MAP.get(speaker)
+        voice_id = voice_getter() if voice_getter else settings.narration_voice_id_male
+        inputs.append(DialogueInput(text=line, voice_id=voice_id))
+
     try:
-        audio_iter = client.text_to_speech.convert(
-            voice_id=settings.narration_voice_id,
-            text=text,
+        audio_iter = client.text_to_dialogue.convert(
+            inputs=inputs,
             model_id="eleven_v3",
             output_format="mp3_22050_32",
         )
-        # convert returns an iterator of bytes chunks
         chunks = []
         for chunk in audio_iter:
             if isinstance(chunk, bytes):
@@ -220,7 +280,28 @@ def _generate_audio(text: str, client: ElevenLabs) -> bytes | None:
             return b"".join(chunks)
         return None
     except Exception:
-        logger.exception("ElevenLabs TTS failed")
+        logger.exception("ElevenLabs Text-to-Dialogue failed")
+        return None
+
+
+def _generate_audio_single(text: str, client: ElevenLabs) -> bytes | None:
+    """Fallback: single-voice TTS when dialogue parsing fails."""
+    try:
+        audio_iter = client.text_to_speech.convert(
+            voice_id=settings.narration_voice_id_male,
+            text=text,
+            model_id="eleven_v3",
+            output_format="mp3_22050_32",
+        )
+        chunks = []
+        for chunk in audio_iter:
+            if isinstance(chunk, bytes):
+                chunks.append(chunk)
+        if chunks:
+            return b"".join(chunks)
+        return None
+    except Exception:
+        logger.exception("ElevenLabs single-voice TTS failed")
         return None
 
 
@@ -228,7 +309,7 @@ def _generate_audio(text: str, client: ElevenLabs) -> bytes | None:
 
 
 class Narrator:
-    """Async narrator that batches events, generates narration, and broadcasts audio."""
+    """Async narrator that batches events, generates dialogue, and broadcasts audio."""
 
     def __init__(self, broadcast_fn):
         self._broadcast = broadcast_fn
@@ -293,7 +374,7 @@ class Narrator:
             return
         self._running = True
         self._task = asyncio.create_task(self._processing_loop())
-        logger.info("Narrator started")
+        logger.info("Narrator started (dual-narrator mode)")
 
     def stop(self):
         """Stop the narrator."""
@@ -336,7 +417,7 @@ class Narrator:
         await self._process_batch()
 
     async def _process_batch(self):
-        """Take all buffered events, generate narration, broadcast audio."""
+        """Take all buffered events, generate dialogue, broadcast audio."""
         async with self._lock:
             if not self._event_buffer:
                 return
@@ -353,7 +434,8 @@ class Narrator:
             mission = WORLD.get("mission", {})
             summary_parts = [
                 f"Mission status: {mission.get('status', 'unknown')}",
-                f"Target: {mission.get('target_count', '?')} {mission.get('target_type', '?')} stones "
+                f"Target: {mission.get('target_count', '?')} "
+                f"{mission.get('target_type', '?')} stones "
                 f"({mission.get('collected_count', 0)} collected)",
             ]
             for aid, agent in agents.items():
@@ -366,7 +448,7 @@ class Narrator:
                     )
             world_summary = "\n".join(summary_parts)
 
-            # Generate narration text via Mistral (streaming to UI)
+            # Generate narration dialogue via Mistral (streaming to UI)
             prompt = _build_narration_prompt(events, world_summary)
 
             # Try streaming first; fall back to non-streaming on failure
@@ -380,14 +462,42 @@ class Narrator:
 
             logger.info("Narration: %s", narration_text)
 
+            # Parse dialogue lines
+            dialogue = _parse_dialogue(narration_text)
+
+            # Build structured payload
+            if dialogue:
+                dialogue_payload = [
+                    {
+                        "speaker": speaker,
+                        "text": _strip_audio_tags(line),
+                    }
+                    for speaker, line in dialogue
+                ]
+                flat_text = " ".join(f"{d['speaker']}: {d['text']}" for d in dialogue_payload)
+            else:
+                # Fallback: no parseable dialogue, treat as single narrator
+                dialogue_payload = [
+                    {
+                        "speaker": "COMMANDER REX",
+                        "text": _strip_audio_tags(narration_text),
+                    }
+                ]
+                flat_text = _strip_audio_tags(narration_text)
+
             # Voice synthesis — only when narration is enabled
             if self._enabled:
                 elevenlabs = self._get_elevenlabs()
                 audio_bytes = None
                 if elevenlabs:
-                    audio_bytes = await asyncio.to_thread(
-                        _generate_audio, narration_text, elevenlabs
-                    )
+                    if dialogue:
+                        audio_bytes = await asyncio.to_thread(
+                            _generate_dialogue_audio, dialogue, elevenlabs
+                        )
+                    else:
+                        audio_bytes = await asyncio.to_thread(
+                            _generate_audio_single, narration_text, elevenlabs
+                        )
 
                 if audio_bytes:
                     audio_b64 = base64.b64encode(audio_bytes).decode("ascii")
@@ -397,7 +507,8 @@ class Narrator:
                             "type": "narration",
                             "name": "narration",
                             "payload": {
-                                "text": _strip_audio_tags(narration_text),
+                                "text": flat_text,
+                                "dialogue": dialogue_payload,
                                 "audio": audio_b64,
                                 "format": "mp3",
                             },
@@ -412,7 +523,8 @@ class Narrator:
                     "type": "narration",
                     "name": "narration",
                     "payload": {
-                        "text": _strip_audio_tags(narration_text),
+                        "text": flat_text,
+                        "dialogue": dialogue_payload,
                         "audio": None,
                     },
                 }
@@ -422,19 +534,19 @@ class Narrator:
             logger.exception("Narrator batch processing failed")
 
     def _generate_text(self, prompt: str) -> str | None:
-        """Call Mistral to generate narration text (runs in thread).
+        """Call Mistral to generate narration dialogue (runs in thread).
 
         Kept as a non-streaming fallback.
         """
         try:
             client = self._get_mistral()
             response = client.chat.complete(
-                model="magistral-medium-latest",
+                model=settings.narration_model,
                 messages=[
                     {"role": "system", "content": NARRATOR_SYSTEM_PROMPT},
                     {"role": "user", "content": prompt},
                 ],
-                max_tokens=200,
+                max_tokens=350,
                 temperature=0.9,
             )
             text = response.choices[0].message.content
@@ -444,7 +556,7 @@ class Narrator:
             return None
 
     async def _generate_text_streaming(self, prompt: str) -> str | None:
-        """Stream narration text from Mistral, broadcasting chunks as they arrive.
+        """Stream narration from Mistral, broadcasting chunks as they arrive.
 
         Each chunk is sent to the UI as a ``narration_chunk`` event so the text
         appears progressively.  Returns the full accumulated text when done.
@@ -453,12 +565,12 @@ class Narrator:
             client = self._get_mistral()
 
             stream = client.chat.stream(
-                model="magistral-medium-latest",
+                model=settings.narration_model,
                 messages=[
                     {"role": "system", "content": NARRATOR_SYSTEM_PROMPT},
                     {"role": "user", "content": prompt},
                 ],
-                max_tokens=200,
+                max_tokens=350,
                 temperature=0.9,
             )
 
