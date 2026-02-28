@@ -30,10 +30,6 @@ defineProps({
     type: String,
     default: '',
   },
-  memory: {
-    type: Array,
-    default: () => [],
-  },
   events: {
     type: Array,
     default: () => [],
@@ -81,20 +77,11 @@ const emit = defineEmits(['select-agent'])
     </div>
     <div class="agent-log">
       <div
-        v-if="(!memory || memory.length === 0) && (!events || events.length === 0)"
+        v-if="!events || events.length === 0"
         class="empty"
       >
         No activity yet
       </div>
-      <!-- Memory (recent actions from world state) -->
-      <div
-        v-for="(m, i) in (memory || [])"
-        :key="'m-'+i"
-        class="memory-entry"
-      >
-        {{ m }}
-      </div>
-      <!-- All events chronologically -->
       <div
         v-for="(e, i) in (events || [])"
         :key="'e-'+i"
@@ -187,13 +174,6 @@ const emit = defineEmits(['select-agent'])
   flex: 1;
   overflow-y: auto;
   padding: 0.25rem;
-}
-
-.memory-entry {
-  padding: 0.15rem 0.35rem;
-  font-size: 0.7rem;
-  color: var(--accent-memory);
-  border-bottom: 1px solid var(--border-dim);
 }
 
 .agent-event {

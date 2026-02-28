@@ -130,6 +130,23 @@ function batteryPct() {
             </span>
           </div>
         </div>
+        <div
+          v-if="agent.memory && agent.memory.length"
+          class="modal-section"
+        >
+          <div class="modal-label">
+            Memory
+          </div>
+          <div class="modal-memory">
+            <div
+              v-for="(m, i) in agent.memory"
+              :key="i"
+              class="memory-entry"
+            >
+              {{ m }}
+            </div>
+          </div>
+        </div>
         <div class="modal-section">
           <div class="modal-label">
             Tools
@@ -183,7 +200,7 @@ function batteryPct() {
   background: var(--bg-elevated);
   border: 1px solid var(--border-medium);
   border-radius: var(--radius-lg);
-  width: 380px;
+  width: 560px;
   max-width: 90vw;
   max-height: 80vh;
   overflow-y: auto;
@@ -299,6 +316,23 @@ function batteryPct() {
 .inv-stone.unknown {
   color: var(--accent-unknown);
   border-color: var(--accent-unknown-border);
+}
+
+.modal-memory {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  max-height: 150px;
+  overflow-y: auto;
+}
+
+.memory-entry {
+  font-size: 0.7rem;
+  color: var(--accent-memory);
+  padding: 0.2rem 0.4rem;
+  background: var(--bg-revealed);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
 }
 
 .modal-context {
