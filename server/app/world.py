@@ -207,6 +207,7 @@ def _build_initial_world():
         },
         "stones": stones,
         "concentration_map": _compute_concentration_map(core_positions),
+        "tick": 0,
         "mission": {
             "status": "running",
             "target_type": TARGET_STONE_TYPE,
@@ -225,6 +226,12 @@ def reset_world():
     WORLD.clear()
     WORLD.update(fresh)
     logger.info("World reset")
+
+
+def next_tick():
+    """Increment and return the current tick number."""
+    WORLD["tick"] += 1
+    return WORLD["tick"]
 
 
 def check_ground(agent_id):
@@ -275,6 +282,11 @@ def execute_action(agent_id, action_name, params):
         if delta is None:
             return {"ok": False, "error": f"Invalid direction: {direction}"}
         distance = max(1, min(MAX_MOVE_DISTANCE, int(params.get("distance", 1))))
+
+        cost = BATTERY_COST_MOVE * distance
+        if agent["battery"] < cost:
+            record_memory(agent_id, f"Failed move {direction}: not enough battery ({agent['battery']:.0%} < {cost:.0%})")
+            return {"ok": False, "error": f"Not enough battery to move {distance} tiles (need {cost:.0%}, have {agent['battery']:.0%})"}
 
         ox, oy = agent["position"]
         tx, ty = ox + delta[0] * distance, oy + delta[1] * distance
