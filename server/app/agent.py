@@ -7,7 +7,7 @@ import random
 from mistralai import Mistral
 
 from .config import settings
-from .world import WORLD, GRID_W, GRID_H, DIRECTIONS
+from .world import WORLD, GRID_W, GRID_H, DIRECTIONS, check_ground
 
 logger = logging.getLogger(__name__)
 
@@ -29,6 +29,26 @@ MOVE_TOOL = {
         },
     },
 }
+
+DIG_TOOL = {
+    "type": "function",
+    "function": {
+        "name": "dig",
+        "description": "Dig at current tile to extract a buried stone. Costs 6% battery. The stone must be present and not yet extracted.",
+        "parameters": {"type": "object", "properties": {}},
+    },
+}
+
+PICKUP_TOOL = {
+    "type": "function",
+    "function": {
+        "name": "pickup",
+        "description": "Pick up an extracted stone at current tile into inventory. The stone must have been dug out first.",
+        "parameters": {"type": "object", "properties": {}},
+    },
+}
+
+ROVER_TOOLS = [MOVE_TOOL, DIG_TOOL, PICKUP_TOOL]
 
 
 class RoverAgent:
@@ -60,9 +80,13 @@ class RoverAgent:
             if 0 <= nx < GRID_W and 0 <= ny < GRID_H and (nx, ny) not in visited_set:
                 unvisited_dirs.append(name)
 
+        ground = check_ground(self.agent_id)
+        stone_here = ground["stone"]
+        inventory = agent.get("inventory", [])
+
         system = (
             "You are Rover-1, an autonomous Mars rover.\n"
-            "You explore the terrain, observe your surroundings, and decide where to move.\n"
+            "You explore the terrain, find stones, dig them out, and pick them up.\n"
             "Keep responses short (1-2 sentences of reasoning, then act).\n"
             "\n"
             f"Mission: {mission['objective']}\n"
@@ -73,7 +97,8 @@ class RoverAgent:
             f"Battery: {agent['battery']:.0%}\n"
             f"Tiles visited: {len(visited)}\n"
             f"Unvisited neighbors: {', '.join(unvisited_dirs) if unvisited_dirs else 'none'}\n"
-            f"Valid directions: north, south, east, west (one tile per move)\n"
+            f"Stone at current tile: {stone_here['type'] if stone_here else 'none'}\n"
+            f"Inventory: {len(inventory)} stones ({', '.join(s['type'] for s in inventory) if inventory else 'empty'})\n"
         )
         return system
 
@@ -90,7 +115,7 @@ class RoverAgent:
         response = client.chat.complete(
             model=self.model,
             messages=messages,
-            tools=[MOVE_TOOL],
+            tools=ROVER_TOOLS,
         )
         choice = response.choices[0]
 
@@ -102,13 +127,14 @@ class RoverAgent:
 
         if choice.message.tool_calls:
             tc = choice.message.tool_calls[0]
-            if tc.function.name == "move":
-                args = (
-                    json.loads(tc.function.arguments)
-                    if isinstance(tc.function.arguments, str)
-                    else tc.function.arguments
-                )
-                action = {"name": "move", "params": args}
+            name = tc.function.name
+            args = (
+                json.loads(tc.function.arguments)
+                if isinstance(tc.function.arguments, str)
+                else tc.function.arguments
+            )
+            if name in ("move", "dig", "pickup"):
+                action = {"name": name, "params": args}
 
         return {"thinking": thinking, "action": action}
 

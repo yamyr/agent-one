@@ -6,6 +6,7 @@ defineProps({
   position: String,
   battery: String,
   inventoryCount: Number,
+  mission: String,
   events: Array,
   color: String,
 })
@@ -22,6 +23,7 @@ const emit = defineEmits(['select-agent'])
         <span v-if="inventoryCount > 0" class="agent-inv">&middot; inv {{ inventoryCount }}</span>
       </span>
     </div>
+    <div v-if="mission" class="agent-mission">{{ mission }}</div>
     <div class="agent-log">
       <div v-if="!events || events.length === 0" class="empty">
         No events yet
@@ -69,6 +71,17 @@ const emit = defineEmits(['select-agent'])
 
 .agent-inv {
   color: #b8962a;
+}
+
+.agent-mission {
+  padding: 0.25rem 0.6rem;
+  font-size: 0.7rem;
+  color: #8a8a6a;
+  border-bottom: 1px solid #1a1a24;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex-shrink: 0;
 }
 
 .agent-log {
