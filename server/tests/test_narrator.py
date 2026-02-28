@@ -220,18 +220,17 @@ class TestNarrator(unittest.IsolatedAsyncioTestCase):
         self.narrator.enabled = True
         self.assertTrue(self.narrator.enabled)
 
-    async def test_feed_skips_when_disabled(self):
+    async def test_feed_buffers_when_voice_disabled(self):
+        """Text narration always runs — disabling only skips voice."""
         self.narrator.enabled = False
         await self.narrator.feed({"name": "dig", "payload": {}})
-        self.assertEqual(len(self.narrator._event_buffer), 0)
+        self.assertEqual(len(self.narrator._event_buffer), 1)
 
-    @patch("app.narrator.settings")
-    async def test_feed_skips_without_api_key(self, mock_settings):
-        mock_settings.elevenlabs_api_key = ""
-        mock_settings.narration_enabled = True
+    async def test_feed_buffers_without_api_key(self):
+        """Text narration works even without ElevenLabs key."""
         narrator = Narrator(broadcast_fn=self.broadcast)
         await narrator.feed({"name": "dig", "payload": {}})
-        self.assertEqual(len(narrator._event_buffer), 0)
+        self.assertEqual(len(narrator._event_buffer), 1)
 
     async def test_feed_skips_uninteresting_event(self):
         self.narrator._enabled = True

@@ -33,7 +33,7 @@ async function resetSimulation() {
   }
 }
 
-const { events, connected, worldState, agentIds, agentEvents, narration } = useWebSocket({ onConnect: onWsConnect })
+const { events, connected, worldState, agentIds, agentEvents, narration, narrationChunk } = useWebSocket({ onConnect: onWsConnect })
 
 async function togglePause() {
   const endpoint = paused.value ? '/api/simulation/resume' : '/api/simulation/pause'
@@ -67,6 +67,7 @@ function agentData(id) {
 
     <NarrationPlayer
       :narration="narration"
+      :narration-chunk="narrationChunk"
       :narration-enabled="narrationEnabled"
       @toggle-narration="toggleNarration"
     />
