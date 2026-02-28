@@ -140,3 +140,10 @@ Vite proxies `/api/*` to `http://localhost:4009` and `/ws` to `ws://localhost:40
 - `IDEA.md` — high-level concept and vision
 - `ROADMAP.md` — milestone plan (M0–M5 + stretch goals)
 - `_private/PROTOCOL_REF.md` — protocol reference from Snowball
+
+## Active Technologies
+- Python 3.12+ (server), JavaScript/Vue 3 (UI) + FastAPI, Vue 3, Vite, Mistral AI SDK, ElevenLabs SDK (001-fix-narration-ui)
+- N/A (in-memory state only) (001-fix-narration-ui)
+
+## Recent Changes
+- 001-fix-narration-ui: Added Python 3.12+ (server), JavaScript/Vue 3 (UI) + FastAPI, Vue 3, Vite, Mistral AI SDK, ElevenLabs SDK

@@ -86,7 +86,7 @@ _(No tasks — project structure and dependencies already exist)_
 - [x] T007 [P] Run UI lint: `cd ui && npx eslint src/` — zero warnings
 - [x] T008 [P] Run UI build: `cd ui && npm run build` — clean build
 - [x] T009 Update `Changelog.md` with bug fix details
-- [ ] T010 Commit, push, create PR, verify CI green, merge to main
+- [x] T010 Commit, push, create PR, verify CI green, merge to main
 
 ---
 
