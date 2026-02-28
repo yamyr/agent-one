@@ -31,7 +31,7 @@ def _make_station_context():
         grid_h=20,
         rovers=[
             RoverSummary(
-                id="rover-mock",
+                id="rover-mistral",
                 position=[0, 0],
                 battery=1.0,
                 mission=AgentMission(objective="Explore the terrain", plan=[]),
@@ -62,7 +62,7 @@ class TestStationDefine(unittest.TestCase):
 
         tool_calls = [
             _mock_tool_call(
-                "assign_mission", {"agent_id": "rover-mock", "objective": "Explore north sector"}
+                "assign_mission", {"agent_id": "rover-mistral", "objective": "Explore north sector"}
             ),
         ]
         mock_client.chat.complete.return_value = _mock_client_response(
@@ -76,7 +76,7 @@ class TestStationDefine(unittest.TestCase):
         self.assertEqual(result["thinking"], "Assigning initial missions.")
         self.assertEqual(len(result["actions"]), 1)
         self.assertEqual(result["actions"][0]["name"], "assign_mission")
-        self.assertEqual(result["actions"][0]["params"]["agent_id"], "rover-mock")
+        self.assertEqual(result["actions"][0]["params"]["agent_id"], "rover-mistral")
         self.assertEqual(result["actions"][0]["params"]["objective"], "Explore north sector")
 
     @patch("app.station.settings")
@@ -123,7 +123,7 @@ class TestStationHandleEvent(unittest.TestCase):
         )
 
         event = {
-            "source": "rover-mock",
+            "source": "rover-mistral",
             "type": "event",
             "name": "check",
             "payload": {"stone": {"type": "basalt"}},
@@ -140,13 +140,13 @@ class TestStationHandleEvent(unittest.TestCase):
 class TestParseToolCalls(unittest.TestCase):
     def test_assign_mission_parsed(self):
         tool_calls = [
-            _mock_tool_call("assign_mission", {"agent_id": "rover-mock", "objective": "Go north"})
+            _mock_tool_call("assign_mission", {"agent_id": "rover-mistral", "objective": "Go north"})
         ]
         actions = _parse_tool_calls(tool_calls)
 
         self.assertEqual(len(actions), 1)
         self.assertEqual(actions[0]["name"], "assign_mission")
-        self.assertEqual(actions[0]["params"]["agent_id"], "rover-mock")
+        self.assertEqual(actions[0]["params"]["agent_id"], "rover-mistral")
 
     def test_broadcast_alert_parsed(self):
         tool_calls = [_mock_tool_call("broadcast_alert", {"message": "Storm incoming"})]
@@ -157,16 +157,16 @@ class TestParseToolCalls(unittest.TestCase):
         self.assertEqual(actions[0]["params"]["message"], "Storm incoming")
 
     def test_charge_rover_parsed(self):
-        tool_calls = [_mock_tool_call("charge_rover", {"rover_id": "rover-mock"})]
+        tool_calls = [_mock_tool_call("charge_rover", {"rover_id": "rover-mistral"})]
         actions = _parse_tool_calls(tool_calls)
 
         self.assertEqual(len(actions), 1)
         self.assertEqual(actions[0]["name"], "charge_rover")
-        self.assertEqual(actions[0]["params"]["rover_id"], "rover-mock")
+        self.assertEqual(actions[0]["params"]["rover_id"], "rover-mistral")
 
     def test_multiple_tool_calls_parsed(self):
         tool_calls = [
-            _mock_tool_call("assign_mission", {"agent_id": "rover-mock", "objective": "Go"}),
+            _mock_tool_call("assign_mission", {"agent_id": "rover-mistral", "objective": "Go"}),
             _mock_tool_call("broadcast_alert", {"message": "Alert"}),
         ]
         actions = _parse_tool_calls(tool_calls)
@@ -177,10 +177,10 @@ class TestExecuteAction(unittest.TestCase):
     def test_assign_mission(self):
         result = execute_action({
             "name": "assign_mission",
-            "params": {"agent_id": "rover-mock", "objective": "Go north"},
+            "params": {"agent_id": "rover-mistral", "objective": "Go north"},
         })
         self.assertTrue(result["ok"])
-        self.assertEqual(result["agent_id"], "rover-mock")
+        self.assertEqual(result["agent_id"], "rover-mistral")
 
     def test_broadcast_alert(self):
         result = execute_action({
@@ -192,11 +192,11 @@ class TestExecuteAction(unittest.TestCase):
 
     def test_charge_rover_at_station(self):
         from app.world import WORLD
-        WORLD["agents"]["rover-mock"]["position"] = [0, 0]
-        WORLD["agents"]["rover-mock"]["battery"] = 0.5
+        WORLD["agents"]["rover-mistral"]["position"] = [0, 0]
+        WORLD["agents"]["rover-mistral"]["battery"] = 0.5
         result = execute_action({
             "name": "charge_rover",
-            "params": {"rover_id": "rover-mock"},
+            "params": {"rover_id": "rover-mistral"},
         })
         self.assertTrue(result["ok"])
 
@@ -213,7 +213,7 @@ class TestBuildWorldSummary(unittest.TestCase):
     def test_summary_contains_rovers(self):
         ctx = _make_station_context()
         summary = _build_world_summary(ctx)
-        self.assertIn("rover-mock", summary)
+        self.assertIn("rover-mistral", summary)
         self.assertIn("rover-mistral", summary)
 
     def test_summary_contains_grid(self):

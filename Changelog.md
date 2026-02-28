@@ -6,6 +6,44 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added (Solar Panels)
+
+- **Solar panel system**: Rovers carry 2 deployable solar panels (`MAX_SOLAR_PANELS=2`). Deploy with `deploy_solar_panel` action (costs 1 fuel), recharge with `use_solar_battery` (gains 25% battery). Panels render on the map as gold rectangles (grey when depleted).
+- **Solar panel tools**: `DEPLOY_SOLAR_PANEL_TOOL` and `USE_SOLAR_BATTERY_TOOL` added to rover LLM tool list.
+- **Solar panel context**: Rover LLM prompt includes panels remaining and nearby panel status.
+- **Solar panel rendering**: WorldMap.vue renders active/depleted panels with grid lines.
+- **`_nearest_solar_panel` helper**: Low-battery task hints suggest nearby active panels as alternative to station return.
+
+### Changed (Remove Mock Rover)
+
+- **Removed `rover-mock` agent entirely**: `MockRoverReasoner`, `MockRoverAgent`, `RoverMockLoop` classes deleted from `agent.py`. No more mock rover in `_build_initial_world`, `AGENT_MAP`, `active_agents` config, or `AGENT_COLORS`.
+- **`MistralRoverReasoner._fallback_turn`**: Now uses inline explore logic (random unvisited direction) instead of delegating to `MockRoverReasoner`.
+- **`charge_rover` → `charge_agent`**: Renamed to accept any non-station agent (drone included). `charge_rover` kept as backward-compat alias.
+- **Station prompt**: Updated to reference single rover `rover-mistral` instead of two rovers.
+
+### Changed (Stone Generation)
+
+- **Per-tile probability**: Replaced noise-based `_noise_concentration` with `STONE_PROBABILITY=0.015` per tile (1.5% chance per tile in each 16×16 chunk). `CORE_PROBABILITY=0.3` (30% chance a stone is core).
+- **Removed `_noise_concentration` and `_boost_concentration_near_cores`**: Replaced by `_stone_proximity_concentration` (Manhattan distance decay from nearest stone).
+- **Removed `math` and `struct` imports**: No longer needed.
+- **Origin chunk guaranteed ≥1 core**: Ensures playability.
+
+### Changed (Mission Return Logic)
+
+- **Mission fulfillment check**: `_update_rover_tasks` now checks `target_in_inventory >= target_needed` and instructs rover to return to station immediately with 🏁 emoji prefix.
+- **Rover LLM prompt**: Added "CRITICAL: Once you have collected the target number of stones, STOP exploring and RETURN TO STATION IMMEDIATELY."
+- **Mission indicator**: LLM context shows "🏁 MISSION TARGET MET" when collected count meets target.
+
+### Changed (UI Improvements)
+
+- **Chronological event log**: `AgentPane.vue` now shows ALL events (thinking + actions) chronologically, not just thinking events. Actions show move coordinates or result text.
+- **CSS refinements**: `.ae-type.think` colored `#668`, `.ae-text.action-text` colored `#7a9a7a`.
+
+### Lessons Learned
+
+- When replacing a mock with real agent, test setUp methods that previously initialized two agents need careful deduplication.
+- Mission state (`collected_count`) must be reset in test setUp to avoid cross-test contamination with new mission-fulfillment logic.
+
 ### Changed (Battery & Fuel Rebalance)
 
 - **Fuel capacity system**: Rovers carry 350 fuel units, Drone carries 250 fuel units. Battery remains a 0.0–1.0 float (fraction of capacity)

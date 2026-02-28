@@ -20,8 +20,8 @@ from .world import FUEL_CAPACITY_ROVER, FUEL_CAPACITY_DRONE, DRONE_REVEAL_RADIUS
 from .world import BATTERY_COST_MOVE, BATTERY_COST_MOVE_DRONE, BATTERY_COST_DIG
 from .world import BATTERY_COST_PICKUP, BATTERY_COST_ANALYZE, BATTERY_COST_ANALYZE_GROUND
 from .world import BATTERY_COST_SCAN, RETURN_TO_BASE_THRESHOLD
-from .world import check_ground, _direction_hint, _find_stone_at, must_return_to_base
-from .world import execute_action, get_snapshot, charge_rover, next_tick
+from .world import check_ground, _direction_hint, must_return_to_base
+from .world import execute_action, get_snapshot, charge_agent, next_tick
 
 logger = logging.getLogger(__name__)
 
@@ -86,7 +86,25 @@ ANALYZE_GROUND_TOOL = {
     },
 }
 
-ROVER_TOOLS = [MOVE_TOOL, ANALYZE_TOOL, DIG_TOOL, PICKUP_TOOL, ANALYZE_GROUND_TOOL]
+DEPLOY_SOLAR_PANEL_TOOL = {
+    "type": "function",
+    "function": {
+        "name": "deploy_solar_panel",
+        "description": f"Deploy a solar panel at current tile. The panel stores {BATTERY_COST_MOVE * 100 * 25:.0f}% charge that can be used later with use_solar_battery. Costs 1 fuel unit to deploy. Limited supply.",
+        "parameters": {"type": "object", "properties": {}},
+    },
+}
+
+USE_SOLAR_BATTERY_TOOL = {
+    "type": "function",
+    "function": {
+        "name": "use_solar_battery",
+        "description": "Use a deployed solar panel at current tile to recharge battery. The panel must be active (not depleted).",
+        "parameters": {"type": "object", "properties": {}},
+    },
+}
+
+ROVER_TOOLS = [MOVE_TOOL, ANALYZE_TOOL, DIG_TOOL, PICKUP_TOOL, ANALYZE_GROUND_TOOL, DEPLOY_SOLAR_PANEL_TOOL, USE_SOLAR_BATTERY_TOOL]
 
 
 # ── Rover Reasoners (sync decision engines, read from WORLD) ──
@@ -99,7 +117,6 @@ class MistralRoverReasoner:
         self.agent_id = agent_id
         self.model = model
         self._client = None
-        self._mock_fallback = MockRoverReasoner(agent_id=agent_id)
 
     def _get_client(self):
         if self._client is None:
@@ -174,6 +191,7 @@ class MistralRoverReasoner:
             "head back to station IMMEDIATELY — this is the return-to-base threshold.\n"
             "- If you find an unknown stone: analyze → dig → pickup. All on the same tile.\n"
             "- Once you have collected all target stones, RETURN TO STATION to complete the mission.\n"
+            "- CRITICAL: Once you have collected the target number of stones, STOP exploring and RETURN TO STATION IMMEDIATELY.\n"
             "- Prefer unvisited tiles when exploring. Don't backtrack aimlessly.\n"
             "- Ground is auto-scanned after every move. No need to check manually.\n"
             "- Follow your current tasks list. It tells you exactly what to do next.".format(
@@ -185,6 +203,7 @@ class MistralRoverReasoner:
             f"\n== Mission ==\n"
             f"Objective: {mission['objective']}\n"
             f"Target: collect {target_count} {target_type} stones ({collected}/{target_count} done)"
+            + (f"\n🏁 MISSION TARGET MET — RETURN TO STATION NOW!" if collected >= target_count else "")
         )
 
         tasks = agent.get("tasks", [])
@@ -203,7 +222,20 @@ class MistralRoverReasoner:
             f"Safety margin: {'OK' if battery > RETURN_TO_BASE_THRESHOLD else 'LOW — return to station immediately'}\n"
             f"Inventory: {len(inventory)} stones"
             + (f" ({', '.join(s['type'] for s in inventory)})" if inventory else "")
+            + f"\nSolar panels remaining: {agent.get('solar_panels_remaining', 0)}"
         )
+
+        # Nearby solar panels
+        nearby_panels = []
+        for panel in WORLD.get("solar_panels", []):
+            px, py = panel["position"]
+            pd = abs(px - x) + abs(py - y)
+            if pd <= 10:
+                status = "depleted" if panel["depleted"] else f"active ({panel['battery']:.0%})"
+                nearby_panels.append(f"  - ({px},{py}): {status}, {pd} tiles")
+        if nearby_panels:
+            parts.append("Nearby solar panels:")
+            parts.extend(nearby_panels)
 
         # Visible stones (on revealed tiles)
         revealed_set = {tuple(c) for c in agent.get("revealed", [])}
@@ -292,7 +324,7 @@ class MistralRoverReasoner:
                     if isinstance(tc.function.arguments, str)
                     else tc.function.arguments
                 )
-                if name in ("move", "dig", "pickup", "analyze", "analyze_ground"):
+                if name in ("move", "dig", "pickup", "analyze", "analyze_ground", "deploy_solar_panel", "use_solar_battery"):
                     action = {"name": name, "params": args}
                 else:
                     logger.warning("%s called unknown tool %r, ignoring", self.agent_id, name)
@@ -311,136 +343,23 @@ class MistralRoverReasoner:
             return self._fallback_turn(f"LLM unavailable ({type(exc).__name__})")
 
     def _fallback_turn(self, reason):
-        fallback = self._mock_fallback.run_turn()
-        fallback_thinking = fallback.get("thinking") or ""
-        prefix = f"LLM fallback: {reason}. "
-        fallback["thinking"] = (prefix + fallback_thinking).strip()
-        return fallback
-
-
-class MockRoverReasoner:
-    """Mock rover reasoner — explores, collects stones, returns to station. No LLM calls."""
-
-    def __init__(self, agent_id="rover-mock"):
-        self.agent_id = agent_id
-
-    def run_turn(self):
-        """Decide next action by reading from WORLD."""
         agent = WORLD["agents"][self.agent_id]
         x, y = agent["position"]
-        mission = WORLD.get("mission", {})
-        target_type = mission.get("target_type", "core")
-
-        context = (
-            f"Mock rover at ({x},{y}), battery={agent['battery']:.0%}, "
-            f"visited={len(agent.get('visited', []))}, "
-            f'mission="{agent["mission"]["objective"]}"'
-        )
-        agent["last_context"] = context
-
-        # Check for recall command — override everything, head to station
-        for cmd in agent.get("pending_commands", []):
-            if cmd["name"] == "recall":
-                station = WORLD["agents"].get("station")
-                sp = station["position"] if station else [0, 0]
-                dx, dy = sp[0] - x, sp[1] - y
-                if dx == 0 and dy == 0:
-                    thinking = f"Recall received but already at station ({x}, {y})."
-                    return {"thinking": thinking, "action": {"name": "move", "params": {"direction": "north", "distance": 1}}}
-                if abs(dx) >= abs(dy):
-                    direction = "east" if dx > 0 else "west"
-                    distance = min(abs(dx), MAX_MOVE_DISTANCE)
-                else:
-                    direction = "north" if dy > 0 else "south"
-                    distance = min(abs(dy), MAX_MOVE_DISTANCE)
-                reason = cmd.get("payload", {}).get("reason", "emergency")
-                thinking = f"RECALL received: {reason}. Heading to station at ({sp[0]},{sp[1]})."
-                return {
-                    "thinking": thinking,
-                    "action": {"name": "move", "params": {"direction": direction, "distance": distance}},
-                }
-
-        # Battery safety — return to base if battery is low
-        if must_return_to_base(agent):
-            station = WORLD["agents"].get("station")
-            sp = station["position"] if station else [0, 0]
-            dx, dy = sp[0] - x, sp[1] - y
-            if dx != 0:
-                direction = "east" if dx > 0 else "west"
-                distance = min(abs(dx), MAX_MOVE_DISTANCE)
-            elif dy != 0:
-                direction = "north" if dy > 0 else "south"
-                distance = min(abs(dy), MAX_MOVE_DISTANCE)
-            else:
-                direction = "north"
-                distance = 1
-            thinking = f"I'm at ({x}, {y}). LOW BATTERY ({agent['battery']:.0%}) — must return to station!"
-            return {
-                "thinking": thinking,
-                "action": {
-                    "name": "move",
-                    "params": {"direction": direction, "distance": distance},
-                },
-            }
-
-        # Check for stone at current tile — analyze, dig, or pickup
-        stone_here = _find_stone_at(x, y)
-        if stone_here:
-            if not stone_here.get("analyzed"):
-                thinking = f"I'm at ({x}, {y}). Found an unknown stone — analyzing."
-                return {"thinking": thinking, "action": {"name": "analyze", "params": {}}}
-            elif not stone_here.get("extracted"):
-                thinking = f"I'm at ({x}, {y}). Found a {stone_here['type']} stone — digging."
-                return {"thinking": thinking, "action": {"name": "dig", "params": {}}}
-            else:
-                thinking = f"I'm at ({x}, {y}). Stone extracted — picking up."
-                return {"thinking": thinking, "action": {"name": "pickup", "params": {}}}
-
-        # If carrying target stone, navigate toward station
-        has_target = any(s["type"] == target_type for s in agent.get("inventory", []))
-        if has_target:
-            station = WORLD["agents"].get("station")
-            sp = station["position"] if station else [0, 0]
-            dx, dy = sp[0] - x, sp[1] - y
-            if dx != 0:
-                direction = "east" if dx > 0 else "west"
-                distance = min(abs(dx), MAX_MOVE_DISTANCE)
-            elif dy != 0:
-                direction = "north" if dy > 0 else "south"
-                distance = min(abs(dy), MAX_MOVE_DISTANCE)
-            else:
-                direction = "north"
-                distance = 1
-            thinking = f"I'm at ({x}, {y}). Carrying target stone, heading to station at ({sp[0]},{sp[1]})."
-            return {
-                "thinking": thinking,
-                "action": {
-                    "name": "move",
-                    "params": {"direction": direction, "distance": distance},
-                },
-            }
-
-        # Default: explore unvisited tiles (infinite grid — no boundary check)
         visited_set = {tuple(p) for p in agent.get("visited", [])}
-        valid = []
         unvisited = []
-        for name, (ddx, ddy) in DIRECTIONS.items():
-            nx, ny = x + ddx, y + ddy
+        valid = []
+        for name, (dx, dy) in DIRECTIONS.items():
+            nx, ny = x + dx, y + dy
             valid.append((name, nx, ny))
             if (nx, ny) not in visited_set:
                 unvisited.append((name, nx, ny))
-
         candidates = unvisited if unvisited else valid
         direction, tx, ty = random.choice(candidates)
-
-        thinking = f"I'm at ({x}, {y}). I'll move {direction} to ({tx}, {ty})."
-        action = {"name": "move", "params": {"direction": direction}}
-
-        return {"thinking": thinking, "action": action}
+        thinking = f"LLM fallback: {reason}. Moving {direction} to ({tx},{ty})."
+        return {"thinking": thinking, "action": {"name": "move", "params": {"direction": direction}}}
 
 
 # Backward-compat aliases
-MockRoverAgent = MockRoverReasoner
 RoverAgent = MistralRoverReasoner
 
 
@@ -766,12 +685,9 @@ class MockDroneAgent:
 
 
 class RoverLoop(BaseAgent):
-    """Generic rover tick: inject commands → reason → execute → broadcast.
+    """Generic rover tick: inject commands → reason → execute → broadcast."""
 
-    Subclasses set self._reasoner to a MockRoverReasoner or MistralRoverReasoner.
-    """
-
-    _reasoner: MockRoverReasoner | MistralRoverReasoner
+    _reasoner: MistralRoverReasoner
 
     async def tick(self, host) -> None:
         # Inject pending commands from inbox into WORLD for reasoner to read
@@ -845,7 +761,7 @@ class RoverLoop(BaseAgent):
             and rover["position"] == station_agent["position"]
             and rover["battery"] < 1.0
         ):
-            charge_result = charge_rover(self.agent_id)
+            charge_result = charge_agent(self.agent_id)
             if charge_result["ok"]:
                 charge_msg = make_message(
                     source="station",
@@ -854,14 +770,6 @@ class RoverLoop(BaseAgent):
                     payload=charge_result,
                 )
                 await host.broadcast(charge_msg.to_dict())
-
-
-class RoverMockLoop(RoverLoop):
-    """Rover loop wired to MockRoverReasoner."""
-
-    def __init__(self, interval: float = 0.5):
-        super().__init__(agent_id="rover-mock", interval=interval)
-        self._reasoner = MockRoverReasoner(agent_id=self.agent_id)
 
 
 class RoverMistralLoop(RoverLoop):
@@ -922,7 +830,7 @@ class DroneLoop(BaseAgent):
             and drone["position"] == station_agent["position"]
             and drone["battery"] < 1.0
         ):
-            charge_result = charge_rover(self.agent_id)
+            charge_result = charge_agent(self.agent_id)
             if charge_result["ok"]:
                 charge_msg = make_message(
                     source="station",
