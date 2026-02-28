@@ -1,3 +1,4 @@
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -8,10 +9,10 @@ class Settings(BaseSettings):
     env: str = "dev"
 
     # Server
-    server_port: int = 4009
+    server_port: int = Field(default=4009, ge=1, le=65535)
 
     # SurrealDB
-    surreal_port: int = 4002
+    surreal_port: int = Field(default=4002, ge=1, le=65535)
     surreal_url: str = "ws://localhost:4002/rpc"
     surreal_ns: str = "dev"
     surreal_db: str = "mars"
@@ -25,8 +26,8 @@ class Settings(BaseSettings):
     mistral_api_key: str = ""
 
     # Simulation timing
-    agent_turn_interval_seconds: float = 0.5
-    llm_turn_interval_seconds: float = 3.0
+    agent_turn_interval_seconds: float = Field(default=0.5, gt=0)
+    llm_turn_interval_seconds: float = Field(default=3.0, gt=0)
 
     # World generation seed (empty = random)
     world_seed: str = ""
@@ -40,7 +41,7 @@ class Settings(BaseSettings):
     narration_voice_id_male: str = "JBFqnCBsd6RMkjVDRZzb"  # George - Commander Rex
     narration_voice_id_female: str = "21m00Tcm4TlvDq8ikWAM"  # Rachel - Dr. Nova
     narration_model: str = "mistral-medium-latest"
-    narration_min_interval_seconds: float = 5.0
+    narration_min_interval_seconds: float = Field(default=5.0, ge=0)
 
 
 settings = Settings()
