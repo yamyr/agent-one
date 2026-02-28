@@ -1,12 +1,108 @@
 <script setup>
+import { ref, computed, watch, nextTick, onMounted, onBeforeUnmount } from 'vue'
 import { agentColor } from '../constants.js'
 
-defineProps({
+const props = defineProps({
   events: {
     type: Array,
     default: () => [],
   },
 })
+
+const ROW_HEIGHT = 32
+const BUFFER = 5
+
+const container = ref(null)
+const scrollTop = ref(0)
+const containerHeight = ref(420)
+const pinnedToTop = ref(true)
+const newEventKeys = ref(new Set())
+
+let lastSeenUid = 0
+
+function onScroll() {
+  const el = container.value
+  if (!el) return
+  scrollTop.value = el.scrollTop
+  // Pinned to top when scrollTop is near 0 (within 5px tolerance)
+  pinnedToTop.value = el.scrollTop < 5
+}
+
+const startIdx = computed(() => {
+  const idx = Math.floor(scrollTop.value / ROW_HEIGHT) - BUFFER
+  return Math.max(0, idx)
+})
+
+const endIdx = computed(() => {
+  const visibleCount = Math.ceil(containerHeight.value / ROW_HEIGHT)
+  const idx = Math.floor(scrollTop.value / ROW_HEIGHT) + visibleCount + BUFFER
+  return Math.min(props.events.length, idx)
+})
+
+const visibleEvents = computed(() => props.events.slice(startIdx.value, endIdx.value))
+
+const topSpacerHeight = computed(() => startIdx.value * ROW_HEIGHT)
+const bottomSpacerHeight = computed(() => (props.events.length - endIdx.value) * ROW_HEIGHT)
+
+// Track new events for enter animation using newest event's _uid
+watch(
+  () => props.events[0]?._uid ?? 0,
+  (newestUid) => {
+    if (newestUid > lastSeenUid && lastSeenUid > 0) {
+      // Collect all new event keys since last seen
+      const keys = new Set()
+      for (const e of props.events) {
+        const uid = e._uid ?? 0
+        if (uid <= lastSeenUid) break
+        keys.add(uid)
+      }
+      newEventKeys.value = keys
+
+      // Clear animation class after transition completes
+      setTimeout(() => {
+        newEventKeys.value = new Set()
+      }, 350)
+
+      // Auto-scroll to top if pinned
+      if (pinnedToTop.value) {
+        nextTick(() => {
+          if (container.value) {
+            container.value.scrollTop = 0
+          }
+        })
+      }
+    }
+    lastSeenUid = newestUid
+  },
+)
+
+function updateContainerHeight() {
+  if (container.value) {
+    containerHeight.value = container.value.clientHeight
+  }
+}
+
+let resizeObserver = null
+
+onMounted(() => {
+  updateContainerHeight()
+  lastSeenUid = props.events[0]?._uid ?? 0
+  if (container.value) {
+    resizeObserver = new ResizeObserver(updateContainerHeight)
+    resizeObserver.observe(container.value)
+  }
+})
+
+onBeforeUnmount(() => {
+  if (resizeObserver) {
+    resizeObserver.disconnect()
+  }
+})
+
+function isNewEvent(event) {
+  const key = event._uid ?? 0
+  return newEventKeys.value.has(key)
+}
 
 function eventNameClass(event) {
   switch (event.name) {
@@ -40,7 +136,7 @@ function formatPayload(event) {
       return p.text || ''
     case 'move':
       if (p.from && p.to)
-        return `(${p.from[0]},${p.from[1]}) → (${p.to[0]},${p.to[1]})  bat ${Math.round((p.battery ?? 0) * 100)}%`
+        return `(${p.from[0]},${p.from[1]}) \u2192 (${p.to[0]},${p.to[1]})  bat ${Math.round((p.battery ?? 0) * 100)}%`
       return ''
     case 'analyze':
       if (p.stone)
@@ -59,19 +155,19 @@ function formatPayload(event) {
     case 'scan':
       return `peak ${p.peak} at (${p.position[0]},${p.position[1]})`
     case 'charge_rover':
-      return `battery → ${Math.round((p.battery ?? 0) * 100)}%`
+      return `battery \u2192 ${Math.round((p.battery ?? 0) * 100)}%`
     case 'alert':
       return p.message || ''
     case 'state':
       return '' // skip world snapshots
     case 'mission_success':
-      return `✓ mission complete — ${p.collected_quantity ?? '?'} collected`
+      return `\u2713 mission complete \u2014 ${p.collected_quantity ?? '?'} collected`
     case 'mission_aborted':
-      return `✗ mission aborted — ${p.reason || '?'}`
+      return `\u2717 mission aborted \u2014 ${p.reason || '?'}`
     case 'assign_mission':
       return p.objective || ''
     case 'recall':
-      return `recall ${p.rover_id || ''}${p.reason ? ' — ' + p.reason : ''}`
+      return `recall ${p.rover_id || ''}${p.reason ? ' \u2014 ' + p.reason : ''}`
     default:
       return JSON.stringify(p, null, 2)
   }
@@ -92,11 +188,18 @@ function formatPayload(event) {
     >
       Waiting for mission events...
     </div>
-    <TransitionGroup name="event-item">
+    <div
+      v-else
+      ref="container"
+      class="event-scroll-container"
+      @scroll.passive="onScroll"
+    >
+      <div :style="{ height: topSpacerHeight + 'px' }" aria-hidden="true" />
       <div
-        v-for="(event, i) in events"
-        :key="event._uid ?? i"
-        class="event"
+        v-for="(event, i) in visibleEvents"
+        :key="event._uid ?? (startIdx + i)"
+        :class="['event', { 'event-enter': isNewEvent(event) }]"
+        :style="{ height: ROW_HEIGHT + 'px' }"
       >
         <span
           v-if="event.tick != null"
@@ -113,7 +216,8 @@ function formatPayload(event) {
           class="event-payload"
         >{{ formatPayload(event) }}</span>
       </div>
-    </TransitionGroup>
+      <div :style="{ height: bottomSpacerHeight + 'px' }" aria-hidden="true" />
+    </div>
   </section>
 </template>
 
@@ -123,39 +227,49 @@ function formatPayload(event) {
   border-radius: var(--radius-md);
   background: var(--bg-card);
   padding: 0.75rem;
+}
+
+.event-scroll-container {
   max-height: 420px;
   overflow-y: auto;
+  contain: content;
 }
 
 .event {
   padding: 0.35rem 0;
   border-bottom: 1px solid var(--border-dim);
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   gap: 0.5rem;
   align-items: baseline;
+  box-sizing: border-box;
+  overflow: hidden;
 }
 
 .event-tick {
   color: var(--text-muted);
   font-size: 0.7rem;
   min-width: 35px;
+  flex-shrink: 0;
 }
 
 .event-source {
   font-weight: bold;
   min-width: 100px;
   font-size: 0.8rem;
+  flex-shrink: 0;
 }
 
 .event-type {
   color: var(--text-secondary);
   font-size: 0.75rem;
+  flex-shrink: 0;
 }
 
 .event-name {
   color: var(--accent-gold);
   font-size: 0.8rem;
+  flex-shrink: 0;
 }
 
 .event-name-default { color: var(--accent-gold); }
@@ -175,17 +289,19 @@ function formatPayload(event) {
   min-width: 0;
 }
 
-/* ── TransitionGroup animations ── */
-.event-item-enter-active {
-  transition: opacity 0.3s ease, transform 0.3s ease;
+/* -- Enter animation for new events -- */
+.event-enter {
+  animation: event-slide-in 0.3s ease both;
 }
 
-.event-item-enter-from {
-  opacity: 0;
-  transform: translateX(-12px);
-}
-
-.event-item-move {
-  transition: transform 0.3s ease;
+@keyframes event-slide-in {
+  from {
+    opacity: 0;
+    transform: translateX(-12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
 }
 </style>
