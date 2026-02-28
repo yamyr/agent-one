@@ -55,7 +55,7 @@ CHARGE_ROVER_TOOL = {
     "type": "function",
     "function": {
         "name": "charge_rover",
-        "description": "Recharge a rover's battery. The rover must be co-located with the station. Adds 20% charge per call.",
+        "description": "Recharge a rover's battery. The rover must be co-located with the station. Adds 20% charge per call (70 fuel units).",
         "parameters": {
             "type": "object",
             "properties": {

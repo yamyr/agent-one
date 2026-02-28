@@ -7,7 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from rich.logging import RichHandler
 
-from .agent import RoverMockLoop, RoverMistralLoop
+from .agent import RoverMockLoop, RoverMistralLoop, DroneMistralLoop
 from .broadcast import broadcaster
 from .config import settings
 from .db import init_db, close_db
@@ -30,6 +30,7 @@ host = Host(narrator=narrator)
 AGENT_MAP = {
     "rover-mock": lambda: RoverMockLoop(interval=settings.agent_turn_interval_seconds),
     "rover-mistral": lambda: RoverMistralLoop(interval=settings.llm_turn_interval_seconds),
+    "drone-mistral": lambda: DroneMistralLoop(interval=2.0),
 }
 
 

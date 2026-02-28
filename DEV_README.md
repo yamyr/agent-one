@@ -2,8 +2,8 @@
 
 ## Prerequisites
 
-- Python 3.12+
-- Node >= 22.12.0
+- Python 3.14+
+- Node >= 24.0.0 (LTS)
 - [uv](https://docs.astral.sh/uv/) (Python package manager)
 - [SurrealDB](https://surrealdb.com/install) (running on port 4002 for dev)
 

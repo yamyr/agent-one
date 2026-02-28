@@ -1,5 +1,5 @@
 # Stage 1: Build Vue frontend
-FROM node:22-slim AS ui-build
+FROM node:24-slim AS ui-build
 WORKDIR /build
 COPY ui/package.json ui/package-lock.json ./
 RUN npm ci
@@ -7,7 +7,7 @@ COPY ui/ ./
 RUN npm run build
 
 # Stage 2: Python backend + built UI
-FROM python:3.12-slim
+FROM python:3.14-slim
 WORKDIR /app
 
 # Install uv

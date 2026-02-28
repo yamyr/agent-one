@@ -17,6 +17,7 @@ const emit = defineEmits(['toggle-narration'])
 
 const isPlaying = ref(false)
 const currentText = ref('')
+const dialogueLines = ref([])
 const audioQueue = ref([])
 const isProcessing = ref(false)
 
@@ -59,6 +60,18 @@ watch(() => props.narration, (event) => {
   if (!event) return
   stopTypewriter()
   currentText.value = event.text || ''
+
+  // Parse structured dialogue if available
+  if (event.dialogue && Array.isArray(event.dialogue) && event.dialogue.length > 0) {
+    dialogueLines.value = event.dialogue.map(d => ({
+      speaker: d.speaker,
+      text: d.text,
+      label: d.speaker === 'COMMANDER REX' ? 'REX' : 'NOVA',
+      color: d.speaker === 'COMMANDER REX' ? '#cc8844' : '#44ccaa',
+    }))
+  } else {
+    dialogueLines.value = []
+  }
 
   if (event.audio && props.narrationEnabled) {
     audioQueue.value.push(event.audio)
@@ -145,11 +158,28 @@ function skipAudio() {
         class="narrator-icon"
         :class="{ active: isPlaying }"
       >🎙</span>
-      <span class="narrator-label">NARRATOR</span>
+      <span class="narrator-label">MISSION COMMS</span>
     </div>
 
     <div
-      v-if="currentText"
+      v-if="dialogueLines.length > 0"
+      class="narration-text dialogue-block"
+    >
+      <div
+        v-for="(line, idx) in dialogueLines"
+        :key="idx"
+        class="dialogue-line"
+      >
+        <span
+          class="speaker-label"
+          :style="{ color: line.color }"
+        >{{ line.label }}:</span>
+        <span class="speaker-text">{{ line.text }}</span>
+      </div>
+    </div>
+
+    <div
+      v-else-if="currentText"
       class="narration-text"
     >
       {{ currentText }}
@@ -237,6 +267,9 @@ function skipAudio() {
   line-height: 1.4;
   min-width: 0;
   overflow: hidden;
+}
+
+.narration-text:not(.dialogue-block) {
   text-overflow: ellipsis;
   display: -webkit-box;
   -webkit-line-clamp: 2;
@@ -246,6 +279,34 @@ function skipAudio() {
 .narration-text.idle {
   color: #333;
   font-style: normal;
+}
+
+.dialogue-block {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  font-style: normal;
+}
+
+.dialogue-line {
+  display: flex;
+  align-items: baseline;
+  gap: 0.4rem;
+  line-height: 1.4;
+}
+
+.speaker-label {
+  font-weight: 700;
+  font-size: 0.7rem;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+.speaker-text {
+  color: #c8c8d0;
+  font-style: italic;
 }
 
 .narration-controls {
@@ -300,7 +361,14 @@ function skipAudio() {
   .narration-text {
     order: 3;
     width: 100%;
+    flex-basis: 100%;
+  }
+  .narration-text:not(.dialogue-block) {
     -webkit-line-clamp: 3;
+  }
+  .dialogue-line {
+    flex-direction: column;
+    gap: 0.15rem;
   }
 }
 </style>

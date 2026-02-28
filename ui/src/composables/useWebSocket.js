@@ -38,9 +38,9 @@ export function useWebSocket({ onConnect } = {}) {
       const event = JSON.parse(msg.data)
       if (event.source === 'world' && event.name === 'state') {
         worldState.value = event.payload
-      } else if (event.source === 'narrator' && event.type === 'narration') {
+      } else if (event.source === 'narrator' && event.name === 'narration') {
         narration.value = event.payload
-      } else if (event.source === 'narrator' && event.type === 'narration_chunk') {
+      } else if (event.source === 'narrator' && event.name === 'narration_chunk') {
         narrationChunk.value = event.payload
       } else {
         events.value.unshift(event)
