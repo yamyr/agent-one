@@ -1,5 +1,7 @@
 <script setup>
-defineProps({
+import { computed } from 'vue'
+
+const props = defineProps({
   mission: {
     type: Object,
     default: null,
@@ -7,6 +9,18 @@ defineProps({
 })
 
 const emit = defineEmits(['abort'])
+
+const collected = computed(() => {
+  if (!props.mission) return 0
+  return props.mission.collected_quantity || props.mission.collected_count || 0
+})
+
+const target = computed(() => {
+  if (!props.mission) return 1
+  return props.mission.target_quantity || props.mission.target_count || 1
+})
+
+const progressPct = computed(() => Math.min(100, Math.round((collected.value / target.value) * 100)))
 </script>
 
 <template>
@@ -15,8 +29,16 @@ const emit = defineEmits(['abort'])
     class="mission-bar"
   >
     <span class="mission-label">Mission</span>
-    <span class="mission-target">collect {{ mission.target_quantity || mission.target_count }} basalt</span>
-    <span class="mission-progress">{{ mission.collected_quantity || mission.collected_count || 0 }} / {{ mission.target_quantity || mission.target_count }}</span>
+    <span class="mission-target">collect {{ target }} basalt</span>
+    <span class="mission-progress-wrap">
+      <span class="progress-track">
+        <span
+          class="progress-fill"
+          :style="{ width: progressPct + '%' }"
+        />
+      </span>
+      <span class="mission-progress">{{ collected }} / {{ target }}</span>
+    </span>
     <span
       class="mission-status"
       :class="mission.status"
@@ -53,6 +75,30 @@ const emit = defineEmits(['abort'])
 
 .mission-target {
   color: var(--accent-amber-dark);
+}
+
+.mission-progress-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.progress-track {
+  display: inline-block;
+  width: 4rem;
+  height: 0.45rem;
+  border-radius: var(--radius-sm);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-subtle);
+  overflow: hidden;
+}
+
+.progress-fill {
+  display: block;
+  height: 100%;
+  border-radius: var(--radius-sm);
+  background: var(--accent-amber);
+  transition: width 0.3s ease;
 }
 
 .mission-progress {

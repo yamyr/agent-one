@@ -1,4 +1,6 @@
 <script setup>
+import BatteryBar from './BatteryBar.vue'
+
 defineProps({
   agentId: {
     type: String,
@@ -11,6 +13,10 @@ defineProps({
   battery: {
     type: String,
     default: '',
+  },
+  batteryLevel: {
+    type: Number,
+    default: 0,
   },
   inventoryCount: {
     type: Number,
@@ -49,7 +55,8 @@ const emit = defineEmits(['select-agent'])
         :style="{ color }"
       >{{ agentId }}</span>
       <span class="agent-stats">
-        {{ position }} &middot; bat {{ battery }}
+        {{ position }} &middot;
+        <BatteryBar :level="batteryLevel" />
         <span
           v-if="inventoryCount > 0"
           class="agent-inv"

@@ -25,6 +25,12 @@ function batteryPct(id) {
   return a ? Math.round(a.battery * 100) + '%' : '?'
 }
 
+function batteryRaw(id) {
+  if (!props.worldState) return 0
+  const a = props.worldState.agents[id]
+  return a ? a.battery : 0
+}
+
 function agentPosition(id) {
   if (!props.worldState) return '?'
   const a = props.worldState.agents[id]
@@ -62,6 +68,7 @@ function agentMemory(id) {
       :agent-id="id"
       :position="agentPosition(id)"
       :battery="batteryPct(id)"
+      :battery-level="batteryRaw(id)"
       :inventory-count="inventoryCount(id)"
       :mission="missionObjective(id)"
       :memory="agentMemory(id)"
