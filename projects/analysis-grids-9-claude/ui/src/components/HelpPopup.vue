@@ -106,6 +106,9 @@ onUnmounted(() => {
                 <li>
                   <strong>Station power:</strong> Limited allocation affects charge rate
                 </li>
+                <li>
+                  <strong>Storm events:</strong> Random storms reduce visibility, increase battery drain, and create urgency
+                </li>
               </ul>
             </div>
 
@@ -135,6 +138,10 @@ onUnmounted(() => {
                 <div class="battery-row">
                   <span class="battery-label">Charge rate:</span>
                   <span class="battery-value">5% per turn at station</span>
+                </div>
+                <div class="battery-row">
+                  <span class="battery-label">Storm penalty:</span>
+                  <span class="battery-value">+50% cost during storms</span>
                 </div>
               </div>
             </div>

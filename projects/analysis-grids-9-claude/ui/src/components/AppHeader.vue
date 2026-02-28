@@ -1,16 +1,38 @@
 <script setup>
-defineProps({
+import { ref } from 'vue'
+
+const props = defineProps({
   connected: Boolean,
   paused: Boolean,
 })
 
 const emit = defineEmits(['toggle-pause', 'reset', 'show-help'])
+
+// Language selection
+const currentLang = ref('en')
+const supportedLangs = ['en', 'es', 'fr', 'de', 'zh', 'ja']
+
+async function changeLanguage(lang) {
+  currentLang.value = lang
+  // TODO: Fetch translations and update UI
+  console.log('Language changed to:', lang)
+}
 </script>
 
 <template>
   <header>
     <h1>Mars Mission Control</h1>
     <div class="header-controls">
+      <select 
+        v-model="currentLang" 
+        class="lang-select"
+        @change="changeLanguage(currentLang)"
+        aria-label="Select language"
+      >
+        <option v-for="lang in supportedLangs" :key="lang" :value="lang">
+          {{ lang.toUpperCase() }}
+        </option>
+      </select>
       <button
         class="reset-btn"
         type="button"
@@ -65,6 +87,17 @@ h1 {
   display: flex;
   align-items: center;
   gap: 0.5rem;
+}
+
+.lang-select {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  padding: 0.25rem 0.4rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--text-muted);
+  background: var(--bg-input);
+  color: var(--text-primary);
+  cursor: pointer;
 }
 
 .reset-btn {
@@ -156,6 +189,7 @@ h1 {
     justify-content: space-between;
   }
 
+  .lang-select,
   .reset-btn,
   .pause-btn {
     font-size: 0.65rem;

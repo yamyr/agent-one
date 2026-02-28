@@ -16,6 +16,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   - Keyboard controls: Space (pause), Arrow keys (pan), 1-3 (follow agent), 0 (free camera), Esc (close modals)
 - **Responsive design**: Help popup adapts to tablet and mobile screens with adjusted layouts (movement cards as rows on mobile)
 
+### Added (Storm Events)
+
+- **Dynamic storm system**: Timed storm events that broadcast to all agents with configurable severity levels (1-3)
+- **Environmental effects**: Storms reduce visibility (100% → 40% at level 3), lower temperature (-35°C → -65°C), and create urgency
+- **Agent adaptation**: All agents receive storm information in their context and can adapt behavior (rovers may shelter, drones may return, station alerts)
+- **Narrator drama**: Dual narrators react dramatically to storm events with enhanced dialogue generation
+- **Automatic scheduling**: Storms occur randomly (every 30-80 ticks) with durations of 10-30 ticks
+
+### Added (Multi-language Support)
+
+- **Database-backed translations**: Translations stored in SurrealDB with API endpoints for management
+- **Language switching**: UI language selector in AppHeader with support for English, Spanish, French, German, Chinese, and Japanese
+- **Translation API**: `/translations/{language}` endpoint returns all translations, `/translations/languages` returns supported languages
+- **Extensible system**: Easy to add new languages and translation keys through the database
+
 ### Changed (UI Clean Up)
 
 - Map and minimap now render the grid even before world state arrives (consistent UI layout)
