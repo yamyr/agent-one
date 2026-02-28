@@ -326,6 +326,7 @@ class MockRoverAgent:
 
         # CRITICAL: battery safety — return to base if battery is low
         from .world import must_return_to_base
+
         if must_return_to_base(agent):
             station = WORLD["agents"].get("station")
             sp = station["position"] if station else [0, 0]
@@ -342,7 +343,10 @@ class MockRoverAgent:
             thinking = f"I'm at ({x}, {y}). ⚠️ LOW BATTERY ({agent['battery']:.0%}) — must return to station!"
             return {
                 "thinking": thinking,
-                "action": {"name": "move", "params": {"direction": direction, "distance": distance}},
+                "action": {
+                    "name": "move",
+                    "params": {"direction": direction, "distance": distance},
+                },
             }
 
         # Check for stone at current tile — analyze, dig, or pickup
@@ -508,9 +512,7 @@ class DroneAgent:
             f"- Battery: move costs 1%/tile, scan costs 2%. You can fly up to {MAX_MOVE_DISTANCE_DRONE} tiles per move.\n"
             "- Station is at ({sx},{sy}). Return when battery is low for recharge.\n"
             "- ALWAYS keep enough battery to return to station.\n"
-            "- Follow your current tasks list.".format(
-                sx=station_pos[0], sy=station_pos[1]
-            )
+            "- Follow your current tasks list.".format(sx=station_pos[0], sy=station_pos[1])
         )
 
         parts.append(
@@ -525,7 +527,9 @@ class DroneAgent:
             for i, task in enumerate(tasks, 1):
                 parts.append(f"{i}. {task}")
         else:
-            parts.append("\n== Current Tasks ==\n1. Scan current area, then fly to unscanned regions")
+            parts.append(
+                "\n== Current Tasks ==\n1. Scan current area, then fly to unscanned regions"
+            )
 
         parts.append(
             f"\n== State ==\n"
@@ -572,7 +576,10 @@ class DroneAgent:
 
             messages = [
                 {"role": "system", "content": context},
-                {"role": "user", "content": "Observe your surroundings and decide your next action."},
+                {
+                    "role": "user",
+                    "content": "Observe your surroundings and decide your next action.",
+                },
             ]
 
             logger.info("Calling Mistral (%s) for %s", self.model, self.agent_id)
@@ -640,6 +647,7 @@ class MockDroneAgent:
 
         # CRITICAL: battery safety — return to base if battery is low
         from .world import must_return_to_base
+
         if must_return_to_base(agent):
             station = WORLD["agents"].get("station")
             sp = station["position"] if station else [0, 0]
@@ -656,7 +664,10 @@ class MockDroneAgent:
             thinking = f"I'm at ({x}, {y}). ⚠️ LOW BATTERY ({agent['battery']:.0%}) — must return to station!"
             return {
                 "thinking": thinking,
-                "action": {"name": "move", "params": {"direction": direction, "distance": distance}},
+                "action": {
+                    "name": "move",
+                    "params": {"direction": direction, "distance": distance},
+                },
             }
 
         # Scan if current position not yet scanned
@@ -695,14 +706,25 @@ class MockDroneAgent:
             else:
                 direction = "north" if dy > 0 else "south"
                 distance = min(abs(dy), MAX_MOVE_DISTANCE_DRONE)
-            thinking = f"I'm at ({x}, {y}). Flying {direction} toward unscanned area at ({tx},{ty})."
+            thinking = (
+                f"I'm at ({x}, {y}). Flying {direction} toward unscanned area at ({tx},{ty})."
+            )
             return {
                 "thinking": thinking,
-                "action": {"name": "move", "params": {"direction": direction, "distance": distance}},
+                "action": {
+                    "name": "move",
+                    "params": {"direction": direction, "distance": distance},
+                },
             }
 
         # All nearby scanned — explore outward (infinite grid, no boundary check)
         valid = list(DIRECTIONS.keys())
         direction = random.choice(valid)
         thinking = f"I'm at ({x}, {y}). All nearby areas covered, exploring outward."
-        return {"thinking": thinking, "action": {"name": "move", "params": {"direction": direction, "distance": MAX_MOVE_DISTANCE_DRONE}}}
+        return {
+            "thinking": thinking,
+            "action": {
+                "name": "move",
+                "params": {"direction": direction, "distance": MAX_MOVE_DISTANCE_DRONE},
+            },
+        }

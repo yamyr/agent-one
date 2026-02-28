@@ -86,6 +86,7 @@ def _random_free_pos(occupied, rng=None, cx=0, cy=0):
 
 # --------------- Chunk-based procedural generation ---------------
 
+
 def _chunk_seed(cx, cy):
     """Deterministic seed for chunk (cx, cy)."""
     base = settings.world_seed or 42
@@ -94,8 +95,10 @@ def _chunk_seed(cx, cy):
 
 def _chunk_key(x, y):
     """Return the chunk coordinate for a world tile (x, y)."""
-    return (x // CHUNK_SIZE if x >= 0 else -(-x - 1) // CHUNK_SIZE - 1,
-            y // CHUNK_SIZE if y >= 0 else -(-y - 1) // CHUNK_SIZE - 1)
+    return (
+        x // CHUNK_SIZE if x >= 0 else -(-x - 1) // CHUNK_SIZE - 1,
+        y // CHUNK_SIZE if y >= 0 else -(-y - 1) // CHUNK_SIZE - 1,
+    )
 
 
 def _ensure_chunk(cx, cy):
@@ -117,7 +120,7 @@ def _ensure_chunk(cx, cy):
 
     # Stones: origin chunk guaranteed ≥1 core, others 0-2 stones
     stones = []
-    is_origin = (cx == 0 and cy == 0)
+    is_origin = cx == 0 and cy == 0
     occupied = set(AGENT_STARTS) if is_origin else set()
     num_stones = rng.randint(1, 3) if is_origin else rng.randint(0, 2)
 
@@ -125,13 +128,15 @@ def _ensure_chunk(cx, cy):
         is_core = (i == 0 and is_origin) or rng.random() < 0.3
         sx, sy = _random_free_pos(occupied, rng, cx, cy)
         occupied.add((sx, sy))
-        stones.append({
-            "position": [sx, sy],
-            "type": "unknown",
-            "_true_type": "core" if is_core else "basalt",
-            "extracted": False,
-            "analyzed": False,
-        })
+        stones.append(
+            {
+                "position": [sx, sy],
+                "type": "unknown",
+                "_true_type": "core" if is_core else "basalt",
+                "extracted": False,
+                "analyzed": False,
+            }
+        )
 
     # Register stones in the global list
     WORLD.setdefault("stones", []).extend(stones)
@@ -184,7 +189,7 @@ def _boost_concentration_near_cores():
                 if cell in boosted:
                     continue
                 d = abs(dx) + abs(dy)
-                boost = math.exp(-(d ** 2) / (sigma ** 2))
+                boost = math.exp(-(d**2) / (sigma**2))
                 if cell in conc:
                     conc[cell] = min(1.0, conc[cell] + boost * 0.6)
                 else:
@@ -805,7 +810,9 @@ def _update_drone_tasks(agent_id, agent):
 
     if best_target and best_dist > 0:
         hint = _direction_hint(best_target[0] - x, best_target[1] - y)
-        tasks.append(f"Fly to unscanned area at ({best_target[0]},{best_target[1]}) — {hint}, {best_dist} tiles")
+        tasks.append(
+            f"Fly to unscanned area at ({best_target[0]},{best_target[1]}) — {hint}, {best_dist} tiles"
+        )
 
     if not tasks:
         tasks.append("All areas scanned — patrol for new readings")

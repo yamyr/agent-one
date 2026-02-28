@@ -1348,7 +1348,13 @@ class TestDrone(unittest.TestCase):
 
     def test_drone_cannot_dig(self):
         WORLD["stones"] = [
-            {"position": [10, 10], "type": "core", "_true_type": "core", "analyzed": True, "extracted": False}
+            {
+                "position": [10, 10],
+                "type": "core",
+                "_true_type": "core",
+                "analyzed": True,
+                "extracted": False,
+            }
         ]
         result = execute_action("drone-mistral", "dig", {})
         self.assertFalse(result["ok"])
@@ -1363,15 +1369,19 @@ class TestDrone(unittest.TestCase):
         WORLD["stones"] = []
         WORLD["agents"]["rover-mock"]["position"] = [0, 0]
         WORLD["agents"]["rover-mock"]["visited"] = [[0, 0]]
-        WORLD["agents"]["rover-mock"]["revealed"] = [[x, y] for x, y in sorted(_cells_in_radius(0, 0, ROVER_REVEAL_RADIUS))]
+        WORLD["agents"]["rover-mock"]["revealed"] = [
+            [x, y] for x, y in sorted(_cells_in_radius(0, 0, ROVER_REVEAL_RADIUS))
+        ]
         WORLD["agents"]["rover-mock"]["inventory"] = []
         # Add a high-concentration drone scan far from rover
-        WORLD["drone_scans"] = [{
-            "position": [15, 15],
-            "readings": {"15,15": 0.9, "14,15": 0.7},
-            "peak": 0.9,
-            "scanner": "drone-mistral",
-        }]
+        WORLD["drone_scans"] = [
+            {
+                "position": [15, 15],
+                "readings": {"15,15": 0.9, "14,15": 0.7},
+                "peak": 0.9,
+                "scanner": "drone-mistral",
+            }
+        ]
         update_tasks("rover-mock")
         tasks = WORLD["agents"]["rover-mock"]["tasks"]
         self.assertTrue(any("hotspot" in t for t in tasks))
@@ -1388,12 +1398,14 @@ class TestChunkSystem(unittest.TestCase):
         self.assertTrue(result["ok"])
         # Chunk containing (31, 30) should exist
         from app.world import _chunk_key
+
         ck = _chunk_key(31, 30)
         self.assertIn(ck, WORLD["chunks"])
 
     def test_chunk_deterministic(self):
         """Same chunk coords always produce same concentration."""
         from app.world import _ensure_chunk, get_concentration, CHUNK_SIZE
+
         # Generate chunk (5, 5)
         _ensure_chunk(5, 5)
         val1 = get_concentration(5 * CHUNK_SIZE, 5 * CHUNK_SIZE)
@@ -1425,6 +1437,7 @@ class TestChunkSystem(unittest.TestCase):
     def test_get_concentration_lazy(self):
         """get_concentration generates chunk on demand."""
         from app.world import get_concentration, _chunk_key
+
         # Access a far-away cell
         val = get_concentration(100, 100)
         self.assertIsInstance(val, float)
