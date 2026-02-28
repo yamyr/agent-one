@@ -41,6 +41,9 @@ class Settings(BaseSettings):
     narration_voice_id_female: str = "21m00Tcm4TlvDq8ikWAM"  # Rachel - Dr. Nova
     narration_model: str = "mistral-medium-latest"
     narration_min_interval_seconds: float = 5.0
+    narration_max_tokens: int = 350
+    narration_temperature: float = 0.9
+    elevenlabs_model_id: str = "eleven_v3"
 
 
 settings = Settings()
