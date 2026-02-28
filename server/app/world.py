@@ -940,8 +940,6 @@ def _update_drone_tasks(agent_id, agent):
 def _update_rover_tasks(agent_id, agent):
     """Recompute short-term tasks for a rover based on current world state."""
     x, y = agent["position"]
-    mission = WORLD["mission"]
-    target_type = mission["target_type"]
     inventory = agent.get("inventory", [])
     revealed_set = {tuple(c) for c in agent.get("revealed", [])}
     tasks = []
