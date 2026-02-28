@@ -45,6 +45,11 @@ CHARGE_RATE = 0.20
 MAX_MOVE_DISTANCE = 3
 MAX_MOVE_DISTANCE_DRONE = 6
 
+# --- Solar panels ---
+SOLAR_BATTERY_CAPACITY = 0.25  # 25% of rover capacity
+BATTERY_COST_DEPLOY = 1 / FUEL_CAPACITY_ROVER  # trivial cost to place
+MAX_SOLAR_PANELS = 2  # each rover starts with 2 panels
+
 AGENT_STARTS = {(0, 0)}
 STONE_TYPES = ["core", "basalt"]
 ROVER_REVEAL_RADIUS = 3
@@ -288,6 +293,14 @@ _ROVER_TOOL_DEFS = [
         "name": "analyze_ground",
         "description": "Analyze ground concentration at current tile to detect nearby core deposits. Costs 3 fuel units (~0.86% battery). Returns a 0.0-1.0 reading.",
     },
+    {
+        "name": "deploy_solar_panel",
+        "description": "Deploy a solar panel at current tile. Creates a single-use battery pack (25% capacity) that rovers can later consume. Each rover carries 2 panels. Costs 1 fuel unit.",
+    },
+    {
+        "name": "use_solar_battery",
+        "description": "Consume the battery from a deployed solar panel at current tile to recharge. Adds up to 25% battery. Panel is depleted after use. Rover-only.",
+    },
 ]
 
 
@@ -332,6 +345,7 @@ def _make_rover(start_x, start_y):
         "type": "rover",
         "ground_readings": {},
         "tools": list(_ROVER_TOOL_DEFS),
+        "solar_panels_remaining": MAX_SOLAR_PANELS,
     }
 
 
@@ -356,6 +370,7 @@ def _build_initial_world():
         "chunks": {},
         "concentration_map": {},
         "drone_scans": [],
+        "solar_panels": [],
         "tick": 0,
         "bounds": {"min_x": -3, "max_x": 3, "min_y": -3, "max_y": 3},
         "mission": {
@@ -526,6 +541,26 @@ def execute_action(agent_id, action_name, params):
                 agent_id,
                 f"Scanned area around ({result['position'][0]},{result['position'][1]}), peak concentration={result['peak']:.3f}",
             )
+    elif action_name == "deploy_solar_panel":
+        if is_drone:
+            return {"ok": False, "error": "Drones cannot deploy solar panels"}
+        result = _execute_deploy_solar_panel(agent_id, agent)
+        if result["ok"]:
+            record_memory(
+                agent_id,
+                f"Deployed solar panel at ({result['position'][0]},{result['position'][1]}), "
+                f"panel battery={result['panel_battery']:.0%}, {result['panels_remaining']} panels left",
+            )
+    elif action_name == "use_solar_battery":
+        if is_drone:
+            return {"ok": False, "error": "Drones cannot use solar batteries"}
+        result = _execute_use_solar_battery(agent_id, agent)
+        if result["ok"]:
+            record_memory(
+                agent_id,
+                f"Used solar battery at ({result['position'][0]},{result['position'][1]}): "
+                f"{result['battery_before']:.0%} -> {result['battery_after']:.0%} (+{result['charge_gained']:.0%})",
+            )
     else:
         return {"ok": False, "error": f"Unknown action: {action_name}"}
 
@@ -675,6 +710,79 @@ def _execute_charge(agent_id, agent):
         "Agent %s charged %.0f%% -> %.0f%%", agent_id, old_battery * 100, agent["battery"] * 100
     )
     return {"ok": True, "battery_before": old_battery, "battery_after": agent["battery"]}
+
+
+def _execute_deploy_solar_panel(agent_id, agent):
+    """Deploy a solar panel at the rover's current tile."""
+    if agent.get("type") != "rover":
+        return {"ok": False, "error": "Only rovers can deploy solar panels"}
+    remaining = agent.get("solar_panels_remaining", 0)
+    if remaining <= 0:
+        return {"ok": False, "error": "No solar panels remaining"}
+    if agent["battery"] < BATTERY_COST_DEPLOY:
+        return {"ok": False, "error": "Not enough battery to deploy"}
+
+    x, y = agent["position"]
+    # Check if there's already a panel at this tile
+    for panel in WORLD.get("solar_panels", []):
+        if panel["position"] == [x, y]:
+            return {"ok": False, "error": f"Solar panel already deployed at ({x},{y})"}
+
+    agent["battery"] = max(0.0, agent["battery"] - BATTERY_COST_DEPLOY)
+    agent["solar_panels_remaining"] = remaining - 1
+    panel = {
+        "position": [x, y],
+        "battery": SOLAR_BATTERY_CAPACITY,
+        "deployed_by": agent_id,
+        "depleted": False,
+    }
+    WORLD.setdefault("solar_panels", []).append(panel)
+    logger.info(
+        "Agent %s deployed solar panel at (%d,%d), %d remaining",
+        agent_id, x, y, agent["solar_panels_remaining"],
+    )
+    return {
+        "ok": True,
+        "position": [x, y],
+        "panel_battery": panel["battery"],
+        "panels_remaining": agent["solar_panels_remaining"],
+    }
+
+
+def _execute_use_solar_battery(agent_id, agent):
+    """Consume battery from a solar panel at the rover's current tile."""
+    if agent.get("type") != "rover":
+        return {"ok": False, "error": "Only rovers can use solar batteries"}
+
+    x, y = agent["position"]
+    panel = None
+    for p in WORLD.get("solar_panels", []):
+        if p["position"] == [x, y] and not p["depleted"]:
+            panel = p
+            break
+
+    if panel is None:
+        return {"ok": False, "error": f"No active solar panel at ({x},{y})"}
+
+    if agent["battery"] >= 1.0:
+        return {"ok": False, "error": "Battery already full"}
+
+    old_battery = agent["battery"]
+    charge = min(panel["battery"], 1.0 - agent["battery"])
+    agent["battery"] = min(1.0, agent["battery"] + charge)
+    panel["battery"] = 0.0
+    panel["depleted"] = True
+    logger.info(
+        "Agent %s used solar battery at (%d,%d): %.0f%% -> %.0f%%",
+        agent_id, x, y, old_battery * 100, agent["battery"] * 100,
+    )
+    return {
+        "ok": True,
+        "position": [x, y],
+        "battery_before": old_battery,
+        "battery_after": agent["battery"],
+        "charge_gained": charge,
+    }
 
 
 def charge_rover(rover_id):
@@ -852,8 +960,20 @@ def _update_rover_tasks(agent_id, agent):
 
     # CRITICAL: battery safety — must return to base if battery is low
     if must_return_to_base(agent):
+        # Check if there's a usable solar panel nearby before forcing return
+        nearby_panel = _nearest_solar_panel(x, y)
         station = WORLD["agents"].get("station")
         sp = station["position"] if station else [0, 0]
+        if nearby_panel:
+            px, py = nearby_panel["position"]
+            panel_dist = abs(px - x) + abs(py - y)
+            hint = _direction_hint(px - x, py - y)
+            tasks.append(
+                f"🔋 LOW BATTERY ({agent['battery']:.0%}) — Solar panel at ({px},{py}) {hint}, {panel_dist} tiles. "
+                f"Navigate there and use_solar_battery to recharge!"
+            )
+            agent["tasks"] = tasks
+            return
         if [x, y] != sp:
             cost = _battery_to_reach_station(agent)
             tasks.append(
@@ -925,6 +1045,21 @@ def _update_rover_tasks(agent_id, agent):
         tasks.append("Explore unvisited tiles to find stones")
 
     agent["tasks"] = tasks
+
+
+def _nearest_solar_panel(x, y):
+    """Find nearest non-depleted solar panel reachable with current battery context."""
+    best = None
+    best_dist = float("inf")
+    for panel in WORLD.get("solar_panels", []):
+        if panel["depleted"]:
+            continue
+        px, py = panel["position"]
+        d = abs(px - x) + abs(py - y)
+        if d < best_dist:
+            best_dist = d
+            best = panel
+    return best
 
 
 def _best_drone_hotspot(rx, ry, revealed_set):

@@ -23,6 +23,7 @@ from .world import (
     BATTERY_COST_ANALYZE,
     BATTERY_COST_ANALYZE_GROUND,
     BATTERY_COST_SCAN,
+    BATTERY_SAFETY_MARGIN,
     RETURN_TO_BASE_THRESHOLD,
     check_ground,
     _direction_hint,
@@ -92,7 +93,25 @@ ANALYZE_GROUND_TOOL = {
     },
 }
 
-ROVER_TOOLS = [MOVE_TOOL, ANALYZE_TOOL, DIG_TOOL, PICKUP_TOOL, ANALYZE_GROUND_TOOL]
+DEPLOY_SOLAR_PANEL_TOOL = {
+    "type": "function",
+    "function": {
+        "name": "deploy_solar_panel",
+        "description": "Deploy a solar panel at current tile. Creates a single-use battery pack (25% capacity) that rovers can later consume with use_solar_battery. Each rover carries 2 panels. Costs 1 fuel unit.",
+        "parameters": {"type": "object", "properties": {}},
+    },
+}
+
+USE_SOLAR_BATTERY_TOOL = {
+    "type": "function",
+    "function": {
+        "name": "use_solar_battery",
+        "description": "Consume the battery from a deployed solar panel at current tile to recharge. Adds up to 25% battery. Panel is depleted after use. Must be at a tile with an active (non-depleted) solar panel.",
+        "parameters": {"type": "object", "properties": {}},
+    },
+}
+
+ROVER_TOOLS = [MOVE_TOOL, ANALYZE_TOOL, DIG_TOOL, PICKUP_TOOL, ANALYZE_GROUND_TOOL, DEPLOY_SOLAR_PANEL_TOOL, USE_SOLAR_BATTERY_TOOL]
 
 
 class RoverAgent:
@@ -177,6 +196,9 @@ class RoverAgent:
             "the station will recharge you automatically.\n"
             "- ALWAYS keep enough battery to return to station. When your battery drops to 67% or below, \n"
             "head back to station IMMEDIATELY — this is the return-to-base threshold.\n"
+            "- SOLAR PANELS: You carry 2 solar panels. Deploy them (deploy_solar_panel) at strategic locations\n"
+            "far from station to create recharge points. Each panel has a 25% battery pack.\n"
+            "Use use_solar_battery at a panel tile to recharge. Panels are single-use.\n"
             "- If you find an unknown stone: analyze → dig → pickup. All on the same tile.\n"
             "- Once you have collected all target stones, RETURN TO STATION to complete the mission.\n"
             "- Prefer unvisited tiles when exploring. Don't backtrack aimlessly.\n"
@@ -330,14 +352,44 @@ class MockRoverAgent:
         context = (
             f"Mock rover at ({x},{y}), battery={agent['battery']:.0%}, "
             f"visited={len(agent.get('visited', []))}, "
+            f"solar_panels={agent.get('solar_panels_remaining', 0)}, "
             f'mission="{agent["mission"]["objective"]}"'
         )
         agent["last_context"] = context
 
+        # If standing on an active solar panel and battery < 100%, use it
+        for panel in WORLD.get("solar_panels", []):
+            if panel["position"] == [x, y] and not panel["depleted"] and agent["battery"] < 1.0:
+                thinking = f"I'm at ({x}, {y}). 🔋 Found solar panel — using battery to recharge!"
+                return {"thinking": thinking, "action": {"name": "use_solar_battery", "params": {}}}
+
         # CRITICAL: battery safety — return to base if battery is low
-        from .world import must_return_to_base
+        from .world import must_return_to_base, _nearest_solar_panel
 
         if must_return_to_base(agent):
+            # Check for a nearby solar panel first
+            panel = _nearest_solar_panel(x, y)
+            if panel:
+                px, py = panel["position"]
+                panel_dist = abs(px - x) + abs(py - y)
+                panel_cost = panel_dist * BATTERY_COST_MOVE
+                if agent["battery"] > panel_cost + BATTERY_SAFETY_MARGIN:
+                    dx, dy = px - x, py - y
+                    if abs(dx) >= abs(dy) and dx != 0:
+                        direction = "east" if dx > 0 else "west"
+                        distance = min(abs(dx), MAX_MOVE_DISTANCE)
+                    elif dy != 0:
+                        direction = "north" if dy > 0 else "south"
+                        distance = min(abs(dy), MAX_MOVE_DISTANCE)
+                    else:
+                        direction = "north"
+                        distance = 1
+                    thinking = f"I'm at ({x}, {y}). 🔋 LOW BATTERY — heading to solar panel at ({px},{py})!"
+                    return {
+                        "thinking": thinking,
+                        "action": {"name": "move", "params": {"direction": direction, "distance": distance}},
+                    }
+
             station = WORLD["agents"].get("station")
             sp = station["position"] if station else [0, 0]
             dx, dy = sp[0] - x, sp[1] - y
@@ -353,11 +405,26 @@ class MockRoverAgent:
             thinking = f"I'm at ({x}, {y}). ⚠️ LOW BATTERY ({agent['battery']:.0%}) — must return to station!"
             return {
                 "thinking": thinking,
-                "action": {
-                    "name": "move",
-                    "params": {"direction": direction, "distance": distance},
-                },
+                "action": {"name": "move", "params": {"direction": direction, "distance": distance}},
             }
+
+        # Deploy solar panel when far from station and battery dropping
+        station = WORLD["agents"].get("station")
+        sp = station["position"] if station else [0, 0]
+        dist_to_station = abs(x - sp[0]) + abs(y - sp[1])
+        panels_remaining = agent.get("solar_panels_remaining", 0)
+        if panels_remaining > 0 and dist_to_station >= 15 and 0.50 <= agent["battery"] <= 0.65:
+            # Don't deploy if there's already a panel nearby
+            existing_nearby = False
+            for panel in WORLD.get("solar_panels", []):
+                if not panel["depleted"]:
+                    pd = abs(panel["position"][0] - x) + abs(panel["position"][1] - y)
+                    if pd < 10:
+                        existing_nearby = True
+                        break
+            if not existing_nearby:
+                thinking = f"I'm at ({x}, {y}). Far from station ({dist_to_station} tiles). Deploying solar panel as recharge point!"
+                return {"thinking": thinking, "action": {"name": "deploy_solar_panel", "params": {}}}
 
         # Check for stone at current tile — analyze, dig, or pickup
         stone_here = _find_stone_at(x, y)
@@ -375,8 +442,6 @@ class MockRoverAgent:
         # If carrying target stone, navigate toward station
         has_target = any(s["type"] == target_type for s in agent.get("inventory", []))
         if has_target:
-            station = WORLD["agents"].get("station")
-            sp = station["position"] if station else [0, 0]
             dx, dy = sp[0] - x, sp[1] - y
             if dx != 0:
                 direction = "east" if dx > 0 else "west"
@@ -385,7 +450,6 @@ class MockRoverAgent:
                 direction = "north" if dy > 0 else "south"
                 distance = min(abs(dy), MAX_MOVE_DISTANCE)
             else:
-                # Already at station
                 direction = "north"
                 distance = 1
             thinking = f"I'm at ({x}, {y}). Carrying target stone, heading to station at ({sp[0]},{sp[1]})."

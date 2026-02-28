@@ -6,6 +6,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- **Solar Panel Deployable Battery Packs**: Rovers can place solar panels as strategic recharge points
+  - Each rover starts with 2 solar panels (`solar_panels_remaining` field)
+  - `deploy_solar_panel` action: places panel at current tile with 25% battery capacity
+  - `use_solar_battery` action: consumes panel battery to recharge rover (single-use, then depleted)
+  - Drone-exclusive: drones cannot deploy or use solar batteries
+  - Duplicate position rejected: only one panel per tile
+  - MockRoverAgent deploys panels strategically when far from station (15+ tiles) and battery 50-65%
+  - MockRoverAgent navigates to nearby solar panels when battery is low (before returning to station)
+  - Task system suggests nearby solar panels as recharge option before forcing return-to-base
+  - Frontend: gold/yellow SVG icon on tiles with grid-line detail; depleted panels shown greyed out
+  - 11 new tests (160 total pass): deploy, use, depletion, drone-exclusion, caps, snapshots
+
 ### Changed (Battery & Fuel Rebalance)
 
 - **Fuel capacity system**: Rovers carry 350 fuel units, Drone carries 250 fuel units. Battery remains a 0.0–1.0 float (fraction of capacity)

@@ -1453,3 +1453,103 @@ class TestChunkSystem(unittest.TestCase):
         self.assertIn("bounds", snap)
         self.assertIn("min_x", snap["bounds"])
         self.assertIn("max_x", snap["bounds"])
+
+
+class TestSolarPanels(unittest.TestCase):
+    """Tests for solar panel deploy and use mechanics."""
+
+    def setUp(self):
+        from app.world import reset_world, MAX_SOLAR_PANELS
+        reset_world()
+        agent = WORLD["agents"]["rover-mock"]
+        agent["position"] = [5, 5]
+        agent["battery"] = 1.0
+        agent["solar_panels_remaining"] = MAX_SOLAR_PANELS
+
+    def test_deploy_solar_panel_success(self):
+        result = execute_action("rover-mock", "deploy_solar_panel", {})
+        self.assertTrue(result["ok"])
+        self.assertEqual(len(WORLD["solar_panels"]), 1)
+        panel = WORLD["solar_panels"][0]
+        self.assertEqual(panel["position"], [5, 5])
+        self.assertAlmostEqual(panel["battery"], 0.25)
+        self.assertFalse(panel["depleted"])
+        self.assertEqual(WORLD["agents"]["rover-mock"]["solar_panels_remaining"], 1)
+
+    def test_deploy_max_panels(self):
+        execute_action("rover-mock", "deploy_solar_panel", {})
+        WORLD["agents"]["rover-mock"]["position"] = [6, 5]
+        execute_action("rover-mock", "deploy_solar_panel", {})
+        self.assertEqual(len(WORLD["solar_panels"]), 2)
+        self.assertEqual(WORLD["agents"]["rover-mock"]["solar_panels_remaining"], 0)
+        # Third deploy should fail
+        WORLD["agents"]["rover-mock"]["position"] = [7, 5]
+        result = execute_action("rover-mock", "deploy_solar_panel", {})
+        self.assertFalse(result["ok"])
+        self.assertIn("No solar panels remaining", result["error"])
+
+    def test_deploy_duplicate_position_rejected(self):
+        execute_action("rover-mock", "deploy_solar_panel", {})
+        result = execute_action("rover-mock", "deploy_solar_panel", {})
+        self.assertFalse(result["ok"])
+        self.assertIn("already deployed", result["error"])
+
+    def test_use_solar_battery_success(self):
+        WORLD["agents"]["rover-mock"]["battery"] = 0.50
+        execute_action("rover-mock", "deploy_solar_panel", {})
+        result = execute_action("rover-mock", "use_solar_battery", {})
+        self.assertTrue(result["ok"])
+        self.assertAlmostEqual(result["battery_after"], 0.75, places=2)
+        self.assertTrue(WORLD["solar_panels"][0]["depleted"])
+
+    def test_use_solar_battery_caps_at_100(self):
+        WORLD["agents"]["rover-mock"]["battery"] = 0.90
+        execute_action("rover-mock", "deploy_solar_panel", {})
+        result = execute_action("rover-mock", "use_solar_battery", {})
+        self.assertTrue(result["ok"])
+        self.assertAlmostEqual(result["battery_after"], 1.0)
+
+    def test_use_depleted_panel_fails(self):
+        WORLD["agents"]["rover-mock"]["battery"] = 0.50
+        execute_action("rover-mock", "deploy_solar_panel", {})
+        execute_action("rover-mock", "use_solar_battery", {})  # deplete it
+        result = execute_action("rover-mock", "use_solar_battery", {})
+        self.assertFalse(result["ok"])
+        self.assertIn("No active solar panel", result["error"])
+
+    def test_use_at_wrong_position_fails(self):
+        execute_action("rover-mock", "deploy_solar_panel", {})
+        WORLD["agents"]["rover-mock"]["position"] = [10, 10]
+        WORLD["agents"]["rover-mock"]["battery"] = 0.50
+        result = execute_action("rover-mock", "use_solar_battery", {})
+        self.assertFalse(result["ok"])
+        self.assertIn("No active solar panel", result["error"])
+
+    def test_drone_cannot_deploy(self):
+        result = execute_action("drone-mistral", "deploy_solar_panel", {})
+        self.assertFalse(result["ok"])
+        self.assertIn("Drones cannot", result["error"])
+
+    def test_drone_cannot_use(self):
+        # Place a panel manually
+        WORLD["solar_panels"].append({
+            "position": [0, 0],
+            "battery": 0.25,
+            "deployed_by": "rover-mock",
+            "depleted": False,
+        })
+        WORLD["agents"]["drone-mistral"]["position"] = [0, 0]
+        result = execute_action("drone-mistral", "use_solar_battery", {})
+        self.assertFalse(result["ok"])
+        self.assertIn("Drones cannot", result["error"])
+
+    def test_snapshot_includes_solar_panels(self):
+        execute_action("rover-mock", "deploy_solar_panel", {})
+        snap = get_snapshot()
+        self.assertIn("solar_panels", snap)
+        self.assertEqual(len(snap["solar_panels"]), 1)
+
+    def test_rover_starts_with_panels(self):
+        from app.world import MAX_SOLAR_PANELS
+        agent = WORLD["agents"]["rover-mock"]
+        self.assertEqual(agent.get("solar_panels_remaining"), MAX_SOLAR_PANELS)

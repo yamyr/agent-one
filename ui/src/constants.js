@@ -15,6 +15,9 @@ export const STONE_COLORS = {
   'unknown': '#4a4a6a',
 }
 
+export const SOLAR_PANEL_COLOR = '#f0c040'
+export const SOLAR_PANEL_DEPLETED_COLOR = '#555555'
+
 export const AGENT_COLORS = {
   'station': '#44cc88',
   'rover-mock': '#6688cc',
