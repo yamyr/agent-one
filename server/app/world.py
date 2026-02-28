@@ -4,7 +4,13 @@ import copy
 import logging
 import random
 
+from .config import settings
+
 logger = logging.getLogger(__name__)
+
+if settings.world_seed:
+    random.seed(settings.world_seed)
+    logger.info("World seed: %s", settings.world_seed)
 
 GRID_W, GRID_H = 20, 20
 
@@ -81,67 +87,65 @@ def _expand_revealed(agent, cx, cy):
             agent.setdefault("revealed", []).append(list(cell))
 
 
-WORLD = {
-    "grid": {"w": GRID_W, "h": GRID_H},
-    "agents": {
-        "station": {
-            "position": [0, 0],
-            "type": "station",
-            "battery": 1.0,
-            "mission": {"objective": "Coordinate Mars mission", "plan": []},
-            "visited": [[0, 0]],
+ROVER_TOOL_DEFS = [
+    {"name": "move", "description": "Move 1-3 tiles in a cardinal direction (north/south/east/west). Costs 2% battery per tile."},
+    {"name": "check_ground", "description": "Scan current tile for rocks or minerals."},
+    {"name": "dig", "description": "Dig at current tile to extract a stone (costs 3x move battery)."},
+    {"name": "pickup", "description": "Pick up an extracted stone at current tile into inventory."},
+    {"name": "charge", "description": "Recharge battery at the station (must be co-located)."},
+]
+
+
+def _make_rover(start_x, start_y):
+    return {
+        "position": [start_x, start_y],
+        "battery": 1.0,
+        "mission": {"objective": "Explore the terrain", "plan": []},
+        "visited": [[start_x, start_y]],
+        "revealed": _init_revealed(start_x, start_y),
+        "inventory": [],
+        "memory": [],
+        "tasks": [],
+        "type": "rover",
+        "tools": list(ROVER_TOOL_DEFS),
+    }
+
+
+def _build_initial_world():
+    if settings.world_seed:
+        random.seed(settings.world_seed)
+    return {
+        "grid": {"w": GRID_W, "h": GRID_H},
+        "agents": {
+            "station": {
+                "position": [0, 0],
+                "type": "station",
+                "battery": 1.0,
+                "mission": {"objective": "Coordinate Mars mission", "plan": []},
+                "visited": [[0, 0]],
+            },
+            "rover-mock": _make_rover(2, 10),
+            "rover-mistral": _make_rover(2, 12),
         },
-        "rover-mock": {
-            "position": [2, 10],
-            "battery": 1.0,
-            "mission": {"objective": "Explore the terrain", "plan": []},
-            "visited": [[2, 10]],
-            "revealed": _init_revealed(2, 10),
-            "inventory": [],
-            "memory": [],
-            "tasks": [],
-            "type": "rover",
-            "tools": [
-                {
-                    "name": "move",
-                    "description": "Move 1-3 tiles in a cardinal direction (north/south/east/west). Costs 2% battery per tile.",
-                },
-                {"name": "check_ground", "description": "Scan current tile for rocks or minerals."},
-                {"name": "dig", "description": "Dig at current tile to extract a stone (costs 3x move battery)."},
-                {"name": "pickup", "description": "Pick up an extracted stone at current tile into inventory."},
-                {"name": "charge", "description": "Recharge battery at the station (must be co-located)."},
-            ],
+        "stones": _generate_stones(),
+        "mission": {
+            "status": "running",
+            "target_type": TARGET_STONE_TYPE,
+            "target_count": TARGET_STONE_COUNT,
+            "collected_count": 0,
         },
-        "rover-mistral": {
-            "position": [2, 12],
-            "battery": 1.0,
-            "mission": {"objective": "Explore the terrain", "plan": []},
-            "visited": [[2, 12]],
-            "revealed": _init_revealed(2, 12),
-            "inventory": [],
-            "memory": [],
-            "tasks": [],
-            "type": "rover",
-            "tools": [
-                {
-                    "name": "move",
-                    "description": "Move 1-3 tiles in a cardinal direction (north/south/east/west). Costs 2% battery per tile.",
-                },
-                {"name": "check_ground", "description": "Scan current tile for rocks or minerals."},
-                {"name": "dig", "description": "Dig at current tile to extract a stone (costs 3x move battery)."},
-                {"name": "pickup", "description": "Pick up an extracted stone at current tile into inventory."},
-                {"name": "charge", "description": "Recharge battery at the station (must be co-located)."},
-            ],
-        },
-    },
-    "stones": _generate_stones(),
-    "mission": {
-        "status": "running",
-        "target_type": TARGET_STONE_TYPE,
-        "target_count": TARGET_STONE_COUNT,
-        "collected_count": 0,
-    },
-}
+    }
+
+
+WORLD = _build_initial_world()
+
+
+def reset_world():
+    """Reset WORLD to initial state. Re-seeds RNG if world_seed is set."""
+    fresh = _build_initial_world()
+    WORLD.clear()
+    WORLD.update(fresh)
+    logger.info("World reset")
 
 
 def check_ground(agent_id):

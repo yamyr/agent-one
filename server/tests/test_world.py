@@ -5,7 +5,7 @@ from app.world import check_mission_status
 from app.world import BATTERY_COST_MOVE, BATTERY_COST_DIG, BATTERY_COST_PICKUP
 from app.world import CHARGE_RATE, REVEAL_RADIUS, GRID_W, GRID_H, AGENT_STARTS, MAX_MOVE_DISTANCE
 from app.world import assign_mission, _cells_in_radius, record_memory, MEMORY_MAX
-from app.world import update_tasks, _direction_hint
+from app.world import update_tasks, _direction_hint, reset_world
 
 
 class TestMoveAgent(unittest.TestCase):
@@ -797,3 +797,27 @@ class TestUpdateTasks(unittest.TestCase):
         tasks = WORLD["agents"]["rover-mock"]["tasks"]
         self.assertEqual(len(tasks), 1)
         self.assertIn("Return to station", tasks[0])
+
+
+class TestResetWorld(unittest.TestCase):
+
+    def test_reset_restores_positions(self):
+        WORLD["agents"]["rover-mock"]["position"] = [15, 15]
+        WORLD["agents"]["rover-mock"]["battery"] = 0.1
+        WORLD["mission"]["status"] = "success"
+        reset_world()
+        self.assertEqual(WORLD["agents"]["rover-mock"]["position"], [2, 10])
+        self.assertEqual(WORLD["agents"]["rover-mock"]["battery"], 1.0)
+        self.assertEqual(WORLD["mission"]["status"], "running")
+
+    def test_reset_clears_inventory_and_memory(self):
+        WORLD["agents"]["rover-mock"]["inventory"] = [{"type": "core"}]
+        WORLD["agents"]["rover-mock"]["memory"] = ["something"]
+        reset_world()
+        self.assertEqual(WORLD["agents"]["rover-mock"]["inventory"], [])
+        self.assertEqual(WORLD["agents"]["rover-mock"]["memory"], [])
+
+    def test_reset_regenerates_stones(self):
+        WORLD["stones"] = []
+        reset_world()
+        self.assertGreaterEqual(len(WORLD["stones"]), 5)
