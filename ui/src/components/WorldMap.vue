@@ -1,6 +1,6 @@
 <script setup>
 import { computed, ref, watch } from 'vue'
-import { GRID_SIZE, TILE_SIZE, MAP_W, MAP_H, VIEWPORT_W, VIEWPORT_H, STONE_COLORS, agentColor, revealRadius } from '../constants.js'
+import { TILE_SIZE, MAP_W, MAP_H, VIEWPORT_W, VIEWPORT_H, STONE_COLORS, agentColor, revealRadius } from '../constants.js'
 
 const props = defineProps({
   worldState: {

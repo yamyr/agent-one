@@ -6,8 +6,7 @@ from app.world import BATTERY_COST_MOVE, BATTERY_COST_DIG, BATTERY_COST_PICKUP
 from app.world import BATTERY_COST_ANALYZE, BATTERY_COST_ANALYZE_GROUND
 from app.world import BATTERY_COST_SCAN, BATTERY_COST_MOVE_DRONE
 from app.world import CHARGE_RATE, REVEAL_RADIUS, ROVER_REVEAL_RADIUS, DRONE_REVEAL_RADIUS
-from app.world import GRID_W, GRID_H, AGENT_STARTS
-from app.world import MAX_MOVE_DISTANCE, MAX_MOVE_DISTANCE_DRONE
+from app.world import AGENT_STARTS
 from app.world import assign_mission, _cells_in_radius, record_memory, MEMORY_MAX
 from app.world import update_tasks, _direction_hint
 

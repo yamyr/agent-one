@@ -763,7 +763,7 @@ def update_tasks(agent_id):
 def _update_drone_tasks(agent_id, agent):
     """Recompute tasks for a drone — scan unscanned areas, explore the map."""
     x, y = agent["position"]
-    visited_set = {tuple(c) for c in agent.get("visited", [])}
+    _ = {tuple(c) for c in agent.get("visited", [])}  # reserved for future use
     tasks = []
 
     # CRITICAL: battery safety — must return to base if battery is low

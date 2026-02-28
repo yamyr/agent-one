@@ -8,7 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from rich.logging import RichHandler
 
-from .agent import MockRoverAgent, RoverAgent, DroneAgent, MockDroneAgent
+from .agent import MockRoverAgent, RoverAgent, DroneAgent
 from .broadcast import broadcaster
 from .config import settings
 from .db import init_db, close_db
