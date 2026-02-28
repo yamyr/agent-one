@@ -1,37 +1,21 @@
 <script setup>
-import { ref, reactive, computed, onMounted, onUnmounted } from 'vue'
+import { ref } from 'vue'
+import { useWebSocket } from './composables/useWebSocket.js'
+import AppHeader from './components/AppHeader.vue'
+import WorldMap from './components/WorldMap.vue'
+import AgentPanes from './components/AgentPanes.vue'
+import EventLog from './components/EventLog.vue'
+import AgentDetailModal from './components/AgentDetailModal.vue'
 
-const events = ref([])
-const connected = ref(false)
-const worldState = ref(null)
-let ws = null
-
-const GRID_SIZE = 20
-const TILE_SIZE = 20
-const MAP_W = GRID_SIZE * TILE_SIZE
-const MAP_H = GRID_SIZE * TILE_SIZE
-
-const STONE_COLORS = {
-  'core': '#b8962a',
-  'basalt': '#666666',
-}
-
-const AGENT_COLORS = {
-  'rover-mock': '#6688cc',
-  'rover-mistral': '#e06030',
-}
-
-function agentColor(id) {
-  return AGENT_COLORS[id] || '#6c6'
-}
+const { events, connected, worldState, agentIds, agentEvents } = useWebSocket()
 
 const selectedAgent = ref(null)
 
-function openAgentPopup(id) {
+function selectAgent(id) {
   selectedAgent.value = id
 }
 
-function closeAgentPopup() {
+function closeAgent() {
   selectedAgent.value = null
 }
 
@@ -39,233 +23,24 @@ function agentData(id) {
   if (!worldState.value) return null
   return worldState.value.agents[id] || null
 }
-
-const agentEvents = computed(() => {
-  const byAgent = {}
-  for (const e of events.value) {
-    if (e.source === 'world') continue
-    if (!byAgent[e.source]) byAgent[e.source] = []
-    if (byAgent[e.source].length < 50) byAgent[e.source].push(e)
-  }
-  return byAgent
-})
-
-const agentIds = computed(() => {
-  if (!worldState.value) return []
-  return Object.keys(worldState.value.agents)
-})
-
-function batteryPct(id) {
-  if (!worldState.value) return '?'
-  const a = worldState.value.agents[id]
-  return a ? Math.round(a.battery * 100) + '%' : '?'
-}
-
-function agentPosition(id) {
-  if (!worldState.value) return '?'
-  const a = worldState.value.agents[id]
-  if (!a) return '?'
-  return `(${a.position[0]}, ${a.position[1]})`
-}
-
-function roverTransform(id) {
-  if (!worldState.value) return ''
-  const a = worldState.value.agents[id]
-  if (!a) return ''
-  const cx = a.position[0] * TILE_SIZE + TILE_SIZE / 2
-  const cy = a.position[1] * TILE_SIZE + TILE_SIZE / 2
-  return `translate(${cx}, ${cy})`
-}
-
-function formatMoveEvent(payload) {
-  const f = payload.from
-  const t = payload.to
-  return `(${f[0]},${f[1]}) → (${t[0]},${t[1]})`
-}
-
-// Generate tile data for v-for
-const tiles = computed(() => {
-  const arr = []
-  for (let y = 0; y < GRID_SIZE; y++) {
-    for (let x = 0; x < GRID_SIZE; x++) {
-      arr.push({ x, y, key: `${x}-${y}` })
-    }
-  }
-  return arr
-})
-
-function connect() {
-  const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-  ws = new WebSocket(`${proto}//${window.location.host}/ws`)
-
-  ws.onopen = () => {
-    connected.value = true
-  }
-
-  ws.onmessage = (msg) => {
-    const event = JSON.parse(msg.data)
-    if (event.source === 'world' && event.name === 'state') {
-      worldState.value = event.payload
-    } else {
-      events.value.unshift(event)
-      if (events.value.length > 200) {
-        events.value.length = 200
-      }
-    }
-  }
-
-  ws.onclose = () => {
-    connected.value = false
-    setTimeout(connect, 2000)
-  }
-
-  ws.onerror = () => {
-    ws.close()
-  }
-}
-
-onMounted(() => {
-  connect()
-})
-
-onUnmounted(() => {
-  if (ws) ws.close()
-})
 </script>
 
 <template>
   <div class="app">
-    <header>
-      <h1>Mars Mission Control</h1>
-      <span class="status" :class="{ online: connected }">
-        {{ connected ? 'CONNECTED' : 'DISCONNECTED' }}
-      </span>
-    </header>
+    <AppHeader :connected="connected" />
 
-    <!-- Map + Agent Panes side by side -->
     <div class="top-row">
-      <!-- 2D Grid Map -->
-      <section class="world-map">
-        <h2>Surface Map</h2>
-        <svg v-if="worldState"
-          :viewBox="`0 0 ${MAP_W} ${MAP_H}`"
-          class="map-svg">
-          <!-- grid tiles -->
-          <rect v-for="t in tiles" :key="t.key"
-            :x="t.x * TILE_SIZE" :y="t.y * TILE_SIZE"
-            :width="TILE_SIZE" :height="TILE_SIZE"
-            class="grid-tile" />
-
-          <!-- stones -->
-          <rect v-for="(s, i) in (worldState.stones || [])" :key="'stone-'+i"
-            :x="s.position[0] * TILE_SIZE + TILE_SIZE/2 - 4"
-            :y="s.position[1] * TILE_SIZE + TILE_SIZE/2 - 4"
-            width="8" height="8"
-            :fill="STONE_COLORS[s.type] || '#666'"
-            opacity="0.85"
-            :transform="`rotate(45, ${s.position[0] * TILE_SIZE + TILE_SIZE/2}, ${s.position[1] * TILE_SIZE + TILE_SIZE/2})`" />
-
-          <!-- rover dots -->
-          <g v-for="id in agentIds" :key="'rover-'+id"
-            :transform="roverTransform(id)" class="rover-group" style="cursor:pointer"
-            @click="openAgentPopup(id)">
-            <circle r="7" :fill="agentColor(id)" opacity="0.9">
-              <animate attributeName="r" values="7;8;7" dur="2s" repeatCount="indefinite" />
-            </circle>
-            <!-- glow -->
-            <circle r="12" fill="none" :stroke="agentColor(id)" stroke-width="1" opacity="0.25">
-              <animate attributeName="r" values="12;16;12" dur="2s" repeatCount="indefinite" />
-              <animate attributeName="opacity" values="0.25;0.08;0.25" dur="2s" repeatCount="indefinite" />
-            </circle>
-            <!-- label -->
-            <text y="18" text-anchor="middle" :fill="agentColor(id)" class="rover-label">{{ id }}</text>
-          </g>
-        </svg>
-        <div v-else class="empty">Waiting for world state...</div>
-      </section>
-
-      <!-- Agent Panes -->
-      <section class="agent-panes">
-        <div v-for="id in agentIds" :key="id" class="agent-pane">
-          <div class="agent-header" style="cursor:pointer" @click="openAgentPopup(id)">
-            <span class="agent-name" :style="{ color: agentColor(id) }">{{ id }}</span>
-            <span class="agent-stats">
-              {{ agentPosition(id) }} &middot; bat {{ batteryPct(id) }}
-            </span>
-          </div>
-          <div class="agent-log">
-            <div v-if="!agentEvents[id] || agentEvents[id].length === 0" class="empty">
-              No events yet
-            </div>
-            <div v-for="(e, i) in (agentEvents[id] || [])" :key="i" class="agent-event">
-              <span class="ae-type" :class="e.type">{{ e.type }}</span>
-              <span class="ae-name">{{ e.name }}</span>
-              <span v-if="e.name === 'thinking'" class="ae-text">{{ e.payload.text }}</span>
-              <span v-else-if="e.name === 'move'" class="ae-text">{{ formatMoveEvent(e.payload) }}</span>
-              <span v-else-if="e.payload" class="ae-text">{{ JSON.stringify(e.payload) }}</span>
-            </div>
-          </div>
-        </div>
-      </section>
+      <WorldMap :worldState="worldState" :agentIds="agentIds" @select-agent="selectAgent" />
+      <AgentPanes :worldState="worldState" :agentIds="agentIds" :agentEvents="agentEvents" @select-agent="selectAgent" />
     </div>
 
-    <!-- Event Log -->
-    <section class="event-log">
-      <h2>Event Log</h2>
-      <div v-if="events.length === 0" class="empty">
-        Waiting for mission events...
-      </div>
-      <div v-for="(event, i) in events" :key="i" class="event">
-        <span class="event-source" :style="{ color: agentColor(event.source) }">{{ event.source }}</span>
-        <span class="event-type">{{ event.type }}</span>
-        <span class="event-name">{{ event.name }}</span>
-        <pre v-if="event.payload" class="event-payload">{{ JSON.stringify(event.payload, null, 2) }}</pre>
-      </div>
-    </section>
+    <EventLog :events="events" />
 
-    <!-- Agent Detail Popup -->
-    <div v-if="selectedAgent" class="modal-overlay" @click.self="closeAgentPopup">
-      <div class="modal" v-if="agentData(selectedAgent)">
-        <div class="modal-header">
-          <span class="modal-title" :style="{ color: agentColor(selectedAgent) }">{{ selectedAgent }}</span>
-          <button class="modal-close" @click="closeAgentPopup">x</button>
-        </div>
-        <div class="modal-body">
-          <div class="modal-section">
-            <div class="modal-label">Type</div>
-            <div class="modal-value">{{ agentData(selectedAgent).type || 'rover' }}</div>
-          </div>
-          <div class="modal-section">
-            <div class="modal-label">Mission</div>
-            <div class="modal-value">{{ agentData(selectedAgent).mission.objective }}</div>
-          </div>
-          <div class="modal-section">
-            <div class="modal-label">Position</div>
-            <div class="modal-value">{{ agentPosition(selectedAgent) }}</div>
-          </div>
-          <div class="modal-section">
-            <div class="modal-label">Battery</div>
-            <div class="modal-value">{{ batteryPct(selectedAgent) }}</div>
-          </div>
-          <div class="modal-section">
-            <div class="modal-label">Tiles visited</div>
-            <div class="modal-value">{{ agentData(selectedAgent).visited.length }}</div>
-          </div>
-          <div class="modal-section">
-            <div class="modal-label">Tools</div>
-            <div class="modal-tools">
-              <div v-for="tool in (agentData(selectedAgent).tools || [])" :key="tool.name" class="tool-item">
-                <span class="tool-name">{{ tool.name }}</span>
-                <span class="tool-desc">{{ tool.description }}</span>
-              </div>
-              <div v-if="!agentData(selectedAgent).tools || agentData(selectedAgent).tools.length === 0" class="empty">
-                No tools
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
+    <AgentDetailModal
+      v-if="selectedAgent"
+      :agent="agentData(selectedAgent)"
+      :agentId="selectedAgent"
+      @close="closeAgent" />
   </div>
 </template>
 
@@ -288,39 +63,10 @@ body {
   padding: 1rem;
 }
 
-header {
+.top-row {
   display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 1rem 0;
-  border-bottom: 1px solid #222;
+  gap: 0.5rem;
   margin-bottom: 1rem;
-}
-
-h1 {
-  font-size: 1.2rem;
-  color: #e06030;
-}
-
-h2 {
-  font-size: 0.85rem;
-  color: #555;
-  text-transform: uppercase;
-  letter-spacing: 0.1em;
-  margin-bottom: 0.5rem;
-}
-
-.status {
-  font-size: 0.75rem;
-  padding: 0.25rem 0.5rem;
-  border-radius: 3px;
-  background: #331111;
-  color: #cc4444;
-}
-
-.status.online {
-  background: #113311;
-  color: #44cc44;
 }
 
 .empty {
@@ -330,264 +76,12 @@ h2 {
   font-size: 0.8rem;
 }
 
-/* ── Top Row: Map + Agent Panes ── */
-
-.top-row {
-  display: flex;
-  gap: 0.5rem;
-  margin-bottom: 1rem;
-}
-
-.world-map {
-  flex: 3;
-  padding: 0.75rem;
-  border: 1px solid #1a1a24;
-  border-radius: 4px;
-  background: #0c0c14;
-  min-width: 0;
-}
-
-.map-svg {
-  width: 100%;
-  height: auto;
-  display: block;
-}
-
-.grid-tile {
-  fill: #0e0e16;
-  stroke: #1a1a24;
-  stroke-width: 0.5;
-}
-
-.rover-group {
-  transition: transform 0.4s ease;
-}
-
-.rover-label {
-  font-family: 'Courier New', monospace;
-  font-size: 6px;
-}
-
-/* ── Agent Panes ── */
-
-.agent-panes {
-  flex: 2;
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-  min-width: 0;
-}
-
-.agent-pane {
-  border: 1px solid #1a1a24;
-  border-radius: 4px;
-  background: #0c0c14;
-  height: 200px;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-}
-
-.agent-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 0.4rem 0.6rem;
-  border-bottom: 1px solid #1a1a24;
-  flex-shrink: 0;
-}
-
-.agent-name {
-  font-size: 0.8rem;
-  font-weight: bold;
-}
-
-.agent-stats {
-  font-size: 0.7rem;
-  color: #666;
-}
-
-.agent-log {
-  flex: 1;
-  overflow-y: auto;
-  padding: 0.25rem;
-}
-
-.agent-event {
-  padding: 0.2rem 0.35rem;
-  font-size: 0.75rem;
-  border-bottom: 1px solid #111118;
-  display: flex;
-  gap: 0.4rem;
-  align-items: baseline;
-}
-
-.ae-type {
-  font-size: 0.65rem;
-  color: #555;
-  flex-shrink: 0;
-}
-
-.ae-type.action {
-  color: #c86040;
-}
-
-.ae-name {
-  color: #ccaa44;
-  flex-shrink: 0;
-}
-
-.ae-text {
-  color: #888;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-/* ── Event Log ── */
-
-.event-log {
-  border: 1px solid #1a1a24;
-  border-radius: 4px;
-  background: #0c0c14;
-  padding: 0.75rem;
-  max-height: 420px;
-  overflow-y: auto;
-}
-
-.event {
-  padding: 0.35rem 0;
-  border-bottom: 1px solid #111118;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.5rem;
-  align-items: baseline;
-}
-
-.event-source {
-  font-weight: bold;
-  min-width: 100px;
-  font-size: 0.8rem;
-}
-
-.event-type {
-  color: #888;
-  font-size: 0.75rem;
-}
-
-.event-name {
-  color: #ccaa44;
-  font-size: 0.8rem;
-}
-
-.event-payload {
-  width: 100%;
-  font-size: 0.7rem;
-  color: #555;
-  padding: 0.15rem 0 0 100px;
-  white-space: pre-wrap;
-}
-
-/* ── Agent Detail Modal ── */
-
-.modal-overlay {
-  position: fixed;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  background: rgba(0, 0, 0, 0.7);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 100;
-}
-
-.modal {
-  background: #12121a;
-  border: 1px solid #2a2a38;
-  border-radius: 6px;
-  width: 380px;
-  max-width: 90vw;
-  max-height: 80vh;
-  overflow-y: auto;
-}
-
-.modal-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 0.75rem 1rem;
-  border-bottom: 1px solid #1a1a24;
-}
-
-.modal-title {
-  font-weight: bold;
-  font-size: 0.95rem;
-}
-
-.modal-close {
-  background: none;
-  border: 1px solid #333;
-  color: #888;
-  font-size: 0.8rem;
-  padding: 0.15rem 0.45rem;
-  border-radius: 3px;
-  cursor: pointer;
-  font-family: 'Courier New', monospace;
-}
-
-.modal-close:hover {
-  color: #ccc;
-  border-color: #555;
-}
-
-.modal-body {
-  padding: 0.75rem 1rem;
-}
-
-.modal-section {
-  margin-bottom: 0.6rem;
-}
-
-.modal-label {
-  font-size: 0.65rem;
+h2 {
+  font-size: 0.85rem;
   color: #555;
   text-transform: uppercase;
-  letter-spacing: 0.08em;
-  margin-bottom: 0.15rem;
-}
-
-.modal-value {
-  font-size: 0.8rem;
-  color: #c8c8d0;
-}
-
-.modal-tools {
-  display: flex;
-  flex-direction: column;
-  gap: 0.35rem;
-}
-
-.tool-item {
-  background: #0e0e16;
-  border: 1px solid #1a1a24;
-  border-radius: 3px;
-  padding: 0.4rem 0.6rem;
-  display: flex;
-  flex-direction: column;
-  gap: 0.15rem;
-}
-
-.tool-name {
-  font-size: 0.8rem;
-  color: #ccaa44;
-  font-weight: bold;
-}
-
-.tool-desc {
-  font-size: 0.7rem;
-  color: #777;
+  letter-spacing: 0.1em;
+  margin-bottom: 0.5rem;
 }
 
 /* scrollbar */

@@ -1,0 +1,63 @@
+import { ref, computed, onMounted, onUnmounted } from 'vue'
+
+export function useWebSocket() {
+  const events = ref([])
+  const connected = ref(false)
+  const worldState = ref(null)
+  let ws = null
+
+  const agentEvents = computed(() => {
+    const byAgent = {}
+    for (const e of events.value) {
+      if (e.source === 'world') continue
+      if (!byAgent[e.source]) byAgent[e.source] = []
+      if (byAgent[e.source].length < 50) byAgent[e.source].push(e)
+    }
+    return byAgent
+  })
+
+  const agentIds = computed(() => {
+    if (!worldState.value) return []
+    return Object.keys(worldState.value.agents)
+  })
+
+  function connect() {
+    const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
+    ws = new WebSocket(`${proto}//${window.location.host}/ws`)
+
+    ws.onopen = () => {
+      connected.value = true
+    }
+
+    ws.onmessage = (msg) => {
+      const event = JSON.parse(msg.data)
+      if (event.source === 'world' && event.name === 'state') {
+        worldState.value = event.payload
+      } else {
+        events.value.unshift(event)
+        if (events.value.length > 200) {
+          events.value.length = 200
+        }
+      }
+    }
+
+    ws.onclose = () => {
+      connected.value = false
+      setTimeout(connect, 2000)
+    }
+
+    ws.onerror = () => {
+      ws.close()
+    }
+  }
+
+  onMounted(() => {
+    connect()
+  })
+
+  onUnmounted(() => {
+    if (ws) ws.close()
+  })
+
+  return { events, connected, worldState, agentIds, agentEvents }
+}
