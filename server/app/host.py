@@ -10,12 +10,11 @@ import logging
 
 from .base_agent import BaseAgent
 from .broadcast import broadcaster
-from .config import settings
 from .narrator import Narrator
 from .protocol import make_message
 from .station import StationAgent, execute_action as station_execute_action
 from .world import abort_mission as world_abort_mission
-from .world import get_snapshot, WORLD
+from .world import get_snapshot
 from .world import observe_station
 
 logger = logging.getLogger(__name__)
