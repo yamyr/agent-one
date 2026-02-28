@@ -23,16 +23,21 @@ DIRECTIONS = {
 }
 
 BATTERY_COST_MOVE = 0.02
+BATTERY_COST_MOVE_DRONE = 0.01
 BATTERY_COST_DIG = 0.06
 BATTERY_COST_PICKUP = 0.02
 BATTERY_COST_ANALYZE = 0.03
 BATTERY_COST_ANALYZE_GROUND = 0.03
+BATTERY_COST_SCAN = 0.02
 CHARGE_RATE = 0.20
 MAX_MOVE_DISTANCE = 3
+MAX_MOVE_DISTANCE_DRONE = 6
 
 AGENT_STARTS = {(0, 0)}
 STONE_TYPES = ["core", "basalt"]
-REVEAL_RADIUS = 5
+ROVER_REVEAL_RADIUS = 3
+DRONE_REVEAL_RADIUS = 6
+REVEAL_RADIUS = ROVER_REVEAL_RADIUS  # legacy alias
 TARGET_STONE_TYPE = "core"
 TARGET_STONE_COUNT = 1
 MEMORY_MAX = 8
@@ -151,15 +156,21 @@ def _cells_in_radius(cx, cy, radius):
     return cells
 
 
-def _init_revealed(cx, cy):
+def _reveal_radius_for(agent):
+    """Return the reveal radius for an agent based on its type."""
+    return DRONE_REVEAL_RADIUS if agent.get("type") == "drone" else ROVER_REVEAL_RADIUS
+
+
+def _init_revealed(cx, cy, radius=ROVER_REVEAL_RADIUS):
     """Build initial revealed set for an agent starting at (cx, cy)."""
-    return [[x, y] for x, y in sorted(_cells_in_radius(cx, cy, REVEAL_RADIUS))]
+    return [[x, y] for x, y in sorted(_cells_in_radius(cx, cy, radius))]
 
 
 def _expand_revealed(agent, cx, cy):
     """Add newly visible cells around (cx, cy) to the agent's revealed list."""
+    radius = _reveal_radius_for(agent)
     current = {tuple(c) for c in agent.get("revealed", [])}
-    for cell in _cells_in_radius(cx, cy, REVEAL_RADIUS):
+    for cell in _cells_in_radius(cx, cy, radius):
         if cell not in current:
             agent.setdefault("revealed", []).append(list(cell))
 
@@ -183,6 +194,34 @@ _ROVER_TOOL_DEFS = [
         "description": "Analyze ground concentration at current tile to detect nearby core deposits. Costs 3% battery. Returns a 0.0-1.0 reading.",
     },
 ]
+
+
+_DRONE_TOOL_DEFS = [
+    {
+        "name": "move",
+        "description": "Fly 1-6 tiles in a cardinal direction (north/south/east/west). Costs 1% battery per tile.",
+    },
+    {
+        "name": "scan",
+        "description": "Scan the area below and around the drone to sample concentration readings. Returns probability values for surrounding tiles indicating likelihood of precious stone deposits. Costs 2% battery.",
+    },
+]
+
+
+def _make_drone(start_x, start_y):
+    return {
+        "position": [start_x, start_y],
+        "battery": 1.0,
+        "mission": {"objective": "Scout terrain for precious stone deposits", "plan": []},
+        "visited": [[start_x, start_y]],
+        "revealed": _init_revealed(start_x, start_y, DRONE_REVEAL_RADIUS),
+        "inventory": [],
+        "memory": [],
+        "tasks": [],
+        "type": "drone",
+        "ground_readings": {},
+        "tools": list(_DRONE_TOOL_DEFS),
+    }
 
 
 def _make_rover(start_x, start_y):
@@ -217,8 +256,10 @@ def _build_initial_world():
             },
             "rover-mock": _make_rover(0, 0),
             "rover-mistral": _make_rover(0, 0),
+            "drone-mistral": _make_drone(0, 0),
         },
         "stones": stones,
+        "drone_scans": [],
         "concentration_map": _compute_concentration_map(core_positions),
         "tick": 0,
         "mission": {
@@ -260,10 +301,12 @@ def check_ground(agent_id):
 
 
 def move_agent(agent_id, x, y):
-    """Move an agent to target (x, y). Must be a straight cardinal line, up to MAX_MOVE_DISTANCE tiles."""
+    """Move an agent to target (x, y). Must be a straight cardinal line, respecting per-agent max distance."""
     agent = WORLD["agents"].get(agent_id)
     if agent is None:
         return {"ok": False, "error": f"Unknown agent: {agent_id}"}
+
+    max_dist = MAX_MOVE_DISTANCE_DRONE if agent.get("type") == "drone" else MAX_MOVE_DISTANCE
 
     if not (0 <= x < GRID_W and 0 <= y < GRID_H):
         return {"ok": False, "error": f"Out of bounds: ({x}, {y})"}
@@ -273,8 +316,8 @@ def move_agent(agent_id, x, y):
     dist = abs(dx) + abs(dy)
     if dist == 0:
         return {"ok": False, "error": f"Already at ({x}, {y})"}
-    if dist > MAX_MOVE_DISTANCE:
-        return {"ok": False, "error": f"Too far: {dist} tiles (max {MAX_MOVE_DISTANCE})"}
+    if dist > max_dist:
+        return {"ok": False, "error": f"Too far: {dist} tiles (max {max_dist})"}
     if dx != 0 and dy != 0:
         return {"ok": False, "error": f"Not a straight line: ({ox}, {oy}) -> ({x}, {y})"}
 
@@ -289,14 +332,18 @@ def execute_action(agent_id, action_name, params):
     if agent is None:
         return {"ok": False, "error": f"Unknown agent: {agent_id}"}
 
+    is_drone = agent.get("type") == "drone"
+
     if action_name == "move":
         direction = params.get("direction")
         delta = DIRECTIONS.get(direction)
         if delta is None:
             return {"ok": False, "error": f"Invalid direction: {direction}"}
-        distance = max(1, min(MAX_MOVE_DISTANCE, int(params.get("distance", 1))))
+        max_dist = MAX_MOVE_DISTANCE_DRONE if is_drone else MAX_MOVE_DISTANCE
+        move_cost = BATTERY_COST_MOVE_DRONE if is_drone else BATTERY_COST_MOVE
+        distance = max(1, min(max_dist, int(params.get("distance", 1))))
 
-        cost = BATTERY_COST_MOVE * distance
+        cost = move_cost * distance
         if agent["battery"] < cost:
             record_memory(
                 agent_id,
@@ -311,7 +358,7 @@ def execute_action(agent_id, action_name, params):
         tx, ty = ox + delta[0] * distance, oy + delta[1] * distance
         result = move_agent(agent_id, tx, ty)
         if result["ok"]:
-            agent["battery"] = max(0.0, agent["battery"] - BATTERY_COST_MOVE * distance)
+            agent["battery"] = max(0.0, agent["battery"] - move_cost * distance)
             # Mark all intermediate + destination tiles as visited/revealed
             for step in range(1, distance + 1):
                 sx, sy = ox + delta[0] * step, oy + delta[1] * step
@@ -330,6 +377,8 @@ def execute_action(agent_id, action_name, params):
                     agent_id, f"Moved {direction} {distance} to ({tx},{ty}), empty ground"
                 )
     elif action_name == "analyze":
+        if is_drone:
+            return {"ok": False, "error": "Drones cannot analyze stones"}
         result = _execute_analyze(agent_id, agent)
         if result["ok"]:
             record_memory(
@@ -344,6 +393,8 @@ def execute_action(agent_id, action_name, params):
                 f"Ground concentration at ({result['position'][0]},{result['position'][1]}): {result['concentration']:.3f}",
             )
     elif action_name == "dig":
+        if is_drone:
+            return {"ok": False, "error": "Drones cannot dig"}
         result = _execute_dig(agent_id, agent)
         if result["ok"]:
             record_memory(
@@ -351,11 +402,20 @@ def execute_action(agent_id, action_name, params):
                 f"Dug out {result['stone']['type']} stone at ({result['position'][0]},{result['position'][1]})",
             )
     elif action_name == "pickup":
+        if is_drone:
+            return {"ok": False, "error": "Drones cannot pick up stones"}
         result = _execute_pickup(agent_id, agent)
         if result["ok"]:
             record_memory(
                 agent_id,
                 f"Picked up {result['stone']['type']} stone at ({result['position'][0]},{result['position'][1]}), inventory={result['inventory_count']}",
+            )
+    elif action_name == "scan":
+        result = _execute_scan(agent_id, agent)
+        if result["ok"]:
+            record_memory(
+                agent_id,
+                f"Scanned area around ({result['position'][0]},{result['position'][1]}), peak concentration={result['peak']:.3f}",
             )
     else:
         return {"ok": False, "error": f"Unknown action: {action_name}"}
@@ -413,6 +473,34 @@ def _execute_analyze_ground(agent_id, agent):
         "Agent %s analyzed ground at (%d,%d), concentration=%.2f", agent_id, x, y, concentration
     )
     return {"ok": True, "position": [x, y], "concentration": round(concentration, 3)}
+
+
+def _execute_scan(agent_id, agent):
+    """Drone aerial scan: sample concentration map around current position."""
+    if agent["battery"] < BATTERY_COST_SCAN:
+        return {"ok": False, "error": "Not enough battery to scan"}
+
+    x, y = agent["position"]
+    agent["battery"] = max(0.0, agent["battery"] - BATTERY_COST_SCAN)
+    conc_map = WORLD.get("concentration_map", {})
+    scan_radius = DRONE_REVEAL_RADIUS
+    readings = {}
+    peak = 0.0
+    for cell in _cells_in_radius(x, y, scan_radius):
+        val = conc_map.get(cell, 0.0)
+        readings[f"{cell[0]},{cell[1]}"] = round(val, 3)
+        if val > peak:
+            peak = val
+
+    scan_entry = {
+        "position": [x, y],
+        "readings": readings,
+        "peak": round(peak, 3),
+        "scanner": agent_id,
+    }
+    WORLD.setdefault("drone_scans", []).append(scan_entry)
+    logger.info("Agent %s scanned at (%d,%d), peak=%.3f", agent_id, x, y, peak)
+    return {"ok": True, "position": [x, y], "readings": readings, "peak": round(peak, 3)}
 
 
 def _execute_dig(agent_id, agent):
@@ -584,6 +672,54 @@ def update_tasks(agent_id):
     agent = WORLD["agents"].get(agent_id)
     if agent is None:
         return
+    if agent.get("type") == "drone":
+        _update_drone_tasks(agent_id, agent)
+    else:
+        _update_rover_tasks(agent_id, agent)
+
+
+def _update_drone_tasks(agent_id, agent):
+    """Recompute tasks for a drone — scan unscanned areas, explore the map."""
+    x, y = agent["position"]
+    visited_set = {tuple(c) for c in agent.get("visited", [])}
+    tasks = []
+
+    # Check if current area has been scanned already
+    scanned_positions = {tuple(s["position"]) for s in WORLD.get("drone_scans", [])}
+    if (x, y) not in scanned_positions:
+        tasks.append(f"Scan area at current position ({x},{y})")
+
+    # Find nearest unscanned region (areas far from any previous scan)
+    best_target = None
+    best_dist = float("inf")
+    for gx in range(GRID_W):
+        for gy in range(GRID_H):
+            if (gx, gy) in scanned_positions:
+                continue
+            # Prefer unscanned areas that are also far from other scans
+            min_scan_dist = min(
+                (abs(gx - sp[0]) + abs(gy - sp[1]) for sp in scanned_positions),
+                default=GRID_W + GRID_H,
+            )
+            if min_scan_dist < DRONE_REVEAL_RADIUS:
+                continue  # already covered by a nearby scan
+            d = abs(gx - x) + abs(gy - y)
+            if d < best_dist:
+                best_dist = d
+                best_target = (gx, gy)
+
+    if best_target and best_dist > 0:
+        hint = _direction_hint(best_target[0] - x, best_target[1] - y)
+        tasks.append(f"Fly to unscanned area at ({best_target[0]},{best_target[1]}) — {hint}, {best_dist} tiles")
+
+    if not tasks:
+        tasks.append("All areas scanned — patrol for new readings")
+
+    agent["tasks"] = tasks
+
+
+def _update_rover_tasks(agent_id, agent):
+    """Recompute short-term tasks for a rover based on current world state."""
     x, y = agent["position"]
     mission = WORLD["mission"]
     target_type = mission["target_type"]
@@ -622,7 +758,6 @@ def update_tasks(agent_id):
         sp = tuple(stone["position"])
         if sp in revealed_set:
             dist = abs(sp[0] - x) + abs(sp[1] - y)
-            # Priority: 0=unknown (might be core), 1=known target, 2=known basalt
             if stone["type"] == "unknown":
                 priority = 0
             elif stone["type"] == target_type:
@@ -639,10 +774,36 @@ def update_tasks(agent_id):
         label = stone["type"] if stone["type"] != "unknown" else "unknown"
         tasks.append(f"Navigate to {label} stone at ({sx},{sy}) — {hint}, {dist} tiles")
 
+    # Check drone scan hotspots — navigate toward high-concentration areas
+    if not tasks:
+        best_hotspot = _best_drone_hotspot(x, y, revealed_set)
+        if best_hotspot:
+            hx, hy, conc = best_hotspot
+            hint = _direction_hint(hx - x, hy - y)
+            dist = abs(hx - x) + abs(hy - y)
+            tasks.append(
+                f"Navigate to drone-scanned hotspot at ({hx},{hy}) — {hint}, {dist} tiles, concentration={conc:.2f}"
+            )
+
     if not tasks:
         tasks.append("Explore unvisited tiles to find stones")
 
     agent["tasks"] = tasks
+
+
+def _best_drone_hotspot(rx, ry, revealed_set):
+    """Find the highest-concentration unvisited cell from drone scans."""
+    best = None
+    best_conc = 0.15  # minimum threshold to consider
+    for scan in WORLD.get("drone_scans", []):
+        for key, conc in scan.get("readings", {}).items():
+            cx, cy = map(int, key.split(","))
+            if (cx, cy) in revealed_set:
+                continue  # rover already sees this area
+            if conc > best_conc:
+                best_conc = conc
+                best = (cx, cy, conc)
+    return best
 
 
 def assign_mission(agent_id, objective):

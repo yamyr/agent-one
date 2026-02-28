@@ -4,7 +4,10 @@ from app.world import WORLD, move_agent, execute_action, get_snapshot, check_gro
 from app.world import check_mission_status, charge_rover
 from app.world import BATTERY_COST_MOVE, BATTERY_COST_DIG, BATTERY_COST_PICKUP
 from app.world import BATTERY_COST_ANALYZE, BATTERY_COST_ANALYZE_GROUND
-from app.world import CHARGE_RATE, REVEAL_RADIUS, GRID_W, GRID_H, AGENT_STARTS
+from app.world import BATTERY_COST_SCAN, BATTERY_COST_MOVE_DRONE
+from app.world import CHARGE_RATE, REVEAL_RADIUS, ROVER_REVEAL_RADIUS, DRONE_REVEAL_RADIUS
+from app.world import GRID_W, GRID_H, AGENT_STARTS
+from app.world import MAX_MOVE_DISTANCE, MAX_MOVE_DISTANCE_DRONE
 from app.world import assign_mission, _cells_in_radius, record_memory, MEMORY_MAX
 from app.world import update_tasks, _direction_hint
 
@@ -759,6 +762,10 @@ class TestFogOfWar(unittest.TestCase):
         ]
         # Give rover-mistral an empty revealed so it doesn't interfere
         WORLD["agents"]["rover-mistral"]["revealed"] = []
+        # Give drone an empty revealed so it doesn't interfere
+        if "drone-mistral" in WORLD["agents"]:
+            self._original_drone_revealed = WORLD["agents"]["drone-mistral"].get("revealed", [])
+            WORLD["agents"]["drone-mistral"]["revealed"] = []
         self._original_stones = WORLD.get("stones", [])
 
     def tearDown(self):
@@ -767,6 +774,8 @@ class TestFogOfWar(unittest.TestCase):
         WORLD["agents"]["rover-mistral"]["revealed"] = WORLD["agents"]["rover-mistral"].get(
             "revealed", []
         )
+        if "drone-mistral" in WORLD["agents"]:
+            WORLD["agents"]["drone-mistral"]["revealed"] = self._original_drone_revealed
 
     def test_initial_revealed_cells_count(self):
         revealed = WORLD["agents"]["rover-mock"]["revealed"]
@@ -856,7 +865,7 @@ class TestFogOfWar(unittest.TestCase):
         # Stone beyond reveal radius — not visible at start, visible after moving east
         WORLD["stones"] = [
             {
-                "position": [16, 10],
+                "position": [14, 10],
                 "type": "unknown",
                 "_true_type": "basalt",
                 "extracted": False,
@@ -1271,3 +1280,95 @@ class TestUpdateTasks(unittest.TestCase):
         tasks = WORLD["agents"]["rover-mock"]["tasks"]
         self.assertEqual(len(tasks), 1)
         self.assertIn("Return to station", tasks[0])
+
+
+class TestDrone(unittest.TestCase):
+    """Tests for drone agent: creation, scan action, movement, reveal radius."""
+
+    def setUp(self):
+        self.drone = WORLD["agents"].get("drone-mistral")
+        if self.drone:
+            self.drone["position"] = [10, 10]
+            self.drone["battery"] = 1.0
+            self.drone["visited"] = [[10, 10]]
+            self.drone["memory"] = []
+        self._original_stones = list(WORLD.get("stones", []))
+        WORLD.setdefault("drone_scans", []).clear()
+
+    def tearDown(self):
+        WORLD["stones"] = self._original_stones
+
+    def test_drone_exists_in_world(self):
+        self.assertIn("drone-mistral", WORLD["agents"])
+        self.assertEqual(WORLD["agents"]["drone-mistral"]["type"], "drone")
+
+    def test_drone_reveal_radius_larger(self):
+        self.assertGreater(DRONE_REVEAL_RADIUS, ROVER_REVEAL_RADIUS)
+
+    def test_drone_initial_revealed_larger_than_rover(self):
+        drone_revealed = len(_cells_in_radius(0, 0, DRONE_REVEAL_RADIUS))
+        rover_revealed = len(_cells_in_radius(0, 0, ROVER_REVEAL_RADIUS))
+        self.assertGreater(drone_revealed, rover_revealed)
+
+    def test_scan_action(self):
+        result = execute_action("drone-mistral", "scan", {})
+        self.assertTrue(result["ok"])
+        self.assertIn("readings", result)
+        self.assertIn("peak", result)
+        self.assertEqual(len(WORLD["drone_scans"]), 1)
+
+    def test_scan_battery_cost(self):
+        before = self.drone["battery"]
+        execute_action("drone-mistral", "scan", {})
+        self.assertAlmostEqual(self.drone["battery"], before - BATTERY_COST_SCAN)
+
+    def test_scan_no_battery(self):
+        self.drone["battery"] = 0.0
+        result = execute_action("drone-mistral", "scan", {})
+        self.assertFalse(result["ok"])
+
+    def test_drone_move_max_distance(self):
+        result = execute_action("drone-mistral", "move", {"direction": "east", "distance": 6})
+        self.assertTrue(result["ok"])
+        self.assertEqual(self.drone["position"], [16, 10])
+
+    def test_drone_move_exceeds_max(self):
+        result = execute_action("drone-mistral", "move", {"direction": "east", "distance": 7})
+        # Should be clamped to MAX_MOVE_DISTANCE_DRONE=6
+        self.assertTrue(result["ok"])
+        self.assertEqual(self.drone["position"], [16, 10])
+
+    def test_drone_move_battery_cost_lower(self):
+        before = self.drone["battery"]
+        execute_action("drone-mistral", "move", {"direction": "east", "distance": 1})
+        self.assertAlmostEqual(self.drone["battery"], before - BATTERY_COST_MOVE_DRONE)
+
+    def test_drone_cannot_dig(self):
+        WORLD["stones"] = [
+            {"position": [10, 10], "type": "core", "_true_type": "core", "analyzed": True, "extracted": False}
+        ]
+        result = execute_action("drone-mistral", "dig", {})
+        self.assertFalse(result["ok"])
+
+    def test_drone_tasks_scan_first(self):
+        update_tasks("drone-mistral")
+        tasks = self.drone["tasks"]
+        self.assertTrue(any("Scan" in t or "scan" in t.lower() for t in tasks))
+
+    def test_rover_tasks_use_drone_scans(self):
+        """Rover should suggest navigating to drone-scanned hotspot."""
+        WORLD["stones"] = []
+        WORLD["agents"]["rover-mock"]["position"] = [0, 0]
+        WORLD["agents"]["rover-mock"]["visited"] = [[0, 0]]
+        WORLD["agents"]["rover-mock"]["revealed"] = [[x, y] for x, y in sorted(_cells_in_radius(0, 0, ROVER_REVEAL_RADIUS))]
+        WORLD["agents"]["rover-mock"]["inventory"] = []
+        # Add a high-concentration drone scan far from rover
+        WORLD["drone_scans"] = [{
+            "position": [15, 15],
+            "readings": {"15,15": 0.9, "14,15": 0.7},
+            "peak": 0.9,
+            "scanner": "drone-mistral",
+        }]
+        update_tasks("rover-mock")
+        tasks = WORLD["agents"]["rover-mock"]["tasks"]
+        self.assertTrue(any("hotspot" in t for t in tasks))

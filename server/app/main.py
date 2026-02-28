@@ -8,7 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from rich.logging import RichHandler
 
-from .agent import MockRoverAgent, RoverAgent
+from .agent import MockRoverAgent, RoverAgent, DroneAgent, MockDroneAgent
 from .broadcast import broadcaster
 from .config import settings
 from .db import init_db, close_db
@@ -197,10 +197,12 @@ async def _start_simulation():
     agent_map = {
         "rover-mock": lambda: MockRoverAgent(),
         "rover-mistral": lambda: RoverAgent(),
+        "drone-mistral": lambda: DroneAgent(),
     }
     interval_map = {
         "rover-mock": settings.agent_turn_interval_seconds,
         "rover-mistral": settings.llm_turn_interval_seconds,
+        "drone-mistral": 2.0,
     }
     for name in active:
         factory = agent_map.get(name)

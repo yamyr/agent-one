@@ -13,6 +13,7 @@ from .world import (
     GRID_H,
     DIRECTIONS,
     MAX_MOVE_DISTANCE,
+    MAX_MOVE_DISTANCE_DRONE,
     check_ground,
     _direction_hint,
     _find_stone_at,
@@ -379,3 +380,291 @@ class MockRoverAgent:
         action = {"name": "move", "params": {"direction": direction}}
 
         return {"thinking": thinking, "action": action}
+
+
+# ---------------------------------------------------------------------------
+# Drone agent (aerial scout)
+# ---------------------------------------------------------------------------
+
+DRONE_MOVE_TOOL = {
+    "type": "function",
+    "function": {
+        "name": "move",
+        "description": f"Fly 1-{MAX_MOVE_DISTANCE_DRONE} tiles in a cardinal direction. Costs 1% battery per tile.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "direction": {
+                    "type": "string",
+                    "enum": ["north", "south", "east", "west"],
+                    "description": "Direction to fly: north, south, east, or west.",
+                },
+                "distance": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": MAX_MOVE_DISTANCE_DRONE,
+                    "description": f"Number of tiles to fly (1-{MAX_MOVE_DISTANCE_DRONE}). Default 1.",
+                },
+            },
+            "required": ["direction"],
+        },
+    },
+}
+
+SCAN_TOOL = {
+    "type": "function",
+    "function": {
+        "name": "scan",
+        "description": "Scan the area below to sample concentration readings from sensors. "
+        "Returns probability values for surrounding tiles indicating likelihood of precious "
+        "stone deposits. Higher values mean closer to core deposits. Costs 2% battery.",
+        "parameters": {"type": "object", "properties": {}},
+    },
+}
+
+DRONE_TOOLS = [DRONE_MOVE_TOOL, SCAN_TOOL]
+
+
+class DroneAgent:
+    """Drone scout agent powered by Mistral LLM. Moves fast, scans for stone deposits."""
+
+    def __init__(self, agent_id="drone-mistral", model="mistral-small-latest"):
+        self.agent_id = agent_id
+        self.model = model
+        self._client = None
+        self._mock_fallback = MockDroneAgent(agent_id=agent_id)
+
+    def _get_client(self):
+        if self._client is None:
+            if not settings.mistral_api_key:
+                raise RuntimeError("MISTRAL_API_KEY not set")
+            self._client = Mistral(api_key=settings.mistral_api_key)
+        return self._client
+
+    def _build_context(self):
+        """Assemble LLM context for the drone scout."""
+        agent = WORLD["agents"][self.agent_id]
+        x, y = agent["position"]
+        mission = agent["mission"]
+        battery = agent["battery"]
+        memory = agent.get("memory", [])
+
+        station = WORLD["agents"].get("station")
+        station_pos = station["position"] if station else [0, 0]
+        dist_to_station = abs(x - station_pos[0]) + abs(y - station_pos[1])
+        moves_on_battery = int(battery / 0.01)
+
+        visited_set = {tuple(p) for p in agent.get("visited", [])}
+        unvisited_dirs = []
+        for name, (dx, dy) in DIRECTIONS.items():
+            nx, ny = x + dx, y + dy
+            if 0 <= nx < GRID_W and 0 <= ny < GRID_H and (nx, ny) not in visited_set:
+                unvisited_dirs.append(name)
+
+        scanned_positions = {tuple(s["position"]) for s in WORLD.get("drone_scans", [])}
+        total_tiles = GRID_W * GRID_H
+        coverage = len(scanned_positions) / total_tiles * 100
+
+        parts = []
+
+        parts.append(
+            f"You are {self.agent_id}, an autonomous Mars drone scout.\n"
+            "Your job: fly over the terrain and SCAN areas to detect concentration of precious stone deposits.\n"
+            "You are a pure scout — you CANNOT dig or pick up stones. Rovers depend on your scan data.\n"
+            "Think step by step but keep it to 1-2 sentences, then call a tool.\n"
+            "\n"
+            "COORDINATE SYSTEM:\n"
+            "- North = Y increases, South = Y decreases\n"
+            "- East = X increases, West = X decreases\n"
+            "\n"
+            "SCAN STRATEGY:\n"
+            "- Use 'scan' to sample concentration readings at your current position.\n"
+            "- Readings range 0.0-1.0. Higher values indicate precious stone deposits nearby.\n"
+            "- Scan data is shared with rovers automatically — they will navigate to hotspots you find.\n"
+            "- Try to cover the map systematically. Don't scan the same area twice.\n"
+            "- Prioritize scanning unexplored areas far from previous scan positions.\n"
+            "\n"
+            "RULES:\n"
+            f"- Battery: move costs 1%/tile, scan costs 2%. You can fly up to {MAX_MOVE_DISTANCE_DRONE} tiles per move.\n"
+            "- Station is at ({sx},{sy}). Return when battery is low for recharge.\n"
+            "- ALWAYS keep enough battery to return to station.\n"
+            "- Follow your current tasks list.".format(
+                sx=station_pos[0], sy=station_pos[1]
+            )
+        )
+
+        parts.append(
+            f"\n== Mission ==\n"
+            f"Objective: {mission['objective']}\n"
+            f"Scan coverage: {coverage:.0f}% of map"
+        )
+
+        tasks = agent.get("tasks", [])
+        if tasks:
+            parts.append("\n== Current Tasks ==")
+            for i, task in enumerate(tasks, 1):
+                parts.append(f"{i}. {task}")
+        else:
+            parts.append("\n== Current Tasks ==\n1. Scan current area, then fly to unscanned regions")
+
+        parts.append(
+            f"\n== State ==\n"
+            f"Position: ({x}, {y})\n"
+            f"Battery: {battery:.0%} ({moves_on_battery} moves remaining)\n"
+            f"Distance to station: {dist_to_station} tiles\n"
+            f"Safety margin: {'OK' if moves_on_battery > dist_to_station + 5 else 'LOW — return to station'}\n"
+            f"Tiles visited: {len(agent.get('visited', []))}\n"
+            f"Scans performed: {len(WORLD.get('drone_scans', []))}"
+        )
+
+        parts.append(
+            f"\n== Environment ==\n"
+            f"Grid: {GRID_W}x{GRID_H}\n"
+            f"Unvisited neighbors: {', '.join(unvisited_dirs) if unvisited_dirs else 'none'}\n"
+            f"Already scanned here: {'yes' if (x, y) in scanned_positions else 'no'}"
+        )
+
+        # Recent high-concentration findings
+        hot_scans = []
+        for scan in WORLD.get("drone_scans", [])[-5:]:
+            if scan["peak"] > 0.2:
+                hot_scans.append(
+                    f"  - ({scan['position'][0]},{scan['position'][1]}): peak={scan['peak']:.2f}"
+                )
+        if hot_scans:
+            parts.append("Recent hotspots found:")
+            parts.extend(hot_scans)
+
+        if memory:
+            recent = memory[-5:]
+            parts.append("\n== Recent actions ==")
+            for entry in recent:
+                parts.append(f"- {entry}")
+
+        return "\n".join(parts)
+
+    def run_turn(self):
+        """Single-shot LLM call for drone. Returns {thinking, action} dict."""
+        try:
+            client = self._get_client()
+            context = self._build_context()
+            WORLD["agents"][self.agent_id]["last_context"] = context
+
+            messages = [
+                {"role": "system", "content": context},
+                {"role": "user", "content": "Observe your surroundings and decide your next action."},
+            ]
+
+            logger.info("Calling Mistral (%s) for %s", self.model, self.agent_id)
+            response = client.chat.complete(
+                model=self.model,
+                messages=messages,
+                tools=DRONE_TOOLS,
+            )
+            choice = response.choices[0]
+
+            thinking = choice.message.content or None
+            action = None
+
+            if thinking:
+                logger.info("Drone thinking: %s", thinking)
+
+            if choice.message.tool_calls:
+                tc = choice.message.tool_calls[0]
+                name = tc.function.name
+                args = (
+                    json.loads(tc.function.arguments)
+                    if isinstance(tc.function.arguments, str)
+                    else tc.function.arguments
+                )
+                if name in ("move", "scan"):
+                    action = {"name": name, "params": args}
+                else:
+                    logger.warning("%s called unknown tool %r, ignoring", self.agent_id, name)
+
+            if action is None:
+                logger.warning(
+                    "%s returned no valid tool action, using fallback",
+                    self.agent_id,
+                )
+                return self._fallback_turn("No valid tool action from model")
+
+            return {"thinking": thinking, "action": action}
+        except (SDKError, ConnectionError, TimeoutError, RuntimeError) as exc:
+            logger.exception("Drone LLM turn failed for %s, using fallback", self.agent_id)
+            return self._fallback_turn(f"LLM unavailable ({type(exc).__name__})")
+
+    def _fallback_turn(self, reason):
+        fallback = self._mock_fallback.run_turn()
+        fallback_thinking = fallback.get("thinking") or ""
+        prefix = f"LLM fallback: {reason}. "
+        fallback["thinking"] = (prefix + fallback_thinking).strip()
+        return fallback
+
+
+class MockDroneAgent:
+    """Mock drone that systematically scans the map — no LLM calls."""
+
+    def __init__(self, agent_id="drone-mistral"):
+        self.agent_id = agent_id
+
+    def run_turn(self):
+        agent = WORLD["agents"][self.agent_id]
+        x, y = agent["position"]
+
+        context = (
+            f"Mock drone at ({x},{y}), battery={agent['battery']:.0%}, "
+            f"scans={len(WORLD.get('drone_scans', []))}"
+        )
+        agent["last_context"] = context
+
+        # Scan if current position not yet scanned
+        scanned_positions = {tuple(s["position"]) for s in WORLD.get("drone_scans", [])}
+        if (x, y) not in scanned_positions:
+            thinking = f"I'm at ({x}, {y}). Scanning area for concentration readings."
+            return {"thinking": thinking, "action": {"name": "scan", "params": {}}}
+
+        # Find nearest unscanned position (prefer systematic coverage)
+        from .world import DRONE_REVEAL_RADIUS
+
+        best_target = None
+        best_dist = float("inf")
+        for gx in range(GRID_W):
+            for gy in range(GRID_H):
+                if (gx, gy) in scanned_positions:
+                    continue
+                min_scan_dist = min(
+                    (abs(gx - sp[0]) + abs(gy - sp[1]) for sp in scanned_positions),
+                    default=GRID_W + GRID_H,
+                )
+                if min_scan_dist < DRONE_REVEAL_RADIUS:
+                    continue
+                d = abs(gx - x) + abs(gy - y)
+                if d < best_dist:
+                    best_dist = d
+                    best_target = (gx, gy)
+
+        if best_target:
+            tx, ty = best_target
+            dx, dy = tx - x, ty - y
+            if abs(dx) >= abs(dy):
+                direction = "east" if dx > 0 else "west"
+                distance = min(abs(dx), MAX_MOVE_DISTANCE_DRONE)
+            else:
+                direction = "north" if dy > 0 else "south"
+                distance = min(abs(dy), MAX_MOVE_DISTANCE_DRONE)
+            thinking = f"I'm at ({x}, {y}). Flying {direction} toward unscanned area at ({tx},{ty})."
+            return {
+                "thinking": thinking,
+                "action": {"name": "move", "params": {"direction": direction, "distance": distance}},
+            }
+
+        # All scanned — patrol randomly
+        valid = []
+        for name, (ddx, ddy) in DIRECTIONS.items():
+            nx, ny = x + ddx, y + ddy
+            if 0 <= nx < GRID_W and 0 <= ny < GRID_H:
+                valid.append(name)
+        direction = random.choice(valid) if valid else "north"
+        thinking = f"I'm at ({x}, {y}). All areas covered, patrolling."
+        return {"thinking": thinking, "action": {"name": "move", "params": {"direction": direction, "distance": 1}}}

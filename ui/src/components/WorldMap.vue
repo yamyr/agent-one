@@ -1,6 +1,6 @@
 <script setup>
 import { computed } from 'vue'
-import { GRID_SIZE, TILE_SIZE, MAP_W, MAP_H, REVEAL_RADIUS, STONE_COLORS, agentColor } from '../constants.js'
+import { GRID_SIZE, TILE_SIZE, MAP_W, MAP_H, STONE_COLORS, agentColor, revealRadius } from '../constants.js'
 
 const props = defineProps({
   worldState: {
@@ -30,7 +30,16 @@ const rovers = computed(() => {
   return props.agentIds.filter(id => {
     if (!props.worldState) return true
     const a = props.worldState.agents[id]
-    return !a || a.type !== 'station'
+    return !a || a.type === 'rover'
+  })
+})
+
+const drones = computed(() => {
+  if (!props.agentIds) return []
+  return props.agentIds.filter(id => {
+    if (!props.worldState) return false
+    const a = props.worldState.agents[id]
+    return a && a.type === 'drone'
   })
 })
 
@@ -212,7 +221,7 @@ function agentTransform(id) {
         </circle>
         <!-- visibility radius -->
         <circle
-          :r="REVEAL_RADIUS * TILE_SIZE"
+          :r="revealRadius(id) * TILE_SIZE"
           fill="none"
           :stroke="agentColor(id)"
           stroke-width="1"
@@ -221,6 +230,58 @@ function agentTransform(id) {
         />
         <text
           y="18"
+          text-anchor="middle"
+          :fill="agentColor(id)"
+          class="rover-label"
+        >{{ id }}</text>
+      </g>
+
+      <!-- drone markers (triangle) -->
+      <g
+        v-for="id in drones"
+        :key="'drone-'+id"
+        :transform="agentTransform(id)"
+        class="rover-group"
+        style="cursor:pointer"
+        @click="emit('select-agent', id)"
+      >
+        <polygon
+          points="0,-9 8,6 -8,6"
+          :fill="agentColor(id)"
+          opacity="0.9"
+        >
+          <animate
+            attributeName="opacity"
+            values="0.9;0.6;0.9"
+            dur="1.5s"
+            repeatCount="indefinite"
+          />
+        </polygon>
+        <polygon
+          points="0,-14 13,10 -13,10"
+          fill="none"
+          :stroke="agentColor(id)"
+          stroke-width="1"
+          opacity="0.25"
+        >
+          <animate
+            attributeName="opacity"
+            values="0.25;0.08;0.25"
+            dur="1.5s"
+            repeatCount="indefinite"
+          />
+        </polygon>
+        <!-- visibility radius -->
+        <circle
+          :r="revealRadius(id) * TILE_SIZE"
+          fill="none"
+          :stroke="agentColor(id)"
+          stroke-width="1"
+          opacity="0.2"
+          stroke-dasharray="6 4"
+        />
+        <text
+          y="20"
           text-anchor="middle"
           :fill="agentColor(id)"
           class="rover-label"
