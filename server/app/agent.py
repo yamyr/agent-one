@@ -162,7 +162,7 @@ class MistralRoverReasoner:
         # Mission target
         world_mission = self._world.get_mission()
         target_quantity = world_mission.get("target_quantity", 100)
-        collected_qty = world_mission.get("collected_quantity", 0)
+        inventory_full = len(inventory) >= MAX_INVENTORY_ROVER
 
         parts = []
 
@@ -200,10 +200,11 @@ class MistralRoverReasoner:
         parts.append(
             f"\n== Mission ==\n"
             f"Objective: {mission['objective']}\n"
-            f"Target: collect {target_quantity} units of basalt from veins ({collected_qty}/{target_quantity} delivered)"
+            f"Target: collect {target_quantity} units of basalt and deliver to station.\n"
+            f"Your inventory: {len(inventory)}/{MAX_INVENTORY_ROVER} veins"
             + (
-                "\n🏁 MISSION TARGET MET — RETURN TO STATION NOW!"
-                if collected_qty >= target_quantity
+                "\n🏁 INVENTORY FULL — RETURN TO STATION NOW TO DELIVER!"
+                if inventory_full
                 else ""
             )
         )
