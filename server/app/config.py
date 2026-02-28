@@ -34,6 +34,13 @@ class Settings(BaseSettings):
     # Active agents (comma-separated: "rover-mistral,drone-mistral")
     active_agents: str = "rover-mistral,drone-mistral"
 
+    # RAG (Retrieval-Augmented Generation)
+    rag_enabled: bool = True
+    rag_knowledge_top_k: int = 3
+    rag_memory_top_k: int = 3
+    rag_timeout_seconds: float = 2.0
+    rag_max_context_tokens: int = 800
+
     # ElevenLabs narration
     elevenlabs_api_key: str = ""
     narration_enabled: bool = False
