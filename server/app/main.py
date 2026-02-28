@@ -6,7 +6,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from rich.logging import RichHandler
 
-from .agent import MockRoverAgent
+from .agent import MockRoverAgent, RoverAgent
 from .broadcast import broadcaster
 from .db import init_db, close_db
 from .views import router as views_router
@@ -21,17 +21,14 @@ logging.basicConfig(
 
 logger = logging.getLogger(__name__)
 
-TURN_INTERVAL = 10  # seconds between agent turns
+INSTRUCTION = "Observe your surroundings and decide your next move."
 
 
-async def game_loop():
-    """Run the rover agent every TURN_INTERVAL seconds, broadcast events."""
-    rover = MockRoverAgent()
+async def agent_loop(agent, interval):
+    """Run an agent every `interval` seconds, broadcast events."""
     while True:
         try:
-            events = await asyncio.to_thread(
-                rover.run_turn, "Observe your surroundings and decide your next move.",
-            )
+            events = await asyncio.to_thread(agent.run_turn, INSTRUCTION)
             for event in events:
                 await broadcaster.send(event)
             await broadcaster.send({
@@ -41,16 +38,18 @@ async def game_loop():
                 "payload": get_snapshot(),
             })
         except Exception:
-            logger.exception("Game loop error")
-        await asyncio.sleep(TURN_INTERVAL)
+            logger.exception("Agent loop error (%s)", agent.agent_id)
+        await asyncio.sleep(interval)
 
 
 @asynccontextmanager
 async def lifespan(app):
     init_db()
-    loop_task = asyncio.create_task(game_loop())
+    mock_task = asyncio.create_task(agent_loop(MockRoverAgent(), interval=10))
+    mistral_task = asyncio.create_task(agent_loop(RoverAgent(), interval=20))
     yield
-    loop_task.cancel()
+    mock_task.cancel()
+    mistral_task.cancel()
     close_db()
 
 

@@ -57,7 +57,7 @@ class RoverAgent:
             "Current world state:\n"
             f"- Your position: {agent['position']}\n"
             f"- Battery: {agent['battery']:.0%}\n"
-            f"- Available zones: {', '.join(WORLD['zones'])}\n"
+            f"- Available zones: {', '.join(WORLD['zones'].keys())}\n"
         )
 
     def _execute_tool(self, name, args_json):
@@ -144,7 +144,7 @@ class MockRoverAgent:
         events = []
         agent = WORLD["agents"][self.agent_id]
         current = agent["position"]
-        others = [z for z in WORLD["zones"] if z != current]
+        others = [z for z in WORLD["zones"].keys() if z != current]
         target = random.choice(others)
 
         events.append({
