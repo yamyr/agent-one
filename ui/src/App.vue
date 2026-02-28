@@ -86,6 +86,15 @@ function onSimEvent(event) {
       if (event.payload?.stone)
         addToast(`${event.source}: found ${event.payload.stone.grade} vein`, { type: 'info' })
       break
+    case 'storm_warning':
+      addToast('\u26a0 Dust storm approaching!', { type: 'warning', duration: 5000 })
+      break
+    case 'storm_started':
+      addToast('\ud83c\udf2a Dust storm has arrived!', { type: 'error', duration: 5000 })
+      break
+    case 'storm_ended':
+      addToast('Storm has passed \u2014 skies clearing', { type: 'success', duration: 4000 })
+      break
     default:
       break
   }
@@ -169,6 +178,7 @@ useKeyboard({
 
     <MissionBar
       :mission="worldState ? worldState.mission : null"
+      :storm="worldState ? worldState.storm : null"
       @abort="abortMission"
     />
 

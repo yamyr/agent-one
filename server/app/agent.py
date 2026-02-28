@@ -24,6 +24,7 @@ from .world import MAX_INVENTORY_ROVER
 from .world import check_ground, direction_hint, best_drone_hotspot
 from .world import set_agent_model
 from .world import execute_action, get_snapshot, charge_agent, next_tick
+from .world import check_storm_tick, get_storm_info
 
 logger = logging.getLogger(__name__)
 
@@ -333,6 +334,23 @@ class MistralRoverReasoner:
             parts.append("\n== Recent actions ==")
             for entry in recent:
                 parts.append(f"- {entry}")
+
+        # Storm awareness
+        storm_info = get_storm_info()
+        if storm_info["phase"] != "clear":
+            parts.append("\n== DUST STORM ==")
+            if storm_info["phase"] == "warning":
+                parts.append(
+                    "STATUS: Storm approaching! Prepare to seek shelter or return to base."
+                )
+            elif storm_info["phase"] == "active":
+                parts.append(
+                    f"STATUS: ACTIVE STORM — intensity {storm_info['intensity']:.0%}\n"
+                    f"Battery drain multiplier: {storm_info['battery_multiplier']:.1f}x\n"
+                    f"Move failure chance: {storm_info['move_fail_chance']:.0%}\n"
+                    "CAUTION: Moves may randomly fail. Battery drains faster. "
+                    "Consider returning to station if battery is below 80%."
+                )
 
         # Urgent commands from Host inbox
         pending = agent.get("pending_commands", [])
@@ -883,6 +901,18 @@ class RoverLoop(BaseAgent):
 
         turn = await asyncio.to_thread(self._reasoner.run_turn)
         next_tick()
+
+        # Advance storm lifecycle and broadcast any storm events
+        storm_events = check_storm_tick()
+        for sevt in storm_events:
+            storm_msg = make_message(
+                source="world",
+                type="event",
+                name=sevt["name"],
+                payload=sevt["payload"],
+            )
+            await host.broadcast(storm_msg.to_dict())
+
         messages = []
 
         if turn["thinking"]:
