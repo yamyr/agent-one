@@ -131,6 +131,36 @@ class TestDefineMissionDroneHint(unittest.TestCase):
         self.assertIn("different sector", user_msg)
 
 
+class TestDefineMissionRoverDroneHint(unittest.TestCase):
+    @patch("app.station.settings")
+    def test_rover_drone_sector_hint_in_prompt(self, mock_settings):
+        mock_settings.mistral_api_key = "test-key"
+        station = StationAgent()
+        mock_client = MagicMock()
+        station._client = mock_client
+
+        mock_client.chat.complete.return_value = _mock_client_response(
+            content="Assigning missions.", tool_calls=[]
+        )
+
+        ctx = StationContext(
+            grid_w=20,
+            grid_h=20,
+            rovers=[
+                RoverSummary(id="rover-mistral", agent_type="rover", position=[0, 0], battery=1.0, mission=AgentMission(objective="", plan=[])),
+                RoverSummary(id="drone-mistral", agent_type="drone", position=[0, 0], battery=1.0, mission=AgentMission(objective="", plan=[])),
+            ],
+            stones=[],
+        )
+        station.define_mission(ctx)
+        call_args = mock_client.chat.complete.call_args
+        user_msg = call_args[1]["messages"][1]["content"]
+        self.assertIn("1 rover(s)", user_msg)
+        self.assertIn("1 drone(s)", user_msg)
+        self.assertIn("DIFFERENT sectors", user_msg)
+        self.assertIn("specific directions", user_msg)
+
+
 class TestStationHandleEvent(unittest.TestCase):
     @patch("app.station.settings")
     def test_handle_event_returns_result(self, mock_settings):

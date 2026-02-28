@@ -21,7 +21,7 @@ from .world import FUEL_CAPACITY_ROVER, FUEL_CAPACITY_DRONE, DRONE_REVEAL_RADIUS
 from .world import BATTERY_COST_MOVE, BATTERY_COST_MOVE_DRONE, BATTERY_COST_DIG
 from .world import BATTERY_COST_ANALYZE, BATTERY_COST_SCAN, BATTERY_COST_NOTIFY
 from .world import MAX_INVENTORY_ROVER
-from .world import check_ground, direction_hint
+from .world import check_ground, direction_hint, best_drone_hotspot
 from .world import set_agent_model
 from .world import execute_action, get_snapshot, charge_agent, next_tick
 
@@ -321,6 +321,19 @@ class MistralRoverReasoner:
             for vs in visible_stones:
                 parts.append(f"  - {vs}")
 
+        # Drone scan hotspots — areas discovered by aerial scans not yet visited by rover
+        hotspot = best_drone_hotspot(x, y, revealed_set)
+        if hotspot:
+            hx, hy, conc = hotspot
+            hdx, hdy = hx - x, hy - y
+            hint = direction_hint(hdx, hdy)
+            dist = abs(hdx) + abs(hdy)
+            parts.append(
+                f"\n== Drone Scan Hotspots ==\n"
+                f"Hotspot at ({hx},{hy}) — {hint}, {dist} tiles (concentration: {conc:.3f})\n"
+                "Consider navigating toward this drone-discovered area for potential veins."
+            )
+
         if memory:
             recent = memory[-5:]
             parts.append("\n== Recent actions ==")
@@ -541,8 +554,9 @@ class DroneAgent:
             "- Use 'scan' to sample concentration readings at your current position.\n"
             "- Readings range 0.0-1.0. Higher values indicate high-grade basalt veins nearby.\n"
             "- Scan data is shared with rovers automatically — they will navigate to hotspots you find.\n"
-            "- Try to cover the map systematically. Don't scan the same area twice.\n"
-            "- Prioritize scanning unexplored areas far from previous scan positions.\n"
+            "- Scan outward from station in expanding rings. Cover NEARBY areas first, then push further.\n"
+            "- Don't fly far when there are unscanned areas close by. Check 'Nearest unscanned area' below.\n"
+            "- Don't scan the same area twice.\n"
             "\n"
             "RADIO (notify tool):\n"
             f"- Costs 2 fuel units (~{BATTERY_COST_NOTIFY:.2%} battery).\n"
@@ -552,7 +566,7 @@ class DroneAgent:
             "- You are the eyes of the mission. Rovers are blind without your reports.\n"
             "\n"
             "RULES:\n"
-            f"- Battery: move costs 1 fuel unit/tile (~{BATTERY_COST_MOVE_DRONE:.2%}), scan costs 2 fuel units (~{BATTERY_COST_SCAN:.2%}), notify costs 2 fuel units (~{BATTERY_COST_NOTIFY:.2%}). You can fly up to {MAX_MOVE_DISTANCE_DRONE} tiles per move.\n"
+            f"- Battery: move costs 3 fuel units/tile (~{BATTERY_COST_MOVE_DRONE:.2%}), scan costs 2 fuel units (~{BATTERY_COST_SCAN:.2%}), notify costs 2 fuel units (~{BATTERY_COST_NOTIFY:.2%}). You can fly up to {MAX_MOVE_DISTANCE_DRONE} tiles per move.\n"
             "- Station is at ({sx},{sy}). Return there when battery is low — "
             "the station will recharge you automatically.\n"
             "- ALWAYS keep enough battery to return to station. Check 'moves remaining' vs 'distance to station'.\n"
@@ -922,16 +936,8 @@ class RoverLoop(BaseAgent):
                     )
                     messages.append(check_msg)
 
-                # Emit notify event for station routing
+                # Save notify to station memory and emit station thinking log
                 if turn["action"]["name"] == "notify" and result.get("message"):
-                    notify_msg = make_message(
-                        source=self.agent_id,
-                        type="event",
-                        name="notify",
-                        payload={"message": result["message"], "position": result["position"]},
-                    )
-                    messages.append(notify_msg)
-                    # Save to station memory so it persists across LLM calls
                     pos = result["position"]
                     station_state = self._world.get_agents().get("station")
                     if station_state:
@@ -1059,16 +1065,8 @@ class DroneLoop(BaseAgent):
                 )
                 messages.append(action_msg)
 
-                # Emit notify event for station routing
+                # Save notify to station memory and emit station thinking log
                 if turn["action"]["name"] == "notify" and result.get("message"):
-                    notify_msg = make_message(
-                        source=self.agent_id,
-                        type="event",
-                        name="notify",
-                        payload={"message": result["message"], "position": result["position"]},
-                    )
-                    messages.append(notify_msg)
-                    # Save to station memory so it persists across LLM calls
                     pos = result["position"]
                     station_state = self._world.get_agents().get("station")
                     if station_state:

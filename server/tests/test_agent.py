@@ -118,6 +118,34 @@ class TestTaskSeparatorParsing(unittest.TestCase):
         self.assertNotIn("task", turn)
 
 
+class TestRoverContextDroneHotspot(unittest.TestCase):
+    def setUp(self):
+        self._orig_scans = world.state.get("drone_scans", [])
+        world.state["agents"]["rover-mistral"]["position"] = [0, 0]
+        world.state["agents"]["rover-mistral"]["battery"] = 1.0
+        world.state["agents"]["rover-mistral"]["mission"] = {"objective": "Explore", "plan": []}
+        world.state["agents"]["rover-mistral"]["visited"] = [[0, 0]]
+
+    def tearDown(self):
+        world.state["drone_scans"] = self._orig_scans
+
+    def test_hotspot_appears_in_context(self):
+        world.state["drone_scans"] = [
+            {"position": [10, 10], "readings": {"10,10": 0.7, "11,10": 0.3}},
+        ]
+        agent = MistralRoverReasoner()
+        context = agent._build_context()
+        self.assertIn("Drone Scan Hotspots", context)
+        self.assertIn("(10,10)", context)
+        self.assertIn("0.700", context)
+
+    def test_no_hotspot_section_when_empty(self):
+        world.state["drone_scans"] = []
+        agent = MistralRoverReasoner()
+        context = agent._build_context()
+        self.assertNotIn("Drone Scan Hotspots", context)
+
+
 class TestExecuteActionNoTaskUpdate(unittest.TestCase):
     def setUp(self):
         self._orig_pos = world.state["agents"]["rover-mistral"]["position"][:]

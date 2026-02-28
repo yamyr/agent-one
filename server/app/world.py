@@ -44,7 +44,7 @@ FUEL_CAPACITY_ROVER = 350  # rover carries 350 fuel units
 FUEL_CAPACITY_DRONE = 250  # drone carries 250 fuel units
 
 BATTERY_COST_MOVE = 1 / FUEL_CAPACITY_ROVER  # ~0.00286 per tile
-BATTERY_COST_MOVE_DRONE = 1 / FUEL_CAPACITY_DRONE  # 0.004 per tile
+BATTERY_COST_MOVE_DRONE = 3 / FUEL_CAPACITY_DRONE  # 3 fuel units per tile (flying is expensive)
 BATTERY_COST_DIG = 6 / FUEL_CAPACITY_ROVER  # 6 fuel units
 BATTERY_COST_ANALYZE = 3 / FUEL_CAPACITY_ROVER  # 3 fuel units
 BATTERY_COST_SCAN = 2 / FUEL_CAPACITY_DRONE  # 2 fuel units
@@ -924,7 +924,7 @@ def direction_hint(dx, dy):
     return ", ".join(parts) if parts else "here"
 
 
-def _best_drone_hotspot(rx, ry, revealed_set):
+def best_drone_hotspot(rx, ry, revealed_set):
     """Find the highest-concentration unvisited cell from drone scans."""
     best = None
     best_conc = 0.15  # minimum threshold to consider

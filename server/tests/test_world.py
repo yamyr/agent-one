@@ -10,7 +10,7 @@ from app.world import CHARGE_RATE, REVEAL_RADIUS, ROVER_REVEAL_RADIUS, DRONE_REV
 from app.world import AGENT_STARTS
 from app.world import abort_mission, all_agents_at_station
 from app.world import assign_mission, _cells_in_radius, record_memory, MEMORY_MAX
-from app.world import direction_hint
+from app.world import direction_hint, best_drone_hotspot
 from app.world import set_agent_model, set_agent_last_context, set_pending_commands
 from app.world import observe_rover, observe_station
 from app.world import VEIN_GRADES, VEIN_WEIGHTS, VEIN_QUANTITY_RANGES, TARGET_QUANTITY
@@ -1504,3 +1504,43 @@ class TestWorldClass(unittest.TestCase):
             world.state["agents"]["rover-mistral"].get("model"),
             "independent-model",
         )
+
+
+class TestBestDroneHotspot(unittest.TestCase):
+    def setUp(self):
+        self._orig_scans = world.state.get("drone_scans", [])
+        world.state["drone_scans"] = []
+
+    def tearDown(self):
+        world.state["drone_scans"] = self._orig_scans
+
+    def test_returns_none_when_no_scans(self):
+        result = best_drone_hotspot(0, 0, set())
+        self.assertIsNone(result)
+
+    def test_returns_highest_concentration(self):
+        world.state["drone_scans"] = [
+            {"position": [5, 5], "readings": {"5,5": 0.3, "6,5": 0.8, "7,5": 0.1}},
+        ]
+        result = best_drone_hotspot(0, 0, set())
+        self.assertIsNotNone(result)
+        self.assertEqual(result[0], 6)
+        self.assertEqual(result[1], 5)
+        self.assertAlmostEqual(result[2], 0.8)
+
+    def test_skips_revealed_cells(self):
+        world.state["drone_scans"] = [
+            {"position": [5, 5], "readings": {"6,5": 0.9, "7,5": 0.5}},
+        ]
+        revealed = {(6, 5)}
+        result = best_drone_hotspot(0, 0, revealed)
+        self.assertIsNotNone(result)
+        self.assertEqual(result[0], 7)
+        self.assertEqual(result[1], 5)
+
+    def test_ignores_below_threshold(self):
+        world.state["drone_scans"] = [
+            {"position": [5, 5], "readings": {"5,5": 0.1, "6,5": 0.05}},
+        ]
+        result = best_drone_hotspot(0, 0, set())
+        self.assertIsNone(result)

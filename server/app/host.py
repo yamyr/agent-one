@@ -81,6 +81,9 @@ class Host:
             self._agent_tasks.append(task)
             logger.info("Started agent loop: %s (interval=%.1fs)", agent.agent_id, agent.interval)
 
+        # Station assigns initial missions to all agents
+        asyncio.create_task(self.station_startup())
+
     def stop(self):
         """Cancel all running agent loops and narrator."""
         self._narrator.stop()

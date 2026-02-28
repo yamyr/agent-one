@@ -196,17 +196,23 @@ class StationAgent:
 
     def define_mission(self, context: StationContext):
         """Called at startup to define initial missions for all field agents."""
+        rover_count = sum(1 for r in context.rovers if r.agent_type != "drone")
         drone_count = sum(1 for r in context.rovers if r.agent_type == "drone")
-        drone_hint = ""
+        agent_hint = f" You have {rover_count} rover(s) and {drone_count} drone(s)."
+        if drone_count > 0 and rover_count > 0:
+            agent_hint += (
+                " Assign rovers and drones to DIFFERENT sectors so they don't overlap."
+                " Mention specific directions in each objective (e.g. 'Scout north and east sectors',"
+                " 'Explore south and west quadrant')."
+            )
         if drone_count > 1:
-            drone_hint = (
-                f" You have {drone_count} drones — assign each to a different sector "
-                "of the grid so they don't overlap."
+            agent_hint += (
+                f" You have {drone_count} drones — send each to a different sector."
             )
         return self._call_llm(
             "The mission is starting. Review the world state and assign initial "
-            "missions to ALL agents (rovers and drones). Consider the grid layout."
-            + drone_hint,
+            "missions to ALL agents (rovers and drones)."
+            + agent_hint,
             context,
         )
 

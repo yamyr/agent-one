@@ -82,6 +82,25 @@ class TestHostBroadcast(unittest.TestCase):
         host._narrator.feed.assert_called_once_with(msg)
 
 
+class TestHostStartCallsStationStartup(unittest.TestCase):
+    def test_start_creates_station_startup_task(self):
+        host = _make_host()
+        host.register(_dummy("rover-mock"))
+
+        with patch("app.host.broadcaster") as mock_bc:
+            mock_bc.send = AsyncMock()
+            with patch.object(host, "station_startup", new_callable=AsyncMock) as mock_startup:
+                loop = asyncio.new_event_loop()
+                try:
+                    loop.run_until_complete(host.start())
+                    # Let the created task run
+                    loop.run_until_complete(asyncio.sleep(0.05))
+                finally:
+                    host.stop()
+                    loop.close()
+                mock_startup.assert_called_once()
+
+
 class TestHostStationRouting(unittest.TestCase):
     def test_route_station_actions_assign_mission(self):
         host = _make_host()
