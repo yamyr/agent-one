@@ -4,6 +4,16 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [Unreleased]
+
+### Added
+- **Station Reactive Intelligence (Feature E)**: Station agent now periodically evaluates field events via LLM and reactively coordinates agents — reassigning missions, broadcasting alerts, or recalling rovers as needed.
+- `StationLoop` BaseAgent subclass with 20s evaluation interval and event buffering (max 50)
+- `StationAgent.evaluate_situation()` method for periodic LLM-based field assessment
+- `StationContext` extended with `tick`, `mission_status`, `collected_quantity`, `target_quantity`
+- Host event feeding: interesting field events (dig, scan, notify, etc.) are automatically routed to station loop
+- 18 new tests (7 station + 11 host integration) — 309 total, all passing
+
 ## [0.2.0](https://github.com/mhack-agent-one/agent-one/compare/v0.1.0...v0.2.0) (2026-02-28)
 
 
