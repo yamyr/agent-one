@@ -140,7 +140,9 @@ class TestStationHandleEvent(unittest.TestCase):
 class TestParseToolCalls(unittest.TestCase):
     def test_assign_mission_parsed(self):
         tool_calls = [
-            _mock_tool_call("assign_mission", {"agent_id": "rover-mistral", "objective": "Go north"})
+            _mock_tool_call(
+                "assign_mission", {"agent_id": "rover-mistral", "objective": "Go north"}
+            )
         ]
         actions = _parse_tool_calls(tool_calls)
 
@@ -175,36 +177,45 @@ class TestParseToolCalls(unittest.TestCase):
 
 class TestExecuteAction(unittest.TestCase):
     def test_assign_mission(self):
-        result = execute_action({
-            "name": "assign_mission",
-            "params": {"agent_id": "rover-mistral", "objective": "Go north"},
-        })
+        result = execute_action(
+            {
+                "name": "assign_mission",
+                "params": {"agent_id": "rover-mistral", "objective": "Go north"},
+            }
+        )
         self.assertTrue(result["ok"])
         self.assertEqual(result["agent_id"], "rover-mistral")
 
     def test_broadcast_alert(self):
-        result = execute_action({
-            "name": "broadcast_alert",
-            "params": {"message": "Storm incoming!"},
-        })
+        result = execute_action(
+            {
+                "name": "broadcast_alert",
+                "params": {"message": "Storm incoming!"},
+            }
+        )
         self.assertTrue(result["ok"])
         self.assertEqual(result["message"], "Storm incoming!")
 
     def test_charge_rover_at_station(self):
         from app.world import WORLD
+
         WORLD["agents"]["rover-mistral"]["position"] = [0, 0]
         WORLD["agents"]["rover-mistral"]["battery"] = 0.5
-        result = execute_action({
-            "name": "charge_rover",
-            "params": {"rover_id": "rover-mistral"},
-        })
+        result = execute_action(
+            {
+                "name": "charge_rover",
+                "params": {"rover_id": "rover-mistral"},
+            }
+        )
         self.assertTrue(result["ok"])
 
     def test_unknown_action(self):
-        result = execute_action({
-            "name": "self_destruct",
-            "params": {},
-        })
+        result = execute_action(
+            {
+                "name": "self_destruct",
+                "params": {},
+            }
+        )
         self.assertFalse(result["ok"])
         self.assertIn("Unknown station action", result["error"])
 

@@ -104,7 +104,15 @@ USE_SOLAR_BATTERY_TOOL = {
     },
 }
 
-ROVER_TOOLS = [MOVE_TOOL, ANALYZE_TOOL, DIG_TOOL, PICKUP_TOOL, ANALYZE_GROUND_TOOL, DEPLOY_SOLAR_PANEL_TOOL, USE_SOLAR_BATTERY_TOOL]
+ROVER_TOOLS = [
+    MOVE_TOOL,
+    ANALYZE_TOOL,
+    DIG_TOOL,
+    PICKUP_TOOL,
+    ANALYZE_GROUND_TOOL,
+    DEPLOY_SOLAR_PANEL_TOOL,
+    USE_SOLAR_BATTERY_TOOL,
+]
 
 
 # ── Rover Reasoners (sync decision engines, read from WORLD) ──
@@ -203,7 +211,11 @@ class MistralRoverReasoner:
             f"\n== Mission ==\n"
             f"Objective: {mission['objective']}\n"
             f"Target: collect {target_quantity} units of basalt from veins ({collected_qty}/{target_quantity} delivered)"
-            + ("\n🏁 MISSION TARGET MET — RETURN TO STATION NOW!" if collected_qty >= target_quantity else "")
+            + (
+                "\n🏁 MISSION TARGET MET — RETURN TO STATION NOW!"
+                if collected_qty >= target_quantity
+                else ""
+            )
         )
 
         tasks = agent.get("tasks", [])
@@ -221,7 +233,13 @@ class MistralRoverReasoner:
             f"Distance to station: {dist_to_station} tiles\n"
             f"Safety margin: {'OK' if battery > RETURN_TO_BASE_THRESHOLD else 'LOW — return to station immediately'}\n"
             f"Inventory: {len(inventory)} veins"
-            + (" (" + ", ".join(f"{s.get('grade','?')} qty={s.get('quantity',0)}" for s in inventory) + ")" if inventory else "")
+            + (
+                " ("
+                + ", ".join(f"{s.get('grade', '?')} qty={s.get('quantity', 0)}" for s in inventory)
+                + ")"
+                if inventory
+                else ""
+            )
             + f"\nSolar panels remaining: {agent.get('solar_panels_remaining', 0)}"
         )
 
@@ -248,7 +266,11 @@ class MistralRoverReasoner:
                 hint = _direction_hint(sp[0] - x, sp[1] - y)
                 grade_info = stone.get("grade", "unknown")
                 qty_info = stone.get("quantity", 0)
-                label = f"{stone['type']} {grade_info}" if stone["type"] != "unknown" else "unknown vein"
+                label = (
+                    f"{stone['type']} {grade_info}"
+                    if stone["type"] != "unknown"
+                    else "unknown vein"
+                )
                 if qty_info > 0:
                     label += f" qty={qty_info}"
                 visible_stones.append(
@@ -329,7 +351,15 @@ class MistralRoverReasoner:
                     if isinstance(tc.function.arguments, str)
                     else tc.function.arguments
                 )
-                if name in ("move", "dig", "pickup", "analyze", "analyze_ground", "deploy_solar_panel", "use_solar_battery"):
+                if name in (
+                    "move",
+                    "dig",
+                    "pickup",
+                    "analyze",
+                    "analyze_ground",
+                    "deploy_solar_panel",
+                    "use_solar_battery",
+                ):
                     action = {"name": name, "params": args}
                 else:
                     logger.warning("%s called unknown tool %r, ignoring", self.agent_id, name)
@@ -362,7 +392,10 @@ class MistralRoverReasoner:
         candidates = unvisited if unvisited else valid
         direction, tx, ty = random.choice(candidates)
         thinking = f"LLM fallback: {reason}. Moving {direction} to ({tx},{ty})."
-        return {"thinking": thinking, "action": {"name": "move", "params": {"direction": direction}}}
+        return {
+            "thinking": thinking,
+            "action": {"name": "move", "params": {"direction": direction}},
+        }
 
 
 # Backward-compat aliases
@@ -614,7 +647,10 @@ class MockDroneAgent:
                 dx, dy = sp[0] - x, sp[1] - y
                 if dx == 0 and dy == 0:
                     thinking = f"Recall received but already at station ({x}, {y})."
-                    return {"thinking": thinking, "action": {"name": "move", "params": {"direction": "north", "distance": 1}}}
+                    return {
+                        "thinking": thinking,
+                        "action": {"name": "move", "params": {"direction": "north", "distance": 1}},
+                    }
                 if abs(dx) >= abs(dy):
                     direction = "east" if dx > 0 else "west"
                     distance = min(abs(dx), MAX_MOVE_DISTANCE_DRONE)
@@ -625,7 +661,10 @@ class MockDroneAgent:
                 thinking = f"RECALL received: {reason}. Heading to station at ({sp[0]},{sp[1]})."
                 return {
                     "thinking": thinking,
-                    "action": {"name": "move", "params": {"direction": direction, "distance": distance}},
+                    "action": {
+                        "name": "move",
+                        "params": {"direction": direction, "distance": distance},
+                    },
                 }
 
         # Battery safety — return to base if battery is low
@@ -642,7 +681,9 @@ class MockDroneAgent:
             else:
                 direction = "north"
                 distance = 1
-            thinking = f"I'm at ({x}, {y}). LOW BATTERY ({agent['battery']:.0%}) — must return to station!"
+            thinking = (
+                f"I'm at ({x}, {y}). LOW BATTERY ({agent['battery']:.0%}) — must return to station!"
+            )
             return {
                 "thinking": thinking,
                 "action": {
@@ -724,7 +765,9 @@ class RoverLoop(BaseAgent):
         pending = host.drain_inbox(self.agent_id)
         # During abort, force recall so rover heads to station
         if mission_status == "aborted":
-            pending = [{"name": "recall", "payload": {"reason": "Mission aborted — return to station"}}]
+            pending = [
+                {"name": "recall", "payload": {"reason": "Mission aborted — return to station"}}
+            ]
         if pending:
             WORLD["agents"][self.agent_id]["pending_commands"] = pending
         else:
@@ -733,7 +776,12 @@ class RoverLoop(BaseAgent):
         # If aborted and already at station, stop this agent's loop
         rover = WORLD["agents"].get(self.agent_id)
         station_agent = WORLD["agents"].get("station")
-        if mission_status == "aborted" and rover and station_agent and rover["position"] == station_agent["position"]:
+        if (
+            mission_status == "aborted"
+            and rover
+            and station_agent
+            and rover["position"] == station_agent["position"]
+        ):
             logger.info("Agent %s at station — abort complete", self.agent_id)
             return
 
@@ -790,9 +838,7 @@ class RoverLoop(BaseAgent):
         for msg in messages:
             await host.broadcast(msg.to_dict())
 
-        await broadcaster.send(
-            make_message("world", "event", "state", get_snapshot()).to_dict()
-        )
+        await broadcaster.send(make_message("world", "event", "state", get_snapshot()).to_dict())
 
         # Auto-charge rover when it arrives at station
         rover = WORLD["agents"].get(self.agent_id)
@@ -832,7 +878,12 @@ class DroneLoop(BaseAgent):
         station_agent = WORLD["agents"].get("station")
 
         # If aborted and at station, stop this agent
-        if mission_status == "aborted" and drone and station_agent and drone["position"] == station_agent["position"]:
+        if (
+            mission_status == "aborted"
+            and drone
+            and station_agent
+            and drone["position"] == station_agent["position"]
+        ):
             logger.info("Agent %s at station — abort complete", self.agent_id)
             return
 
@@ -873,9 +924,7 @@ class DroneLoop(BaseAgent):
         for msg in messages:
             await host.broadcast(msg.to_dict())
 
-        await broadcaster.send(
-            make_message("world", "event", "state", get_snapshot()).to_dict()
-        )
+        await broadcaster.send(make_message("world", "event", "state", get_snapshot()).to_dict())
 
         # Auto-charge drone when at station
         if (
