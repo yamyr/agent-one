@@ -11,7 +11,7 @@ import { ref, onMounted, onUnmounted } from 'vue'
 const categories = ['ai', 'backend', 'frontend', 'infra']
 
 const sectionRef = ref(null)
-const visible = ref(false)
+const visible = ref(true)
 let observer = null
 
 onMounted(() => {

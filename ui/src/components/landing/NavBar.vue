@@ -2,10 +2,8 @@
 import { ref, onMounted, onUnmounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { setLocale } from '../../i18n/index.js'
-import { useRouter } from 'vue-router'
 
 const { t, locale } = useI18n()
-const router = useRouter()
 
 /* ─── Scroll state ─── */
 const scrolled = ref(false)
@@ -240,7 +238,7 @@ onUnmounted(() => {
   left: 0;
   right: 0;
   z-index: 100;
-  background: rgba(5, 2, 14, 0.7);
+  background: rgba(5, 2, 14, 0.78);
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
   border-bottom: 1px solid var(--glass-border);
@@ -271,7 +269,7 @@ onUnmounted(() => {
   color: var(--text-primary);
   font-family: var(--font-display);
   font-weight: 700;
-  font-size: 1.05rem;
+  font-size: 1.08rem;
   letter-spacing: 0.08em;
   white-space: nowrap;
 }
@@ -302,9 +300,9 @@ onUnmounted(() => {
 }
 
 .navbar__link {
-  color: var(--text-secondary);
+  color: rgba(220, 224, 236, 0.86);
   text-decoration: none;
-  font-size: 0.8rem;
+  font-size: 0.82rem;
   font-family: var(--font-mono);
   letter-spacing: 0.04em;
   text-transform: uppercase;
@@ -430,7 +428,7 @@ onUnmounted(() => {
   background: linear-gradient(135deg, var(--mars-sunset), var(--mars-red));
   color: #fff;
   font-family: var(--font-mono);
-  font-size: 0.75rem;
+  font-size: 0.78rem;
   font-weight: 600;
   letter-spacing: 0.04em;
   text-transform: uppercase;

@@ -10,7 +10,7 @@ import { ref, onMounted, onUnmounted } from 'vue'
  */
 
 const sectionRef = ref(null)
-const visible = ref(false)
+const visible = ref(true)
 let observer = null
 
 onMounted(() => {

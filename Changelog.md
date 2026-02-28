@@ -121,6 +121,25 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added (Landing Page)
+
+- Added a dedicated Vue Router split between `/` (Agent One landing page) and `/app` (simulation mission control) with lazy-loaded route components.
+- Added a full landing experience with 11 custom components: starfield background, Three.js Mars globe, mission narrative sections, feature grid, timeline, tech stack, CTA, and footer.
+- Added production i18n coverage for 10 locales (`en`, `de`, `fr`, `es`, `zh`, `ja`, `ko`, `ar`, `ru`, `pt`) with lazy locale loading, persisted language preference, and RTL handling for Arabic.
+
+### Changed (Landing Page Refinement)
+
+- Refined section reveal behavior so mission content remains visible on first render and no longer appears as large empty gaps during screenshot stitching or initial load.
+- Refined hero readability and hierarchy with stronger foreground contrast, improved spacing under fixed navigation, and subtle depth overlay tuning.
+- Refined navbar legibility and interaction polish (link contrast, CTA sizing, and glass background tuning) for better desktop and mobile clarity.
+- Refined i18n bootstrap to remove duplicate static+dynamic locale import behavior and ensure clean chunking/build output.
+
+### Lessons Learned (Landing Page)
+
+- Isolate long-running feature work in a dedicated git worktree when parallel agents/processes may change branches; this prevents repeated branch drift and file-context loss.
+- Avoid mixing static and dynamic imports for the same locale module in Vue i18n setups; it can produce chunking warnings and unpredictable bundling behavior.
+- For animation-driven sections, default-visible state with observer-triggered enhancement provides a safer baseline than fully hidden-first rendering on slow clients.
+
 ### Added (UI Polish Round 3 — Phases 3–8)
 
 - **Persisted zoom preference**: Zoom level saved to `localStorage` via `usePreferences` composable; survives page refresh

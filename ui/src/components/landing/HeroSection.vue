@@ -76,14 +76,21 @@ function scrollToFeatures() {
   min-height: 100vh;
   display: flex;
   align-items: center;
-  padding: 0 5%;
+  padding: 72px 5% 0;
+}
+
+.hero::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle at 22% 36%, rgba(5, 2, 14, 0.08), rgba(5, 2, 14, 0.72) 48%, rgba(5, 2, 14, 0.9) 100%);
+  pointer-events: none;
 }
 
 .hero__content {
   position: relative;
   z-index: 2;
-  width: 60%;
-  max-width: 720px;
+  width: min(56%, 680px);
 }
 
 /* ─── Badge ─── */
@@ -93,7 +100,7 @@ function scrollToFeatures() {
   gap: 0.5rem;
   font-family: var(--font-mono);
   font-size: 0.75rem;
-  color: var(--text-secondary);
+  color: var(--text-primary);
   padding: 0.4rem 1rem;
   border: 1px solid var(--glass-border);
   border-radius: 999px;
@@ -146,6 +153,7 @@ function scrollToFeatures() {
   font-weight: 400;
   color: var(--text-primary);
   line-height: 1.15;
+  text-shadow: 0 8px 28px rgba(0, 0, 0, 0.35);
 }
 
 .hero__title-line2 {
@@ -164,10 +172,11 @@ function scrollToFeatures() {
 .hero__subtitle {
   font-family: var(--font-mono);
   font-size: clamp(0.9rem, 1.5vw, 1.1rem);
-  color: var(--text-secondary);
+  color: rgba(244, 246, 255, 0.9);
   max-width: 500px;
   line-height: 1.7;
   margin-bottom: 2rem;
+  text-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
 
   /* Animation initial state */
   opacity: 0;
