@@ -2,8 +2,8 @@ import json
 import unittest
 from unittest.mock import MagicMock, patch
 
-from app.station import StationAgent, _execute_tool_calls, _build_world_summary
-from app.world import WORLD
+from app.station import StationAgent, _parse_tool_calls, _build_world_summary
+from app.models import AgentMission, StoneInfo, RoverSummary, StationContext
 
 
 def _mock_tool_call(name, arguments):
@@ -24,9 +24,37 @@ def _mock_client_response(content=None, tool_calls=None):
     return response
 
 
+def _make_station_context():
+    """Build a typed StationContext for testing."""
+    return StationContext(
+        grid_w=20,
+        grid_h=20,
+        rovers=[
+            RoverSummary(
+                id="rover-mock",
+                position=[0, 0],
+                battery=1.0,
+                mission=AgentMission(objective="Explore the terrain", plan=[]),
+                visited_count=1,
+            ),
+            RoverSummary(
+                id="rover-mistral",
+                position=[0, 0],
+                battery=1.0,
+                mission=AgentMission(objective="Explore the terrain", plan=[]),
+                visited_count=1,
+            ),
+        ],
+        stones=[
+            StoneInfo(type="unknown", position=[5, 5]),
+            StoneInfo(type="unknown", position=[10, 10]),
+        ],
+    )
+
+
 class TestStationDefine(unittest.TestCase):
     @patch("app.station.settings")
-    def test_define_mission_returns_events(self, mock_settings):
+    def test_define_mission_returns_result(self, mock_settings):
         mock_settings.mistral_api_key = "test-key"
         station = StationAgent()
         mock_client = MagicMock()
@@ -42,14 +70,14 @@ class TestStationDefine(unittest.TestCase):
             tool_calls=tool_calls,
         )
 
-        events = station.define_mission()
+        ctx = _make_station_context()
+        result = station.define_mission(ctx)
 
-        self.assertEqual(len(events), 2)  # thinking + assign_mission
-        self.assertEqual(events[0]["name"], "thinking")
-        self.assertEqual(events[0]["source"], "station")
-        self.assertEqual(events[1]["name"], "assign_mission")
-        self.assertEqual(events[1]["payload"]["agent_id"], "rover-mock")
-        self.assertEqual(events[1]["payload"]["objective"], "Explore north sector")
+        self.assertEqual(result["thinking"], "Assigning initial missions.")
+        self.assertEqual(len(result["actions"]), 1)
+        self.assertEqual(result["actions"][0]["name"], "assign_mission")
+        self.assertEqual(result["actions"][0]["params"]["agent_id"], "rover-mock")
+        self.assertEqual(result["actions"][0]["params"]["objective"], "Explore north sector")
 
     @patch("app.station.settings")
     def test_define_mission_no_thinking(self, mock_settings):
@@ -66,16 +94,18 @@ class TestStationDefine(unittest.TestCase):
             tool_calls=tool_calls,
         )
 
-        events = station.define_mission()
+        ctx = _make_station_context()
+        result = station.define_mission(ctx)
 
-        self.assertEqual(len(events), 1)
-        self.assertEqual(events[0]["name"], "alert")
-        self.assertEqual(events[0]["payload"]["message"], "Mission start")
+        self.assertIsNone(result["thinking"])
+        self.assertEqual(len(result["actions"]), 1)
+        self.assertEqual(result["actions"][0]["name"], "broadcast_alert")
+        self.assertEqual(result["actions"][0]["params"]["message"], "Mission start")
 
 
 class TestStationHandleEvent(unittest.TestCase):
     @patch("app.station.settings")
-    def test_handle_event_returns_events(self, mock_settings):
+    def test_handle_event_returns_result(self, mock_settings):
         mock_settings.mistral_api_key = "test-key"
         station = StationAgent()
         mock_client = MagicMock()
@@ -98,52 +128,64 @@ class TestStationHandleEvent(unittest.TestCase):
             "name": "check",
             "payload": {"stone": {"type": "basalt"}},
         }
-        events = station.handle_event(event)
+        ctx = _make_station_context()
+        result = station.handle_event(event, ctx)
 
-        self.assertEqual(len(events), 2)
-        self.assertEqual(events[0]["name"], "thinking")
-        self.assertEqual(events[1]["name"], "assign_mission")
-        self.assertEqual(events[1]["payload"]["objective"], "Collect the basalt stone")
+        self.assertEqual(result["thinking"], "Stone found, reassigning rover.")
+        self.assertEqual(len(result["actions"]), 1)
+        self.assertEqual(result["actions"][0]["name"], "assign_mission")
+        self.assertEqual(result["actions"][0]["params"]["objective"], "Collect the basalt stone")
 
 
-class TestExecuteToolCalls(unittest.TestCase):
-    def setUp(self):
-        self._orig_mission = WORLD["agents"]["rover-mock"]["mission"].copy()
-
-    def tearDown(self):
-        WORLD["agents"]["rover-mock"]["mission"] = self._orig_mission
-
-    def test_assign_mission_tool_call(self):
+class TestParseToolCalls(unittest.TestCase):
+    def test_assign_mission_parsed(self):
         tool_calls = [
             _mock_tool_call("assign_mission", {"agent_id": "rover-mock", "objective": "Go north"})
         ]
-        events = _execute_tool_calls(tool_calls)
+        actions = _parse_tool_calls(tool_calls)
 
-        self.assertEqual(len(events), 1)
-        self.assertEqual(events[0]["name"], "assign_mission")
-        self.assertTrue(events[0]["payload"]["ok"])
-        self.assertEqual(WORLD["agents"]["rover-mock"]["mission"]["objective"], "Go north")
+        self.assertEqual(len(actions), 1)
+        self.assertEqual(actions[0]["name"], "assign_mission")
+        self.assertEqual(actions[0]["params"]["agent_id"], "rover-mock")
 
-    def test_broadcast_alert_tool_call(self):
+    def test_broadcast_alert_parsed(self):
         tool_calls = [_mock_tool_call("broadcast_alert", {"message": "Storm incoming"})]
-        events = _execute_tool_calls(tool_calls)
+        actions = _parse_tool_calls(tool_calls)
 
-        self.assertEqual(len(events), 1)
-        self.assertEqual(events[0]["name"], "alert")
-        self.assertEqual(events[0]["payload"]["message"], "Storm incoming")
+        self.assertEqual(len(actions), 1)
+        self.assertEqual(actions[0]["name"], "broadcast_alert")
+        self.assertEqual(actions[0]["params"]["message"], "Storm incoming")
+
+    def test_charge_rover_parsed(self):
+        tool_calls = [_mock_tool_call("charge_rover", {"rover_id": "rover-mock"})]
+        actions = _parse_tool_calls(tool_calls)
+
+        self.assertEqual(len(actions), 1)
+        self.assertEqual(actions[0]["name"], "charge_rover")
+        self.assertEqual(actions[0]["params"]["rover_id"], "rover-mock")
+
+    def test_multiple_tool_calls_parsed(self):
+        tool_calls = [
+            _mock_tool_call("assign_mission", {"agent_id": "rover-mock", "objective": "Go"}),
+            _mock_tool_call("broadcast_alert", {"message": "Alert"}),
+        ]
+        actions = _parse_tool_calls(tool_calls)
+        self.assertEqual(len(actions), 2)
 
 
 class TestBuildWorldSummary(unittest.TestCase):
     def test_summary_contains_rovers(self):
-        summary = _build_world_summary()
+        ctx = _make_station_context()
+        summary = _build_world_summary(ctx)
         self.assertIn("rover-mock", summary)
         self.assertIn("rover-mistral", summary)
 
-    def test_summary_excludes_station(self):
-        summary = _build_world_summary()
-        # Station should not list itself as an agent to manage
-        self.assertNotIn("station:", summary)
-
     def test_summary_contains_grid(self):
-        summary = _build_world_summary()
+        ctx = _make_station_context()
+        summary = _build_world_summary(ctx)
         self.assertIn("Grid: 20x20", summary)
+
+    def test_summary_contains_stones(self):
+        ctx = _make_station_context()
+        summary = _build_world_summary(ctx)
+        self.assertIn("Stones on map: 2", summary)

@@ -7,18 +7,18 @@ import random
 from mistralai import Mistral, SDKError
 
 from .config import settings
-from .world import (
-    WORLD,
-    GRID_W,
-    GRID_H,
-    DIRECTIONS,
-    MAX_MOVE_DISTANCE,
-    check_ground,
-    _direction_hint,
-    _find_stone_at,
-)
+from .models import RoverContext
 
 logger = logging.getLogger(__name__)
+
+GRID_W, GRID_H = 20, 20
+MAX_MOVE_DISTANCE = 3
+DIRECTIONS = {
+    "north": (0, 1),
+    "south": (0, -1),
+    "east": (1, 0),
+    "west": (-1, 0),
+}
 
 MOVE_TOOL = {
     "type": "function",
@@ -100,47 +100,27 @@ class RoverAgent:
             self._client = Mistral(api_key=settings.mistral_api_key)
         return self._client
 
-    def _build_context(self):
-        """Assemble LLM context: identity, state, environment, memory."""
-        agent = WORLD["agents"][self.agent_id]
-        x, y = agent["position"]
-        mission = agent["mission"]
-        battery = agent["battery"]
-        inventory = agent.get("inventory", [])
-        memory = agent.get("memory", [])
-
-        # Station distance
-        station = WORLD["agents"].get("station")
-        station_pos = station["position"] if station else [0, 0]
+    def _build_context(self, ctx: RoverContext):
+        """Assemble LLM context from typed RoverContext."""
+        x, y = ctx.agent.position
+        mission = ctx.agent.mission
+        battery = ctx.agent.battery
+        inventory = ctx.agent.inventory
+        memory = ctx.agent.memory
+        station_pos = ctx.world.station_position
         dist_to_station = abs(x - station_pos[0]) + abs(y - station_pos[1])
         moves_on_battery = int(battery / 0.02)
-
-        # Unvisited neighbors
-        visited_set = {tuple(p) for p in agent.get("visited", [])}
-        unvisited_dirs = []
-        for name, (dx, dy) in DIRECTIONS.items():
-            nx, ny = x + dx, y + dy
-            if 0 <= nx < GRID_W and 0 <= ny < GRID_H and (nx, ny) not in visited_set:
-                unvisited_dirs.append(name)
-
-        # Stone at current tile (with analyzed/extracted status)
-        ground = check_ground(self.agent_id)
-        stone_info = ground["stone"]
-        if stone_info:
-            if stone_info["type"] == "unknown":
-                stone_line = "unknown (needs analyze to reveal type)"
-            elif stone_info["extracted"]:
-                stone_line = f"{stone_info['type']} (extracted — ready for pickup)"
-            else:
-                stone_line = f"{stone_info['type']} (analyzed, buried — needs dig)"
-        else:
-            stone_line = "none"
-
-        # Mission target
-        world_mission = WORLD.get("mission", {})
-        target_type = world_mission.get("target_type", "core")
-        target_count = world_mission.get("target_count", 2)
-        collected = world_mission.get("collected_count", 0)
+        unvisited_dirs = ctx.computed.unvisited_dirs
+        stone_line = ctx.computed.stone_line
+        target_type = ctx.world.target_type
+        target_count = ctx.world.target_count
+        collected = ctx.world.collected_count
+        tasks = ctx.agent.tasks
+        visible_stones = ctx.computed.visible_stones
+        ground_readings = ctx.agent.ground_readings
+        grid_w = ctx.world.grid_w
+        grid_h = ctx.world.grid_h
+        visited_count = ctx.agent.visited_count
 
         parts = []
 
@@ -178,12 +158,11 @@ class RoverAgent:
         # Mission objective
         parts.append(
             f"\n== Mission ==\n"
-            f"Objective: {mission['objective']}\n"
+            f"Objective: {mission.objective}\n"
             f"Target: collect {target_count} {target_type} stones ({collected}/{target_count} done)"
         )
 
         # Current tasks
-        tasks = agent.get("tasks", [])
         if tasks:
             parts.append("\n== Current Tasks ==")
             for i, task in enumerate(tasks, 1):
@@ -199,27 +178,14 @@ class RoverAgent:
             f"Distance to station: {dist_to_station} tiles\n"
             f"Safety margin: {'OK' if moves_on_battery > dist_to_station + 3 else 'LOW — consider returning'}\n"
             f"Inventory: {len(inventory)} stones"
-            + (f" ({', '.join(s['type'] for s in inventory)})" if inventory else "")
+            + (f" ({', '.join(s.type for s in inventory)})" if inventory else "")
         )
-
-        # Visible stones (on revealed tiles)
-        revealed_set = {tuple(c) for c in agent.get("revealed", [])}
-        visible_stones = []
-        for stone in WORLD.get("stones", []):
-            sp = tuple(stone["position"])
-            if sp in revealed_set and list(sp) != [x, y]:
-                dist = abs(sp[0] - x) + abs(sp[1] - y)
-                status = "extracted" if stone.get("extracted") else "buried"
-                hint = _direction_hint(sp[0] - x, sp[1] - y)
-                visible_stones.append(
-                    f"{stone['type']} ({status}) at ({sp[0]},{sp[1]}) — {hint}, {dist} tiles"
-                )
 
         # Environment
         parts.append(
             f"\n== Environment ==\n"
-            f"Grid: {GRID_W}x{GRID_H}\n"
-            f"Tiles visited: {len(agent.get('visited', []))}\n"
+            f"Grid: {grid_w}x{grid_h}\n"
+            f"Tiles visited: {visited_count}\n"
             f"Unvisited neighbors: {', '.join(unvisited_dirs) if unvisited_dirs else 'none'}\n"
             f"Stone here: {stone_line}"
         )
@@ -229,10 +195,9 @@ class RoverAgent:
                 parts.append(f"  - {vs}")
 
         # Ground concentration readings
-        readings = agent.get("ground_readings", {})
-        if readings:
+        if ground_readings:
             parts.append("Ground concentration readings:")
-            for pos, val in readings.items():
+            for pos, val in ground_readings.items():
                 parts.append(f"  - ({pos}): {val:.3f}")
 
         # Short-term memory
@@ -244,15 +209,14 @@ class RoverAgent:
 
         return "\n".join(parts)
 
-    def run_turn(self):
+    def run_turn(self, context: RoverContext):
         """Single-shot LLM call. Returns {thinking, action} dict."""
         try:
             client = self._get_client()
-            context = self._build_context()
-            WORLD["agents"][self.agent_id]["last_context"] = context
+            ctx_text = self._build_context(context)
 
             messages = [
-                {"role": "system", "content": context},
+                {"role": "system", "content": ctx_text},
                 {"role": "user", "content": "Observe your surroundings and decide your next move."},
             ]
 
@@ -289,15 +253,15 @@ class RoverAgent:
                     self.agent_id,
                     thinking,
                 )
-                return self._fallback_turn("No valid tool action from model")
+                return self._fallback_turn("No valid tool action from model", context)
 
             return {"thinking": thinking, "action": action}
         except (SDKError, ConnectionError, TimeoutError, RuntimeError) as exc:
             logger.exception("Rover LLM turn failed for %s, using fallback", self.agent_id)
-            return self._fallback_turn(f"LLM unavailable ({type(exc).__name__})")
+            return self._fallback_turn(f"LLM unavailable ({type(exc).__name__})", context)
 
-    def _fallback_turn(self, reason):
-        fallback = self._mock_fallback.run_turn()
+    def _fallback_turn(self, reason, context):
+        fallback = self._mock_fallback.run_turn(context)
         fallback_thinking = fallback.get("thinking") or ""
         prefix = f"LLM fallback: {reason}. "
         fallback["thinking"] = (prefix + fallback_thinking).strip()
@@ -310,37 +274,35 @@ class MockRoverAgent:
     def __init__(self, agent_id="rover-mock"):
         self.agent_id = agent_id
 
-    def run_turn(self):
-        agent = WORLD["agents"][self.agent_id]
-        x, y = agent["position"]
-        mission = WORLD.get("mission", {})
-        target_type = mission.get("target_type", "core")
-
-        context = (
-            f"Mock rover at ({x},{y}), battery={agent['battery']:.0%}, "
-            f"visited={len(agent.get('visited', []))}, "
-            f'mission="{agent["mission"]["objective"]}"'
-        )
-        agent["last_context"] = context
+    def run_turn(self, context: RoverContext):
+        """Decide next action from typed RoverContext."""
+        x, y = context.agent.position
+        battery = context.agent.battery
+        mission = context.agent.mission
+        target_type = context.world.target_type
+        inventory = context.agent.inventory
+        station_pos = context.world.station_position
+        stone_here = context.computed.stone_here
+        visited = context.agent.visited
+        grid_w = context.world.grid_w
+        grid_h = context.world.grid_h
 
         # Check for stone at current tile — analyze, dig, or pickup
-        stone_here = _find_stone_at(x, y)
         if stone_here:
-            if not stone_here.get("analyzed"):
+            if not stone_here.analyzed:
                 thinking = f"I'm at ({x}, {y}). Found an unknown stone — analyzing."
                 return {"thinking": thinking, "action": {"name": "analyze", "params": {}}}
-            elif not stone_here.get("extracted"):
-                thinking = f"I'm at ({x}, {y}). Found a {stone_here['type']} stone — digging."
+            elif not stone_here.extracted:
+                thinking = f"I'm at ({x}, {y}). Found a {stone_here.type} stone — digging."
                 return {"thinking": thinking, "action": {"name": "dig", "params": {}}}
             else:
                 thinking = f"I'm at ({x}, {y}). Stone extracted — picking up."
                 return {"thinking": thinking, "action": {"name": "pickup", "params": {}}}
 
         # If carrying target stone, navigate toward station
-        has_target = any(s["type"] == target_type for s in agent.get("inventory", []))
+        has_target = any(s.type == target_type for s in inventory)
         if has_target:
-            station = WORLD["agents"].get("station")
-            sp = station["position"] if station else [0, 0]
+            sp = station_pos
             dx, dy = sp[0] - x, sp[1] - y
             if dx != 0:
                 direction = "east" if dx > 0 else "west"
@@ -362,12 +324,12 @@ class MockRoverAgent:
             }
 
         # Default: explore unvisited tiles
-        visited_set = {tuple(p) for p in agent.get("visited", [])}
+        visited_set = {tuple(p) for p in visited}
         valid = []
         unvisited = []
         for name, (ddx, ddy) in DIRECTIONS.items():
             nx, ny = x + ddx, y + ddy
-            if 0 <= nx < GRID_W and 0 <= ny < GRID_H:
+            if 0 <= nx < grid_w and 0 <= ny < grid_h:
                 valid.append((name, nx, ny))
                 if (nx, ny) not in visited_set:
                     unvisited.append((name, nx, ny))

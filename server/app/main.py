@@ -12,9 +12,11 @@ from .agent import MockRoverAgent, RoverAgent
 from .broadcast import broadcaster
 from .config import settings
 from .db import init_db, close_db
+from .protocol import make_message
 from .station import StationAgent
 from .views import router as views_router
 from .world import execute_action, get_snapshot, reset_world, WORLD, charge_rover, next_tick
+from .world import assign_mission, observe_rover, observe_station
 from .narrator import Narrator
 
 logging.basicConfig(
@@ -33,20 +35,64 @@ _agent_tasks = []
 narrator = Narrator(broadcast_fn=broadcaster.send)
 
 
+def _execute_station_action(action):
+    """Execute a station action on WORLD. Returns result dict."""
+    name = action["name"]
+    params = action["params"]
+
+    if name == "assign_mission":
+        return assign_mission(params["agent_id"], params["objective"])
+    elif name == "charge_rover":
+        return charge_rover(params["rover_id"])
+    elif name == "broadcast_alert":
+        return {"ok": True, "message": params["message"]}
+    return {"ok": False, "error": f"Unknown station action: {name}"}
+
+
 async def _trigger_station(event):
     """Feed an event to the station agent and broadcast its response."""
     try:
-        station_events = await asyncio.to_thread(station.handle_event, event)
-        for se in station_events:
-            se["tick"] = WORLD["tick"]
-            await broadcaster.send(se)
+        station_ctx = observe_station()
+        result = await asyncio.to_thread(station.handle_event, event, station_ctx)
+        correlation_id = event.get("id")
+
+        # Broadcast thinking
+        if result["thinking"]:
+            msg = make_message(
+                source="station",
+                type="event",
+                name="thinking",
+                payload={"text": result["thinking"]},
+                correlation_id=correlation_id,
+            )
+            await broadcaster.send(msg.to_dict())
+
+        # Execute and broadcast actions
+        for action in result["actions"]:
+            action_result = _execute_station_action(action)
+
+            # Map action name to event type/name
+            if action["name"] == "broadcast_alert":
+                msg = make_message(
+                    source="station",
+                    type="event",
+                    name="alert",
+                    payload={"message": action["params"]["message"]},
+                    correlation_id=correlation_id,
+                )
+            else:
+                event_type = "command" if action["name"] == "assign_mission" else "action"
+                msg = make_message(
+                    source="station",
+                    type=event_type,
+                    name=action["name"],
+                    payload=action_result,
+                    correlation_id=correlation_id,
+                )
+            await broadcaster.send(msg.to_dict())
+
         await broadcaster.send(
-            {
-                "source": "world",
-                "type": "event",
-                "name": "state",
-                "payload": get_snapshot(),
-            }
+            make_message("world", "event", "state", get_snapshot()).to_dict()
         )
     except Exception:
         logger.exception("Station trigger error")
@@ -66,20 +112,21 @@ async def agent_loop(agent, interval):
             continue
 
         try:
-            turn = await asyncio.to_thread(agent.run_turn)
+            # Build context and run agent turn
+            context = observe_rover(agent.agent_id)
+            turn = await asyncio.to_thread(agent.run_turn, context)
+            WORLD["agents"][agent.agent_id]["last_context"] = context.model_dump()
             tick = next_tick()
-            events = []
+            messages = []
 
             if turn["thinking"]:
-                events.append(
-                    {
-                        "source": agent.agent_id,
-                        "type": "event",
-                        "name": "thinking",
-                        "tick": tick,
-                        "payload": {"text": turn["thinking"]},
-                    }
+                msg = make_message(
+                    source=agent.agent_id,
+                    type="event",
+                    name="thinking",
+                    payload={"text": turn["thinking"]},
                 )
+                messages.append(msg)
 
             if turn["action"]:
                 result = execute_action(
@@ -88,48 +135,41 @@ async def agent_loop(agent, interval):
                     turn["action"]["params"],
                 )
                 if result["ok"]:
-                    events.append(
-                        {
-                            "source": agent.agent_id,
-                            "type": "action",
-                            "name": turn["action"]["name"],
-                            "tick": tick,
-                            "payload": result,
-                        }
+                    action_msg = make_message(
+                        source=agent.agent_id,
+                        type="action",
+                        name=turn["action"]["name"],
+                        payload=result,
                     )
+                    messages.append(action_msg)
+
                     ground = result.get("ground")
                     if ground and ground["stone"]:
-                        events.append(
-                            {
-                                "source": agent.agent_id,
-                                "type": "event",
-                                "name": "check",
-                                "tick": tick,
-                                "payload": ground,
-                            }
+                        check_msg = make_message(
+                            source=agent.agent_id,
+                            type="event",
+                            name="check",
+                            payload=ground,
                         )
+                        messages.append(check_msg)
+
                     mission_event = result.get("mission")
                     if mission_event:
-                        events.append(
-                            {
-                                "source": "world",
-                                "type": "event",
-                                "name": "mission_" + mission_event["status"],
-                                "tick": tick,
-                                "payload": mission_event,
-                            }
+                        mission_msg = make_message(
+                            source="world",
+                            type="event",
+                            name="mission_" + mission_event["status"],
+                            payload=mission_event,
                         )
+                        messages.append(mission_msg)
 
-            for event in events:
-                await broadcaster.send(event)
-                await narrator.feed(event)
+            for msg in messages:
+                msg_dict = msg.to_dict()
+                await broadcaster.send(msg_dict)
+                await narrator.feed(msg_dict)
+
             await broadcaster.send(
-                {
-                    "source": "world",
-                    "type": "event",
-                    "name": "state",
-                    "payload": get_snapshot(),
-                }
+                make_message("world", "event", "state", get_snapshot()).to_dict()
             )
 
             # Auto-charge rover when it arrives at station
@@ -143,20 +183,21 @@ async def agent_loop(agent, interval):
             ):
                 charge_result = charge_rover(agent.agent_id)
                 if charge_result["ok"]:
-                    charge_event = {
-                        "source": "station",
-                        "type": "action",
-                        "name": "charge_rover",
-                        "payload": charge_result,
-                    }
-                    await broadcaster.send(charge_event)
-                    await narrator.feed(charge_event)
+                    charge_msg = make_message(
+                        source="station",
+                        type="action",
+                        name="charge_rover",
+                        payload=charge_result,
+                    )
+                    charge_dict = charge_msg.to_dict()
+                    await broadcaster.send(charge_dict)
+                    await narrator.feed(charge_dict)
 
             # Trigger station on stone-found events
             # NOTE: station-rover communication disabled for now
-            # for event in events:
-            #     if event["name"] == "check":
-            #         await _trigger_station(event)
+            # for msg in messages:
+            #     if msg.name == "check":
+            #         await _trigger_station(msg.to_dict())
 
         except Exception:
             logger.exception("Agent loop error (%s)", agent.agent_id)
@@ -166,18 +207,46 @@ async def agent_loop(agent, interval):
 async def _station_startup():
     """Run station mission definition in background."""
     try:
-        station_events = await asyncio.to_thread(station.define_mission)
-        for event in station_events:
-            event["tick"] = WORLD["tick"]
-            await broadcaster.send(event)
-            await narrator.feed(event)
+        station_ctx = observe_station()
+        result = await asyncio.to_thread(station.define_mission, station_ctx)
+
+        # Broadcast thinking
+        if result["thinking"]:
+            msg = make_message(
+                source="station",
+                type="event",
+                name="thinking",
+                payload={"text": result["thinking"]},
+            )
+            msg_dict = msg.to_dict()
+            await broadcaster.send(msg_dict)
+            await narrator.feed(msg_dict)
+
+        # Execute and broadcast actions
+        for action in result["actions"]:
+            action_result = _execute_station_action(action)
+
+            if action["name"] == "broadcast_alert":
+                msg = make_message(
+                    source="station",
+                    type="event",
+                    name="alert",
+                    payload={"message": action["params"]["message"]},
+                )
+            else:
+                event_type = "command" if action["name"] == "assign_mission" else "action"
+                msg = make_message(
+                    source="station",
+                    type=event_type,
+                    name=action["name"],
+                    payload=action_result,
+                )
+            msg_dict = msg.to_dict()
+            await broadcaster.send(msg_dict)
+            await narrator.feed(msg_dict)
+
         await broadcaster.send(
-            {
-                "source": "world",
-                "type": "event",
-                "name": "state",
-                "payload": get_snapshot(),
-            }
+            make_message("world", "event", "state", get_snapshot()).to_dict()
         )
     except Exception:
         logger.exception("Station startup failed")

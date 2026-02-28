@@ -6,7 +6,7 @@ import logging
 from mistralai import Mistral
 
 from .config import settings
-from .world import WORLD, GRID_W, GRID_H, assign_mission, charge_rover
+from .models import StationContext
 
 logger = logging.getLogger(__name__)
 
@@ -81,27 +81,24 @@ SYSTEM_PROMPT = (
 )
 
 
-def _build_world_summary():
+def _build_world_summary(context: StationContext):
     """Build a text summary of current world state for the station's context."""
-    lines = [f"Grid: {GRID_W}x{GRID_H}"]
-    for aid, agent in WORLD["agents"].items():
-        if agent["type"] == "station":
-            continue
-        x, y = agent["position"]
+    lines = [f"Grid: {context.grid_w}x{context.grid_h}"]
+    for rover in context.rovers:
+        x, y = rover.position
         lines.append(
-            f"  {aid}: pos=({x},{y}) battery={agent['battery']:.0%} "
-            f'mission="{agent["mission"]["objective"]}" visited={len(agent.get("visited", []))}'
+            f"  {rover.id}: pos=({x},{y}) battery={rover.battery:.0%} "
+            f'mission="{rover.mission.objective}" visited={rover.visited_count}'
         )
-    stones = WORLD.get("stones", [])
-    lines.append(f"Stones on map: {len(stones)}")
-    for s in stones:
-        lines.append(f"  {s['type']} at ({s['position'][0]}, {s['position'][1]})")
+    lines.append(f"Stones on map: {len(context.stones)}")
+    for s in context.stones:
+        lines.append(f"  {s.type} at ({s.position[0]}, {s.position[1]})")
     return "\n".join(lines)
 
 
-def _execute_tool_calls(tool_calls):
-    """Execute tool calls from LLM response. Returns list of event dicts."""
-    events = []
+def _parse_tool_calls(tool_calls):
+    """Parse tool calls from LLM response into action dicts. Does NOT execute them."""
+    actions = []
     for tc in tool_calls:
         name = tc.function.name
         args = (
@@ -111,35 +108,12 @@ def _execute_tool_calls(tool_calls):
         )
 
         if name == "assign_mission":
-            result = assign_mission(args["agent_id"], args["objective"])
-            events.append(
-                {
-                    "source": "station",
-                    "type": "command",
-                    "name": "assign_mission",
-                    "payload": result,
-                }
-            )
+            actions.append({"name": "assign_mission", "params": args})
         elif name == "broadcast_alert":
-            events.append(
-                {
-                    "source": "station",
-                    "type": "event",
-                    "name": "alert",
-                    "payload": {"message": args["message"]},
-                }
-            )
+            actions.append({"name": "broadcast_alert", "params": args})
         elif name == "charge_rover":
-            result = charge_rover(args["rover_id"])
-            events.append(
-                {
-                    "source": "station",
-                    "type": "action",
-                    "name": "charge_rover",
-                    "payload": result,
-                }
-            )
-    return events
+            actions.append({"name": "charge_rover", "params": args})
+    return actions
 
 
 class StationAgent:
@@ -157,16 +131,15 @@ class StationAgent:
             self._client = Mistral(api_key=settings.mistral_api_key)
         return self._client
 
-    def _build_context(self):
-        return SYSTEM_PROMPT + "\n== Current world state ==\n" + _build_world_summary()
+    def _build_context(self, context: StationContext):
+        return SYSTEM_PROMPT + "\n== Current world state ==\n" + _build_world_summary(context)
 
-    def _call_llm(self, user_message):
-        """Single LLM call with tools. Returns (thinking, events)."""
+    def _call_llm(self, user_message, context: StationContext):
+        """Single LLM call with tools. Returns {thinking, actions} dict."""
         client = self._get_client()
-        context = self._build_context()
-        WORLD["agents"][self.agent_id]["last_context"] = context
+        ctx_text = self._build_context(context)
         messages = [
-            {"role": "system", "content": context},
+            {"role": "system", "content": ctx_text},
             {"role": "user", "content": user_message},
         ]
         logger.info("Station LLM call: %s", user_message[:80])
@@ -177,36 +150,29 @@ class StationAgent:
         )
         choice = response.choices[0]
         thinking = choice.message.content or None
-        events = []
+        actions = []
 
         if thinking:
             logger.info("Station thinking: %s", thinking)
-            events.append(
-                {
-                    "source": self.agent_id,
-                    "type": "event",
-                    "name": "thinking",
-                    "payload": {"text": thinking},
-                }
-            )
 
         if choice.message.tool_calls:
-            events.extend(_execute_tool_calls(choice.message.tool_calls))
+            actions = _parse_tool_calls(choice.message.tool_calls)
 
-        return events
+        return {"thinking": thinking, "actions": actions, "context_text": ctx_text}
 
-    def define_mission(self):
+    def define_mission(self, context: StationContext):
         """Called at startup to define initial missions for rovers."""
         return self._call_llm(
             "The mission is starting. Review the world state and assign initial "
-            "missions to the rovers. Consider the stone locations and grid layout."
+            "missions to the rovers. Consider the stone locations and grid layout.",
+            context,
         )
 
-    def handle_event(self, event):
+    def handle_event(self, event, context: StationContext):
         """Called when a relevant field event occurs (e.g. stone found)."""
         prompt = (
             f"Field report from {event['source']}: {event['name']}\n"
             f"Details: {json.dumps(event.get('payload', {}))}\n"
             "Decide how to respond. You may reassign missions or broadcast alerts."
         )
-        return self._call_llm(prompt)
+        return self._call_llm(prompt, context)

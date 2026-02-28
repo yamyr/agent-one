@@ -6,6 +6,9 @@ import math
 import random
 
 from .config import settings
+from .models import RoverAgentState, RoverWorldView, RoverComputed, RoverContext
+from .models import AgentMission, InventoryItem, StoneInfo
+from .models import RoverSummary, StationContext
 
 logger = logging.getLogger(__name__)
 
@@ -653,6 +656,111 @@ def assign_mission(agent_id, objective):
     agent["mission"]["objective"] = objective
     logger.info("Mission assigned to %s: %s", agent_id, objective)
     return {"ok": True, "agent_id": agent_id, "objective": objective}
+
+
+def observe_rover(agent_id):
+    """Build typed RoverContext for a rover agent. Everything the rover can see/know."""
+    agent = WORLD["agents"][agent_id]
+    x, y = agent["position"]
+
+    # Station position
+    station_agent = WORLD["agents"].get("station")
+    station_pos = station_agent["position"] if station_agent else [0, 0]
+
+    # Unvisited neighbors
+    visited_set = {tuple(p) for p in agent.get("visited", [])}
+    unvisited_dirs = []
+    for name, (dx, dy) in DIRECTIONS.items():
+        nx, ny = x + dx, y + dy
+        if 0 <= nx < GRID_W and 0 <= ny < GRID_H and (nx, ny) not in visited_set:
+            unvisited_dirs.append(name)
+
+    # Stone at current tile
+    ground = check_ground(agent_id)
+    stone_info = ground["stone"]
+    if stone_info:
+        if stone_info["type"] == "unknown":
+            stone_line = "unknown (needs analyze to reveal type)"
+        elif stone_info["extracted"]:
+            stone_line = f"{stone_info['type']} (extracted — ready for pickup)"
+        else:
+            stone_line = f"{stone_info['type']} (analyzed, buried — needs dig)"
+    else:
+        stone_line = "none"
+
+    # Raw stone object — convert to StoneInfo or None
+    raw_stone = _find_stone_at(x, y)
+    stone_here = StoneInfo(**raw_stone) if raw_stone else None
+
+    # Visible stones on revealed tiles (not at current position)
+    revealed_set = {tuple(c) for c in agent.get("revealed", [])}
+    visible_stones = []
+    for stone in WORLD.get("stones", []):
+        sp = tuple(stone["position"])
+        if sp in revealed_set and list(sp) != [x, y]:
+            dist = abs(sp[0] - x) + abs(sp[1] - y)
+            status = "extracted" if stone.get("extracted") else "buried"
+            hint = _direction_hint(sp[0] - x, sp[1] - y)
+            visible_stones.append(
+                f"{stone['type']} ({status}) at ({sp[0]},{sp[1]}) — {hint}, {dist} tiles"
+            )
+
+    # Mission info
+    world_mission = WORLD.get("mission", {})
+
+    return RoverContext(
+        agent=RoverAgentState(
+            position=list(agent["position"]),
+            battery=agent["battery"],
+            mission=AgentMission(**agent["mission"]),
+            inventory=[InventoryItem(**i) for i in agent.get("inventory", [])],
+            memory=list(agent.get("memory", [])),
+            tasks=list(agent.get("tasks", [])),
+            visited=list(agent.get("visited", [])),
+            visited_count=len(agent.get("visited", [])),
+            ground_readings=dict(agent.get("ground_readings", {})),
+        ),
+        world=RoverWorldView(
+            grid_w=GRID_W,
+            grid_h=GRID_H,
+            station_position=list(station_pos),
+            target_type=world_mission.get("target_type", "core"),
+            target_count=world_mission.get("target_count", 2),
+            collected_count=world_mission.get("collected_count", 0),
+        ),
+        computed=RoverComputed(
+            unvisited_dirs=unvisited_dirs,
+            stone_line=stone_line,
+            stone_here=stone_here,
+            visible_stones=visible_stones,
+        ),
+    )
+
+
+def observe_station():
+    """Build typed StationContext for the station agent. Summaries of all rovers + stones."""
+    rovers = []
+    for aid, agent in WORLD["agents"].items():
+        if agent["type"] == "station":
+            continue
+        rovers.append(RoverSummary(
+            id=aid,
+            position=list(agent["position"]),
+            battery=agent["battery"],
+            mission=AgentMission(**agent["mission"]),
+            visited_count=len(agent.get("visited", [])),
+        ))
+
+    stones = []
+    for s in WORLD.get("stones", []):
+        stones.append(StoneInfo(type=s["type"], position=list(s["position"])))
+
+    return StationContext(
+        grid_w=GRID_W,
+        grid_h=GRID_H,
+        rovers=rovers,
+        stones=stones,
+    )
 
 
 def get_snapshot():

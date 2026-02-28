@@ -7,6 +7,8 @@ from app.world import BATTERY_COST_ANALYZE, BATTERY_COST_ANALYZE_GROUND
 from app.world import CHARGE_RATE, REVEAL_RADIUS, GRID_W, GRID_H, AGENT_STARTS
 from app.world import assign_mission, _cells_in_radius, record_memory, MEMORY_MAX
 from app.world import update_tasks, _direction_hint
+from app.world import observe_rover, observe_station
+from app.models import RoverContext, StationContext, StoneInfo
 
 
 class TestMoveAgent(unittest.TestCase):
@@ -1271,3 +1273,142 @@ class TestUpdateTasks(unittest.TestCase):
         tasks = WORLD["agents"]["rover-mock"]["tasks"]
         self.assertEqual(len(tasks), 1)
         self.assertIn("Return to station", tasks[0])
+
+
+class TestObserveRover(unittest.TestCase):
+    def setUp(self):
+        WORLD["agents"]["rover-mock"]["position"] = [5, 5]
+        WORLD["agents"]["rover-mock"]["battery"] = 0.75
+        WORLD["agents"]["rover-mock"]["mission"] = {"objective": "Explore", "plan": []}
+        WORLD["agents"]["rover-mock"]["visited"] = [[0, 0], [5, 5]]
+        WORLD["agents"]["rover-mock"]["inventory"] = []
+        WORLD["agents"]["rover-mock"]["memory"] = ["moved east"]
+        WORLD["agents"]["rover-mock"]["tasks"] = []
+        WORLD["agents"]["rover-mock"]["ground_readings"] = {"3,3": 0.5}
+        WORLD["stones"] = []
+
+    def test_returns_rover_context_type(self):
+        ctx = observe_rover("rover-mock")
+        self.assertIsInstance(ctx, RoverContext)
+
+    def test_agent_state_fields(self):
+        ctx = observe_rover("rover-mock")
+        self.assertEqual(ctx.agent.position, [5, 5])
+        self.assertAlmostEqual(ctx.agent.battery, 0.75)
+        self.assertEqual(ctx.agent.mission.objective, "Explore")
+        self.assertEqual(ctx.agent.memory, ["moved east"])
+        self.assertEqual(ctx.agent.visited_count, 2)
+        self.assertEqual(ctx.agent.ground_readings, {"3,3": 0.5})
+
+    def test_world_view_fields(self):
+        ctx = observe_rover("rover-mock")
+        self.assertEqual(ctx.world.grid_w, GRID_W)
+        self.assertEqual(ctx.world.grid_h, GRID_H)
+        self.assertEqual(ctx.world.station_position, [0, 0])
+
+    def test_unvisited_dirs(self):
+        ctx = observe_rover("rover-mock")
+        # (5,5) with visited={(0,0),(5,5)} — all 4 neighbors are unvisited
+        for d in ["north", "south", "east", "west"]:
+            self.assertIn(d, ctx.computed.unvisited_dirs)
+
+    def test_unvisited_dirs_excludes_visited(self):
+        WORLD["agents"]["rover-mock"]["visited"].append([5, 6])
+        ctx = observe_rover("rover-mock")
+        self.assertNotIn("north", ctx.computed.unvisited_dirs)
+
+    def test_stone_line_none(self):
+        ctx = observe_rover("rover-mock")
+        self.assertEqual(ctx.computed.stone_line, "none")
+        self.assertIsNone(ctx.computed.stone_here)
+
+    def test_stone_line_unknown(self):
+        WORLD["stones"] = [
+            {"position": [5, 5], "type": "unknown", "_true_type": "core", "extracted": False, "analyzed": False}
+        ]
+        ctx = observe_rover("rover-mock")
+        self.assertIn("unknown", ctx.computed.stone_line)
+        self.assertIsNotNone(ctx.computed.stone_here)
+        self.assertIsInstance(ctx.computed.stone_here, StoneInfo)
+
+    def test_stone_line_analyzed(self):
+        WORLD["stones"] = [
+            {"position": [5, 5], "type": "core", "_true_type": "core", "extracted": False, "analyzed": True}
+        ]
+        ctx = observe_rover("rover-mock")
+        self.assertIn("needs dig", ctx.computed.stone_line)
+
+    def test_stone_line_extracted(self):
+        WORLD["stones"] = [
+            {"position": [5, 5], "type": "core", "_true_type": "core", "extracted": True, "analyzed": True}
+        ]
+        ctx = observe_rover("rover-mock")
+        self.assertIn("pickup", ctx.computed.stone_line)
+
+    def test_visible_stones_excludes_current_tile(self):
+        WORLD["stones"] = [
+            {"position": [5, 5], "type": "unknown", "_true_type": "core", "extracted": False, "analyzed": False},
+            {"position": [6, 5], "type": "basalt", "_true_type": "basalt", "extracted": False, "analyzed": True},
+        ]
+        # Ensure (6,5) is in revealed
+        WORLD["agents"]["rover-mock"]["revealed"] = [[5, 5], [6, 5]]
+        ctx = observe_rover("rover-mock")
+        # Current tile stone not in visible_stones list
+        self.assertEqual(len(ctx.computed.visible_stones), 1)
+        self.assertIn("basalt", ctx.computed.visible_stones[0])
+
+    def test_inventory_in_context(self):
+        WORLD["agents"]["rover-mock"]["inventory"] = [{"type": "core"}]
+        ctx = observe_rover("rover-mock")
+        self.assertEqual(len(ctx.agent.inventory), 1)
+        self.assertEqual(ctx.agent.inventory[0].type, "core")
+
+    def test_mission_info(self):
+        ctx = observe_rover("rover-mock")
+        self.assertEqual(ctx.world.target_type, WORLD["mission"]["target_type"])
+        self.assertEqual(ctx.world.target_count, WORLD["mission"]["target_count"])
+
+
+class TestObserveStation(unittest.TestCase):
+    def setUp(self):
+        WORLD["agents"]["rover-mock"]["position"] = [3, 4]
+        WORLD["agents"]["rover-mock"]["battery"] = 0.5
+        WORLD["agents"]["rover-mock"]["mission"] = {"objective": "Scout", "plan": []}
+        WORLD["agents"]["rover-mock"]["visited"] = [[0, 0], [3, 4]]
+        WORLD["agents"]["rover-mistral"]["position"] = [7, 8]
+        WORLD["agents"]["rover-mistral"]["battery"] = 0.9
+        WORLD["agents"]["rover-mistral"]["mission"] = {"objective": "Dig", "plan": []}
+        WORLD["agents"]["rover-mistral"]["visited"] = [[0, 0], [7, 8]]
+        WORLD["stones"] = [
+            {"position": [1, 1], "type": "unknown", "_true_type": "core", "extracted": False, "analyzed": False},
+        ]
+
+    def test_returns_station_context_type(self):
+        ctx = observe_station()
+        self.assertIsInstance(ctx, StationContext)
+
+    def test_grid_dimensions(self):
+        ctx = observe_station()
+        self.assertEqual(ctx.grid_w, GRID_W)
+        self.assertEqual(ctx.grid_h, GRID_H)
+
+    def test_rovers_list_excludes_station(self):
+        ctx = observe_station()
+        rover_ids = [r.id for r in ctx.rovers]
+        self.assertNotIn("station", rover_ids)
+        self.assertIn("rover-mock", rover_ids)
+        self.assertIn("rover-mistral", rover_ids)
+
+    def test_rover_summary_fields(self):
+        ctx = observe_station()
+        mock = next(r for r in ctx.rovers if r.id == "rover-mock")
+        self.assertEqual(mock.position, [3, 4])
+        self.assertAlmostEqual(mock.battery, 0.5)
+        self.assertEqual(mock.mission.objective, "Scout")
+        self.assertEqual(mock.visited_count, 2)
+
+    def test_stones_list(self):
+        ctx = observe_station()
+        self.assertEqual(len(ctx.stones), 1)
+        self.assertEqual(ctx.stones[0].position, [1, 1])
+        self.assertEqual(ctx.stones[0].type, "unknown")
