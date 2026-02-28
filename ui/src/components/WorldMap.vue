@@ -347,6 +347,24 @@ function panelTooltip(p) {
   return `Solar Panel ${p.depleted ? '(depleted)' : '(active)'}\nPosition: ${pos}`
 }
 
+function roverInventory(id) {
+  if (!props.worldState) return []
+  const a = props.worldState.agents[id]
+  if (!a || a.type !== 'rover') return []
+  return a.inventory || []
+}
+
+function carriedOreMarkers(id) {
+  const inv = roverInventory(id)
+  if (!inv.length) return []
+  return inv.slice(0, 3).map((stone, i) => ({
+    key: `${id}-ore-${i}`,
+    x: 8 + i * 3.8,
+    y: -7 + i * 1.8,
+    color: VEIN_COLORS[stone.grade || 'unknown'] || VEIN_COLORS.unknown,
+  }))
+}
+
 // Fog-of-war: compute screen positions for each mobile agent's clear zone
 const fogAgents = computed(() => {
   if (!props.worldState) return []
@@ -674,6 +692,19 @@ defineExpose({ camX, camY, panCamera })
             repeatCount="indefinite"
           />
         </circle>
+        <rect
+          v-for="m in carriedOreMarkers(id)"
+          :key="m.key"
+          :x="m.x"
+          :y="m.y"
+          width="3"
+          height="3"
+          :fill="m.color"
+          stroke="var(--bg-primary)"
+          stroke-width="0.4"
+          transform="rotate(45)"
+          class="ore-marker"
+        />
         <circle
           r="12"
           fill="none"
@@ -808,6 +839,10 @@ defineExpose({ camX, camY, panCamera })
 .rover-label {
   font-family: var(--font-mono);
   font-size: 6px;
+}
+
+.ore-marker {
+  opacity: 0.95;
 }
 
 .cam-hint {
