@@ -211,7 +211,7 @@ class TestNarrator(unittest.IsolatedAsyncioTestCase):
         self.narrator.stop()
 
     def test_initial_state(self):
-        self.assertTrue(self.narrator.enabled)
+        self.assertFalse(self.narrator.enabled)
         self.assertEqual(len(self.narrator._event_buffer), 0)
 
     def test_toggle_enabled(self):

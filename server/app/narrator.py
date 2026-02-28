@@ -240,10 +240,11 @@ class Narrator:
             self._mistral = Mistral(api_key=settings.mistral_api_key)
         return self._mistral
 
-    def _get_elevenlabs(self) -> ElevenLabs:
+    def _get_elevenlabs(self) -> ElevenLabs | None:
         if self._elevenlabs is None:
             if not settings.elevenlabs_api_key:
-                raise RuntimeError("ELEVENLABS_API_KEY not set")
+                logger.warning("ELEVENLABS_API_KEY not set — narration audio disabled")
+                return None
             self._elevenlabs = ElevenLabs(api_key=settings.elevenlabs_api_key)
         return self._elevenlabs
 
@@ -359,9 +360,10 @@ class Narrator:
             logger.info("Narration: %s", narration_text)
 
             # Convert to audio via ElevenLabs
-            audio_bytes = await asyncio.to_thread(
-                _generate_audio, narration_text, self._get_elevenlabs()
-            )
+            elevenlabs = self._get_elevenlabs()
+            audio_bytes = None
+            if elevenlabs:
+                audio_bytes = await asyncio.to_thread(_generate_audio, narration_text, elevenlabs)
 
             if not audio_bytes:
                 # Fallback: send text-only narration
