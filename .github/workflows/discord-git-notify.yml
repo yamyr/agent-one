@@ -9,7 +9,7 @@ on:
 
 jobs:
   notify-pr:
-    if: ${{ github.event_name == 'pull_request' && (secrets.DISCORD_WEBHOOK_URL_PR != '' || secrets.DISCORD_WEBHOOK_URL != '') }}
+    if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     steps:
       - name: Build Discord payload (PR)
@@ -72,14 +72,14 @@ jobs:
 
       - name: Send PR notification to Discord
         env:
-          WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL_PR != '' && secrets.DISCORD_WEBHOOK_URL_PR || secrets.DISCORD_WEBHOOK_URL }}
+          WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL_PR || secrets.DISCORD_WEBHOOK_URL }}
         run: |
           curl -fsS -X POST "$WEBHOOK_URL" \
             -H "Content-Type: application/json" \
             --data @payload.json
 
   notify-main-push:
-    if: ${{ github.event_name == 'push' && (secrets.DISCORD_WEBHOOK_URL_MAIN != '' || secrets.DISCORD_WEBHOOK_URL != '') }}
+    if: github.event_name == 'push'
     runs-on: ubuntu-latest
     steps:
       - name: Build Discord payload (main push)
@@ -118,7 +118,7 @@ jobs:
 
       - name: Send main push notification to Discord
         env:
-          WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL_MAIN != '' && secrets.DISCORD_WEBHOOK_URL_MAIN || secrets.DISCORD_WEBHOOK_URL }}
+          WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL_MAIN || secrets.DISCORD_WEBHOOK_URL }}
         run: |
           curl -fsS -X POST "$WEBHOOK_URL" \
             -H "Content-Type: application/json" \
