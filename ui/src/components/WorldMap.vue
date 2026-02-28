@@ -91,6 +91,36 @@ function isRevealed(x, y) {
   return revealedSet.value.has(`${x},${y}`)
 }
 
+// Grade weights for concentration radius (mirrors server logic)
+const GRADE_ORDER = ['low', 'medium', 'high', 'rich', 'pristine']
+
+function tileConcentration(x, y) {
+  if (!props.worldState) return 0
+  const stones = props.worldState.stones || []
+  let max = 0
+  for (const s of stones) {
+    const [sx, sy] = s.position
+    const d = Math.abs(x - sx) + Math.abs(y - sy)
+    if (d === 0) return 1
+    const gi = GRADE_ORDER.indexOf(s.grade !== 'unknown' ? s.grade : 'low')
+    const radius = 10 + (gi >= 0 ? gi : 0) * 2
+    const c = Math.max(0, 1 - d / radius)
+    if (c > max) max = c
+  }
+  return max
+}
+
+function tileFill(t) {
+  if (!isRevealed(t.x, t.y)) return null // CSS class handles unrevealed
+  const c = tileConcentration(t.x, t.y)
+  if (c <= 0.05) return null // use CSS default for near-zero
+  // Interpolate from revealed base (#0e0e16) toward warm amber (#443010)
+  const r = Math.round(14 + c * 54)  // 0e → 44
+  const g = Math.round(14 + c * 34)  // 0e → 30
+  const b = Math.round(22 + c * -6)  // 16 → 10
+  return `rgb(${r},${g},${b})`
+}
+
 function worldToScreen(wx, wy) {
   const sx = (wx - camX.value) * TILE_SIZE + TILE_SIZE / 2
   const sy = (VIEWPORT_H - 1 - (wy - camY.value)) * TILE_SIZE + TILE_SIZE / 2
@@ -230,6 +260,7 @@ defineExpose({ camX, camY })
         :width="TILE_SIZE"
         :height="TILE_SIZE"
         :class="isRevealed(t.x, t.y) ? 'grid-tile revealed' : 'grid-tile'"
+        :fill="tileFill(t) || undefined"
       />
 
       <!-- SVG filter for vein glow -->
