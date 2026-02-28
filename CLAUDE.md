@@ -65,6 +65,18 @@ Vite proxies `/api/*` to `http://localhost:4009` and `/ws` to `ws://localhost:40
 - If you need to look up the latest documentation for an external tool, e.g., Vercel, Supabase, etc., please include 'use context7' in your prompt
 - For each new task, please first create a plan in a markdown file in this repo such that we can always trace back at which stage of the implementation for this particular task we currenlty are by comparing the code and then what's in the plan. Also, divide each plan into smaller tasks and sub-tasks that **shall** be marked as completed in this markdown file if done so. -->
 
+## Co-Authoring (MANDATORY)
+
+All commits and PRs in this repo **must** use the agent-one team attribution:
+
+```
+Co-Authored-By: agent-one team <agent-one@yanok.ai>
+```
+
+- **Commits**: Append the `Co-Authored-By` trailer as the last line of every commit message
+- **PRs**: The PR template already includes the trailer at the bottom — do not remove it
+- **Do NOT** use personal or model-specific co-author lines (e.g., `Claude Opus`, `noreply@anthropic.com`)
+
 ## Semantic PR Logs (MANDATORY)
 
 Every PR description **must** follow the template in `.github/PULL_REQUEST_TEMPLATE.md`. When creating a PR with `gh pr create`, auto-populate the semantic diff by running `git diff main...HEAD --stat` and `git diff main...HEAD --numstat` to compute file counts and line changes.

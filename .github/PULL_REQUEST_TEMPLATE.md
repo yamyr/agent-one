@@ -54,3 +54,7 @@
 ## Changelog
 
 <!-- Copy the entry you added to Changelog.md -->
+
+---
+
+Co-Authored-By: agent-one team <agent-one@yanok.ai>
