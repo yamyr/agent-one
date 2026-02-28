@@ -6,7 +6,8 @@
 - uvicorn (ASGI server)
 - SurrealDB (database, port 4002 dev / 8009 test)
 - pydantic-settings (configuration via `.env`)
-- mistralai SDK (LLM integration)
+- mistralai SDK (LLM integration — `magistral-medium-latest` for narration + agent reasoning)
+- elevenlabs SDK (optional TTS for voice narration)
 - rich (logging)
 - uv (package manager, replaces pip)
 - ruff (linter, line-length 100)
@@ -56,8 +57,15 @@ docker build -t agent-one .      # full build
 
 ## Environment Variables
 - `MISTRAL_API_KEY` — required for LLM agent functionality
+- `ELEVENLABS_API_KEY` — optional, enables voice narration (text narration works without it)
+- `NARRATION_ENABLED`, `NARRATION_VOICE_ID`, `NARRATION_MIN_INTERVAL_SECONDS` — narration config
 - Server config via `server/.env` (see `server/env.sample`)
 - Settings managed by pydantic-settings in `server/app/config.py`
+
+## CI/CD
+- GitHub Actions CI (`.github/workflows/ci.yml`): ruff lint, rut tests + SurrealDB, eslint + vite build, Docker build verify
+- Discord notifications (`.github/workflows/discord-git-notify.yml`): PR and main-push events sent to Discord via webhooks
+- Secrets: `DISCORD_WEBHOOK_URL` (default), `DISCORD_WEBHOOK_URL_PR` (optional), `DISCORD_WEBHOOK_URL_MAIN` (optional)
 
 ## Ports
 | Service          | Port |

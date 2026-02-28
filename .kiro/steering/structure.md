@@ -9,9 +9,10 @@ agent-one/
 │   │   ├── db.py               # SurrealDB connection helpers, get_db() generator
 │   │   ├── views.py            # REST endpoints + /ws WebSocket endpoint
 │   │   ├── broadcast.py        # Broadcaster singleton for WebSocket fan-out
-│   │   ├── agent.py            # RoverAgent (Mistral LLM) + MockRoverAgent (legacy)
-│   │   ├── sim_agent.py        # MockSimAgent wrapping SimulationEngine (current demo agent)
-│   │   ├── world.py            # Legacy world model (dict-based zones)
+│   │   ├── agent.py            # RoverAgent (Mistral LLM) + MockRoverAgent (fallback)
+│   │   ├── narrator.py         # AI narration: Mistral text + ElevenLabs TTS, streaming chunks
+│   │   ├── station.py          # Station agent logic (charge rovers, mission assignment)
+│   │   ├── world.py            # World model, simulation tick loop, task planning
 │   │   └── sim/                # Deterministic simulation engine
 │   │       ├── models.py       # Domain models: WorldState, RoverState, StationState, GridState, etc.
 │   │       ├── engine.py       # SimulationEngine: validates actions, advances world state
@@ -20,6 +21,8 @@ agent-one/
 │   ├── tests/
 │   │   ├── conftest.py         # In-memory SurrealDB setup, CaseWithDB base class
 │   │   ├── test_sim_engine.py  # SimulationEngine unit tests
+│   │   ├── test_narrator.py    # Narrator unit tests
+│   │   ├── test_station.py     # Station agent tests
 │   │   └── ...                 # Other test modules
 │   ├── pyproject.toml          # Python project config (uv, ruff)
 │   ├── uv.lock                 # Locked dependencies
@@ -29,17 +32,25 @@ agent-one/
 │   │   ├── App.vue             # Root component, WebSocket connection, layout
 │   │   ├── main.js             # Vue app entry point
 │   │   └── components/
-│   │       ├── MarsGrid.vue    # Grid-based surface map visualization
-│   │       ├── RoverTelemetry.vue # Rover status, battery, mission progress
-│   │       └── EventLog.vue    # Scrolling event log
+│   │       ├── WorldMap.vue    # SVG grid map with fog-of-war, visibility radius circles
+│   │       ├── NarrationPlayer.vue # AI narration display with typewriter effect + audio playback
+│   │       ├── EventLog.vue    # Scrolling event log (below map)
+│   │       ├── AgentPane.vue   # Individual agent telemetry card
+│   │       ├── AgentPanes.vue  # Agent panel container
+│   │       ├── AgentDetailModal.vue # Agent detail overlay
+│   │       ├── MissionBar.vue  # Mission progress bar
+│   │       └── AppHeader.vue   # App header
 │   ├── vite.config.js          # Vite config with proxy to backend
 │   └── package.json
+├── .github/workflows/
+│   ├── ci.yml                  # Lint (ruff + eslint), test (rut + SurrealDB), build, Docker verify
+│   └── discord-git-notify.yml  # GitHub → Discord webhook notifications (PR + main push)
 ├── Dockerfile                  # Multi-stage: Node build → Python runtime
 ├── railway.toml                # Railway deployment config
 ├── SPEC.md                     # Full system specification
-├── IDEA.md                     # High-level vision
-├── ROADMAP.md                  # Milestone plan (M0–M5)
-└── tasks/todo.md               # Task tracking
+├── CLAUDE.md                   # Developer guidance
+├── Changelog.md                # Project changelog
+└── tasks/                      # Task tracking plans
 ```
 
 ## Key Architecture Patterns
@@ -52,5 +63,6 @@ agent-one/
 - The `Broadcaster` singleton fans out events to all WebSocket clients
 - Frontend connects via a single WebSocket at `/ws` and receives all state updates as JSON events
 - Vite proxies `/api/*` and `/ws` to the backend during development
-- Two agent implementations exist: `RoverAgent` (real Mistral LLM calls) and `MockSimAgent` (random actions for demo)
-- `world.py` is a legacy dict-based world model; `sim/` is the current engine
+- Two agent implementations exist: `RoverAgent` (real Mistral LLM calls with `magistral-medium-latest`) and `MockRoverAgent` (random/deterministic fallback)
+- AI narration via `narrator.py`: Mistral generates commentary text, ElevenLabs converts to speech with emotion tags; text streams as `narration_chunk` WebSocket events
+- GitHub → Discord notifications via `.github/workflows/discord-git-notify.yml` for PR events and main-branch pushes
