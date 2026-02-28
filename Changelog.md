@@ -8,6 +8,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **Infinite Grid with Viewport & Minimap**: World is no longer a fixed 20×20 grid
+  - Chunk-based procedural generation: 16×16 tile chunks generated lazily as agents explore
+  - Seeded/deterministic world: each chunk uses `sha256(world_seed:cx:cy)` for consistent generation
+  - No boundaries: agents can move to any integer coordinate (negative included)
+  - Per-chunk stone placement with origin chunk guaranteed ≥1 core stone
+  - Hash-based noise concentration map with core-proximity boosting
+  - Explored bounds tracking in `WORLD["bounds"]`
+  - **Viewport camera**: 20×20 tile viewport that pans over the infinite world
+  - **Auto-follow**: Camera tracks most recently moved agent by default
+  - **Drag-to-pan**: Click-drag to manually navigate; double-click to re-enable auto-follow
+  - **MiniMap component**: Reduced-scale overview of all explored terrain with viewport rectangle overlay and click-to-navigate
+  - 7 new chunk system tests (149 total pass)
+
 - **Drone Scout Agent**: Aerial drone entity that scouts terrain for precious stone deposits
   - `DroneAgent` (LLM-powered via Mistral) + `MockDroneAgent` (deterministic fallback) in `agent.py`
   - Drone flies 1-6 tiles per move at 1% battery/tile (rovers: 1-3 tiles at 2%)
@@ -21,6 +34,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- Grid system replaced: fixed `GRID_W`/`GRID_H` boundaries removed; world is now unbounded
+- `_cells_in_radius` no longer clamps to grid bounds (returns full diamond)
+- `move_agent` no longer rejects out-of-bounds moves
+- `_update_drone_tasks` searches within 30-tile radius around agent instead of full grid
+- `get_snapshot()` includes `bounds` field and strips internal chunk data
 - Rover visibility radius reduced from 5 to 3 tiles (balanced by drone's 6-tile radius)
 - `update_tasks()` split into `_update_rover_tasks()` and `_update_drone_tasks()`
 - Rovers now check `drone_scans` for hotspots when no visible stones are found
