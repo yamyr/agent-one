@@ -8,6 +8,7 @@ export function useWebSocket({ onConnect, onEvent } = {}) {
   const narrationChunk = ref(null)
   let ws = null
   let eventUid = 0
+  let isFirstConnect = true
 
   const agentEvents = computed(() => {
     const byAgent = {}
@@ -30,7 +31,10 @@ export function useWebSocket({ onConnect, onEvent } = {}) {
 
     ws.onopen = () => {
       connected.value = true
-      events.value = []
+      if (isFirstConnect) {
+        events.value = []
+      }
+      isFirstConnect = false
       worldState.value = null
       if (onConnect) onConnect()
     }
