@@ -52,13 +52,21 @@ async function onWsConnect() {
 }
 
 async function toggleNarration() {
-  const res = await fetch('/api/narration/toggle', { method: 'POST' })
-  const data = await res.json()
-  narrationEnabled.value = data.enabled
+  try {
+    const res = await fetch('/api/narration/toggle', { method: 'POST' })
+    const data = await res.json()
+    narrationEnabled.value = data.enabled
+  } catch (e) {
+    console.warn('toggleNarration failed', e)
+  }
 }
 
 async function abortMission() {
-  await fetch('/api/mission/abort', { method: 'POST' })
+  try {
+    await fetch('/api/mission/abort', { method: 'POST' })
+  } catch (e) {
+    console.warn('abortMission failed', e)
+  }
 }
 
 async function resetSimulation() {
@@ -94,10 +102,14 @@ function onSimEvent(event) {
 const { events, connected, worldState, agentIds, agentEvents, narration, narrationChunk } = useWebSocket({ onConnect: onWsConnect, onEvent: onSimEvent })
 
 async function togglePause() {
-  const endpoint = paused.value ? '/api/simulation/resume' : '/api/simulation/pause'
-  const res = await fetch(endpoint, { method: 'POST' })
-  const data = await res.json()
-  paused.value = data.paused
+  try {
+    const endpoint = paused.value ? '/api/simulation/resume' : '/api/simulation/pause'
+    const res = await fetch(endpoint, { method: 'POST' })
+    const data = await res.json()
+    paused.value = data.paused
+  } catch (e) {
+    console.warn('togglePause failed', e)
+  }
 }
 
 function selectAgent(id) {

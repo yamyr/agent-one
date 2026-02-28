@@ -36,7 +36,13 @@ export function useWebSocket({ onConnect, onEvent } = {}) {
     }
 
     ws.onmessage = (msg) => {
-      const event = JSON.parse(msg.data)
+      let event
+      try {
+        event = JSON.parse(msg.data)
+      } catch (e) {
+        console.warn('WS: failed to parse message', e)
+        return
+      }
       if (event.source === 'world' && event.name === 'state') {
         worldState.value = event.payload
       } else if (event.source === 'narrator' && event.name === 'narration') {
