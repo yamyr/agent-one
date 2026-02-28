@@ -37,7 +37,12 @@ async def rut_session_setup():
         'memory'
     ], stdout=_surreal_log_file, stderr=_surreal_log_file)
 
-    time.sleep(1)
+    for _ in range(30):  # 30 attempts × 0.2s = 6s max
+        if is_port_in_use(_test_port):
+            break
+        time.sleep(0.2)
+    else:
+        raise RuntimeError(f"SurrealDB failed to start on port {_test_port}")
     print(f"Started in-memory SurrealDB on port {_test_port}")
 
 
