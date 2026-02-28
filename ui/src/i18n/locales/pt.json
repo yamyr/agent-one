@@ -1,0 +1,129 @@
+{
+  "nav": {
+    "mission": "Missão",
+    "agents": "Agentes",
+    "features": "Recursos",
+    "tech": "Tecnologia",
+    "launch": "Iniciar missão"
+  },
+  "hero": {
+    "badge": "Simulação marciana multiagente",
+    "title_line1": "Conquiste o",
+    "title_line2": "Planeta Vermelho",
+    "subtitle": "Envie agentes autônomos de IA para explorar Marte. Acompanhe seu raciocínio, adaptação e colaboração em tempo real por uma interface de controle de missão impressionante.",
+    "cta_launch": "Iniciar missão",
+    "cta_explore": "Explorar recursos"
+  },
+  "mission": {
+    "label": "Briefing da missão",
+    "title": "Exploração autônoma de Marte",
+    "description": "Três agentes de IA, Rover, Drone e Estação, coordenam-se por meio de um controle de missão central para explorar a superfície marciana. Cada agente executa seu próprio ciclo de raciocínio, tomando decisões em tempo real com base no terreno, clima e objetivos da missão.",
+    "stat_agents": "Agentes IA",
+    "stat_tools": "Ferramentas",
+    "stat_realtime": "Tempo real",
+    "stat_languages": "Idiomas"
+  },
+  "agents": {
+    "label": "Conheça os agentes",
+    "title": "Sua equipe em Marte",
+    "rover_name": "Rover",
+    "rover_role": "Explorador de superfície",
+    "rover_desc": "Navega pelo terreno marciano, perfura para coletar amostras e analisa formações geológicas. Toma decisões autônomas sobre rotas de exploração com base nas informações do drone e nas condições climáticas.",
+    "rover_tools": "Mover • Perfurar • Analisar • Coletar",
+    "drone_name": "Drone",
+    "drone_role": "Batedor aéreo",
+    "drone_desc": "Escaneia vastas áreas de terreno do alto, mapeia rotas seguras para o rover e transmite dados ambientais críticos. Fornece avaliações probabilísticas da composição das rochas.",
+    "drone_tools": "Escanear • Mapear rotas • Transmitir dados",
+    "station_name": "Estação",
+    "station_role": "Controle de missão",
+    "station_desc": "Gerencia a distribuição de energia entre todos os agentes, monitora a saúde dos sistemas e emite alertas. Garante que a equipe continue operacional durante tempestades de areia e desafios técnicos.",
+    "station_tools": "Carregar • Alocar energia • Alertar"
+  },
+  "features": {
+    "label": "Capacidades",
+    "title": "Sistemas da missão",
+    "items": [
+      {
+        "title": "Raciocínio com LLM",
+        "desc": "Cada agente executa ciclos de raciocínio Mistral AI, avalia objetivos, propõe ações e se adapta às condições em constante mudança, tudo em tempo real."
+      },
+      {
+        "title": "Objetivos probabilísticos",
+        "desc": "Os objetivos rastreiam pontuações de confiança de 0,0 a 1,0, atualizando-se dinamicamente conforme os agentes coletam dados e completam tarefas."
+      },
+      {
+        "title": "Streaming em tempo real",
+        "desc": "Acompanhe decisões dos agentes, chamadas de ferramentas e atualizações do estado do mundo ao vivo por conexões WebSocket."
+      },
+      {
+        "title": "Narração com IA",
+        "desc": "Mistral AI gera comentários ao vivo da missão com síntese de voz ElevenLabs opcional para uma experiência imersiva."
+      },
+      {
+        "title": "Mundo dinâmico",
+        "desc": "Ambiente marciano com perigos no terreno, tempestades de areia, névoa de guerra e formações geológicas que mudam com o tempo."
+      },
+      {
+        "title": "Coordenação multiagente",
+        "desc": "Os agentes se comunicam por protocolos estruturados. O reconhecimento do drone informa as decisões do rover, e a estação gerencia recursos compartilhados."
+      }
+    ]
+  },
+  "how_it_works": {
+    "label": "Como funciona",
+    "title": "O ciclo da missão",
+    "steps": [
+      {
+        "number": "01",
+        "title": "Observar",
+        "desc": "Os agentes leem o estado do mundo: terreno, perigos, níveis de bateria, intensidade da tempestade e dados de outros agentes."
+      },
+      {
+        "number": "02",
+        "title": "Raciocinar",
+        "desc": "Mistral AI avalia objetivos, analisa riscos e propõe a ação ideal seguinte com alternativas."
+      },
+      {
+        "number": "03",
+        "title": "Executar",
+        "desc": "Chamadas de ferramentas alteram o estado do mundo: mover, perfurar, escanear, carregar. O progresso é transmitido ao vivo."
+      },
+      {
+        "number": "04",
+        "title": "Adaptar",
+        "desc": "As pontuações de confiança se atualizam dinamicamente. Os agentes reavaliam seus planos quando as condições mudam."
+      }
+    ]
+  },
+  "tech": {
+    "label": "Tecnologia",
+    "title": "Construído com",
+    "ai": {
+      "label": "IA & LLM",
+      "items": ["Mistral AI", "ElevenLabs TTS", "Raciocínio probabilístico"]
+    },
+    "backend": {
+      "label": "Backend",
+      "items": ["Python 3.14+", "FastAPI", "SurrealDB", "WebSockets"]
+    },
+    "frontend": {
+      "label": "Frontend",
+      "items": ["Vue 3", "Vite 7", "Three.js", "GSAP"]
+    },
+    "infra": {
+      "label": "Infraestrutura",
+      "items": ["Docker", "GitHub Actions", "Railway", "Discord Webhooks"]
+    }
+  },
+  "cta": {
+    "title": "Pronto para Marte?",
+    "subtitle": "Inicie a interface de controle de missão e acompanhe agentes autônomos de IA explorando o Planeta Vermelho em tempo real.",
+    "button_launch": "Iniciar controle de missão",
+    "button_github": "Ver no GitHub"
+  },
+  "footer": {
+    "built_with": "Construído com Mistral AI para o Mistral Hackathon",
+    "hackathon": "28 fev. – 1 mar. 2025",
+    "copyright": "© 2025 Agent One Team"
+  }
+}

@@ -14,7 +14,12 @@
   },
   "dependencies": {
     "@fontsource/jetbrains-mono": "^5.2.8",
-    "vue": "^3.5.18"
+    "@fontsource/space-grotesk": "^5.2.8",
+    "gsap": "^3.13.0",
+    "three": "^0.176.0",
+    "vue": "^3.5.18",
+    "vue-i18n": "^9.14.0",
+    "vue-router": "^4.5.1"
   },
   "devDependencies": {
     "@eslint/js": "^9.31.0",

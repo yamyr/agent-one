@@ -1,0 +1,129 @@
+{
+  "nav": {
+    "mission": "Mission",
+    "agents": "Agenten",
+    "features": "Funktionen",
+    "tech": "Technologie",
+    "launch": "Mission starten"
+  },
+  "hero": {
+    "badge": "Multi-Agenten Mars-Simulation",
+    "title_line1": "Erobere den",
+    "title_line2": "Roten Planeten",
+    "subtitle": "Setze autonome KI-Agenten zur Erforschung des Mars ein. Beobachte, wie sie in Echtzeit denken, sich anpassen und zusammenarbeiten, alles über eine beeindruckende Missionskontroll-Oberfläche.",
+    "cta_launch": "Mission starten",
+    "cta_explore": "Funktionen entdecken"
+  },
+  "mission": {
+    "label": "Missions-Briefing",
+    "title": "Autonome Mars-Erforschung",
+    "description": "Drei KI-Agenten, Rover, Drohne und Station, koordinieren sich über eine zentrale Missionskontrolle, um die Marsoberfläche zu erforschen. Jeder Agent verfügt über eine eigene Denkschleife und trifft Entscheidungen in Echtzeit basierend auf Gelände, Wetter und Missionszielen.",
+    "stat_agents": "KI-Agenten",
+    "stat_tools": "Agenten-Tools",
+    "stat_realtime": "Echtzeit",
+    "stat_languages": "Sprachen"
+  },
+  "agents": {
+    "label": "Die Agenten",
+    "title": "Dein Mars-Team",
+    "rover_name": "Rover",
+    "rover_role": "Oberflächen-Erkunder",
+    "rover_desc": "Navigiert durch das Marsgelände, bohrt nach Kernproben und analysiert geologische Formationen. Trifft autonome Entscheidungen über Erkundungsrouten basierend auf Drohnen-Aufklärung und Sturmbedingungen.",
+    "rover_tools": "Bewegen • Bohren • Analysieren • Aufheben",
+    "drone_name": "Drohne",
+    "drone_role": "Luftaufklärer",
+    "drone_desc": "Scannt weite Geländeabschnitte aus der Luft, kartiert sichere Routen für den Rover und übermittelt kritische Umweltdaten. Liefert probabilistische Bewertungen von Gesteinszusammensetzungen.",
+    "drone_tools": "Scannen • Routen kartieren • Daten übermitteln",
+    "station_name": "Station",
+    "station_role": "Missionskontrolle",
+    "station_desc": "Verwaltet die Energieverteilung aller Agenten, überwacht den Systemzustand und sendet Warnmeldungen. Sorgt dafür, dass das Team auch bei Sandstürmen und technischen Herausforderungen einsatzfähig bleibt.",
+    "station_tools": "Laden • Energie zuweisen • Warnen"
+  },
+  "features": {
+    "label": "Fähigkeiten",
+    "title": "Missionssysteme",
+    "items": [
+      {
+        "title": "LLM-gestützte Entscheidungsfindung",
+        "desc": "Jeder Agent nutzt Mistral AI Denkschleifen, bewertet Ziele, schlägt Aktionen vor und passt sich in Echtzeit an veränderte Bedingungen an."
+      },
+      {
+        "title": "Probabilistische Ziele",
+        "desc": "Ziele verfolgen Konfidenzwerte von 0,0 bis 1,0, die sich dynamisch aktualisieren, während Agenten Daten sammeln und Aufgaben erledigen."
+      },
+      {
+        "title": "Echtzeit-Streaming",
+        "desc": "Verfolge Agenten-Entscheidungen, Tool-Aufrufe und Weltzustands-Updates live über WebSocket-Verbindungen."
+      },
+      {
+        "title": "KI-Erzählung",
+        "desc": "Mistral AI generiert Live-Missionskommentare mit optionaler ElevenLabs Sprachsynthese für ein immersives Erlebnis."
+      },
+      {
+        "title": "Dynamische Welt",
+        "desc": "Mars-Umgebung mit Geländegefahren, Sandstürmen, Sichteinschränkungen und geologischen Formationen, die sich im Laufe der Zeit verändern."
+      },
+      {
+        "title": "Multi-Agenten-Koordination",
+        "desc": "Agenten kommunizieren über strukturierte Protokolle. Drohnenaufklärung fließt in Rover-Entscheidungen ein, die Station verwaltet gemeinsame Ressourcen."
+      }
+    ]
+  },
+  "how_it_works": {
+    "label": "So funktioniert's",
+    "title": "Der Missions-Kreislauf",
+    "steps": [
+      {
+        "number": "01",
+        "title": "Beobachten",
+        "desc": "Agenten erfassen den Weltzustand: Gelände, Gefahren, Batteriestand, Sturmintensität und Daten anderer Agenten."
+      },
+      {
+        "number": "02",
+        "title": "Analysieren",
+        "desc": "Mistral AI bewertet Ziele, schätzt Risiken ein und schlägt die optimale nächste Aktion samt Alternativen vor."
+      },
+      {
+        "number": "03",
+        "title": "Ausführen",
+        "desc": "Tool-Aufrufe verändern den Weltzustand: bewegen, bohren, scannen, laden. Der Fortschritt wird live gestreamt."
+      },
+      {
+        "number": "04",
+        "title": "Anpassen",
+        "desc": "Ziel-Konfidenzwerte aktualisieren sich dynamisch. Agenten bewerten ihre Pläne neu, wenn sich die Bedingungen ändern."
+      }
+    ]
+  },
+  "tech": {
+    "label": "Technologie",
+    "title": "Entwickelt mit",
+    "ai": {
+      "label": "KI & LLM",
+      "items": ["Mistral AI", "ElevenLabs TTS", "Probabilistische Entscheidungsfindung"]
+    },
+    "backend": {
+      "label": "Backend",
+      "items": ["Python 3.14+", "FastAPI", "SurrealDB", "WebSockets"]
+    },
+    "frontend": {
+      "label": "Frontend",
+      "items": ["Vue 3", "Vite 7", "Three.js", "GSAP"]
+    },
+    "infra": {
+      "label": "Infrastruktur",
+      "items": ["Docker", "GitHub Actions", "Railway", "Discord Webhooks"]
+    }
+  },
+  "cta": {
+    "title": "Bereit für den Mars?",
+    "subtitle": "Starte die Missionskontroll-Oberfläche und beobachte, wie autonome KI-Agenten den Roten Planeten in Echtzeit erforschen.",
+    "button_launch": "Missionskontrolle starten",
+    "button_github": "Auf GitHub ansehen"
+  },
+  "footer": {
+    "built_with": "Entwickelt mit Mistral AI für den Mistral Hackathon",
+    "hackathon": "28. Feb. – 1. März 2025",
+    "copyright": "© 2025 Agent One Team"
+  }
+}
