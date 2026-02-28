@@ -142,7 +142,9 @@ class TestExecuteAction(unittest.TestCase):
     def test_execute_move_drains_battery(self):
         result = execute_action("rover-mistral", "move", {"direction": "east"})
         self.assertTrue(result["ok"])
-        self.assertAlmostEqual(world.state["agents"]["rover-mistral"]["battery"], 1.0 - BATTERY_COST_MOVE)
+        self.assertAlmostEqual(
+            world.state["agents"]["rover-mistral"]["battery"], 1.0 - BATTERY_COST_MOVE
+        )
 
     def test_execute_move_negative_ok(self):
         """Infinite grid: moving to negative coords succeeds."""
@@ -480,7 +482,9 @@ class TestDig(unittest.TestCase):
 
     def test_dig_drains_battery(self):
         execute_action("rover-mistral", "dig", {})
-        self.assertAlmostEqual(world.state["agents"]["rover-mistral"]["battery"], 1.0 - BATTERY_COST_DIG)
+        self.assertAlmostEqual(
+            world.state["agents"]["rover-mistral"]["battery"], 1.0 - BATTERY_COST_DIG
+        )
 
     def test_dig_no_stone(self):
         world.state["stones"] = []
@@ -493,7 +497,9 @@ class TestDig(unittest.TestCase):
         result = execute_action("rover-mistral", "dig", {})
         self.assertFalse(result["ok"])
         self.assertIn("Not enough battery", result["error"])
-        self.assertAlmostEqual(world.state["agents"]["rover-mistral"]["battery"], BATTERY_COST_DIG * 0.5)
+        self.assertAlmostEqual(
+            world.state["agents"]["rover-mistral"]["battery"], BATTERY_COST_DIG * 0.5
+        )
 
     def test_dig_failed_no_drain(self):
         world.state["stones"] = []
@@ -613,7 +619,9 @@ class TestCharge(unittest.TestCase):
         charge_rover("rover-mistral")
         self.assertAlmostEqual(world.state["agents"]["rover-mistral"]["battery"], 0.1 + CHARGE_RATE)
         charge_rover("rover-mistral")
-        self.assertAlmostEqual(world.state["agents"]["rover-mistral"]["battery"], 0.1 + 2 * CHARGE_RATE)
+        self.assertAlmostEqual(
+            world.state["agents"]["rover-mistral"]["battery"], 0.1 + 2 * CHARGE_RATE
+        )
 
     def test_charge_rover_unknown_agent(self):
         result = charge_rover("rover-99")
@@ -648,16 +656,18 @@ class TestFogOfWar(unittest.TestCase):
         ]
         # Give drone an empty revealed so it doesn't interfere
         if "drone-mistral" in world.state["agents"]:
-            self._original_drone_revealed = world.state["agents"]["drone-mistral"].get("revealed", [])
+            self._original_drone_revealed = world.state["agents"]["drone-mistral"].get(
+                "revealed", []
+            )
             world.state["agents"]["drone-mistral"]["revealed"] = []
         self._original_stones = world.state.get("stones", [])
 
     def tearDown(self):
         world.state["stones"] = self._original_stones
         # Restore rover-mistral revealed
-        world.state["agents"]["rover-mistral"]["revealed"] = world.state["agents"]["rover-mistral"].get(
-            "revealed", []
-        )
+        world.state["agents"]["rover-mistral"]["revealed"] = world.state["agents"][
+            "rover-mistral"
+        ].get("revealed", [])
         if "drone-mistral" in world.state["agents"]:
             world.state["agents"]["drone-mistral"]["revealed"] = self._original_drone_revealed
 
@@ -1493,7 +1503,9 @@ class TestNotify(unittest.TestCase):
         )
 
     def test_notify_drone_success(self):
-        result = execute_action("drone-mistral", "notify", {"message": "High concentration detected"})
+        result = execute_action(
+            "drone-mistral", "notify", {"message": "High concentration detected"}
+        )
         self.assertTrue(result["ok"])
         self.assertEqual(result["position"], [3, 3])
         self.assertEqual(result["message"], "High concentration detected")
@@ -1556,7 +1568,9 @@ class TestWorldSetters(unittest.TestCase):
 
     def test_set_pending_commands_set_and_clear(self):
         set_pending_commands("rover-mistral", [{"name": "recall"}])
-        self.assertEqual(world.state["agents"]["rover-mistral"]["pending_commands"], [{"name": "recall"}])
+        self.assertEqual(
+            world.state["agents"]["rover-mistral"]["pending_commands"], [{"name": "recall"}]
+        )
         set_pending_commands("rover-mistral", None)
         self.assertNotIn("pending_commands", world.state["agents"]["rover-mistral"])
 
@@ -1565,6 +1579,7 @@ class TestWorldClass(unittest.TestCase):
     def test_singleton_wraps_module_world(self):
         """Module-level `world` singleton is the canonical instance."""
         from app.world import world as w
+
         self.assertIs(w.state, world.state)
 
     def test_get_agent(self):
@@ -1588,7 +1603,9 @@ class TestWorldClass(unittest.TestCase):
         self.assertEqual(world.state["agents"]["rover-mistral"]["last_context"], "ctx-via-class")
 
         world.set_pending_commands("rover-mistral", [{"name": "test"}])
-        self.assertEqual(world.state["agents"]["rover-mistral"]["pending_commands"], [{"name": "test"}])
+        self.assertEqual(
+            world.state["agents"]["rover-mistral"]["pending_commands"], [{"name": "test"}]
+        )
         world.set_pending_commands("rover-mistral", None)
         self.assertNotIn("pending_commands", world.state["agents"]["rover-mistral"])
 
@@ -1598,6 +1615,7 @@ class TestWorldClass(unittest.TestCase):
     def test_fresh_instance_independent(self):
         """A World() with no args gets its own state, independent of the singleton."""
         from app.world import World
+
         w2 = World()
         w2.set_agent_model("rover-mistral", "independent-model")
         self.assertNotEqual(
@@ -1617,10 +1635,12 @@ class TestIceMountain(unittest.TestCase):
         world.state["agents"]["rover-mistral"]["battery"] = 1.0
         # Place an ice mountain directly in the rover's path
         world.state.setdefault("obstacles", []).clear()
-        world.state["obstacles"].append({
-            "type": "ice_mountain",
-            "position": [6, 5],
-        })
+        world.state["obstacles"].append(
+            {
+                "type": "ice_mountain",
+                "position": [6, 5],
+            }
+        )
 
     def test_rover_blocked_by_mountain(self):
         result = move_agent("rover-mistral", 6, 5)
@@ -1658,22 +1678,26 @@ class TestAirGeyser(unittest.TestCase):
         world.state.setdefault("obstacles", []).clear()
 
     def test_rover_passes_dormant_geyser(self):
-        world.state["obstacles"].append({
-            "type": "air_geyser",
-            "position": [6, 5],
-            "active": False,
-            "ticks_remaining": 5,
-        })
+        world.state["obstacles"].append(
+            {
+                "type": "air_geyser",
+                "position": [6, 5],
+                "active": False,
+                "ticks_remaining": 5,
+            }
+        )
         result = move_agent("rover-mistral", 6, 5)
         self.assertTrue(result["ok"])
 
     def test_rover_active_geyser_drains_battery(self):
-        world.state["obstacles"].append({
-            "type": "air_geyser",
-            "position": [6, 5],
-            "active": True,
-            "ticks_remaining": 2,
-        })
+        world.state["obstacles"].append(
+            {
+                "type": "air_geyser",
+                "position": [6, 5],
+                "active": True,
+                "ticks_remaining": 2,
+            }
+        )
         initial_battery = world.state["agents"]["rover-mistral"]["battery"]
         result = move_agent("rover-mistral", 6, 5)
         self.assertTrue(result["ok"])
@@ -1683,12 +1707,14 @@ class TestAirGeyser(unittest.TestCase):
     def test_drone_deflected_by_active_geyser(self):
         world.state["agents"]["drone-mistral"]["position"] = [5, 5]
         world.state["agents"]["drone-mistral"]["battery"] = 1.0
-        world.state["obstacles"].append({
-            "type": "air_geyser",
-            "position": [6, 5],
-            "active": True,
-            "ticks_remaining": 2,
-        })
+        world.state["obstacles"].append(
+            {
+                "type": "air_geyser",
+                "position": [6, 5],
+                "active": True,
+                "ticks_remaining": 2,
+            }
+        )
         result = move_agent("drone-mistral", 6, 5)
         self.assertFalse(result["ok"])
         self.assertIn("drone deflected", result["error"])
@@ -1696,12 +1722,14 @@ class TestAirGeyser(unittest.TestCase):
     def test_drone_passes_dormant_geyser(self):
         world.state["agents"]["drone-mistral"]["position"] = [5, 5]
         world.state["agents"]["drone-mistral"]["battery"] = 1.0
-        world.state["obstacles"].append({
-            "type": "air_geyser",
-            "position": [6, 5],
-            "active": False,
-            "ticks_remaining": 5,
-        })
+        world.state["obstacles"].append(
+            {
+                "type": "air_geyser",
+                "position": [6, 5],
+                "active": False,
+                "ticks_remaining": 5,
+            }
+        )
         result = move_agent("drone-mistral", 6, 5)
         self.assertTrue(result["ok"])
 
@@ -1714,12 +1742,14 @@ class TestGeyserCycle(unittest.TestCase):
 
     def test_dormant_to_active_eruption(self):
         """A dormant geyser with ticks_remaining=1 erupts on next update."""
-        world.state["obstacles"].append({
-            "type": "air_geyser",
-            "position": [10, 10],
-            "active": False,
-            "ticks_remaining": 1,
-        })
+        world.state["obstacles"].append(
+            {
+                "type": "air_geyser",
+                "position": [10, 10],
+                "active": False,
+                "ticks_remaining": 1,
+            }
+        )
         events = _update_geysers()
         geyser = world.state["obstacles"][0]
         self.assertTrue(geyser["active"])
@@ -1730,12 +1760,14 @@ class TestGeyserCycle(unittest.TestCase):
 
     def test_active_to_dormant(self):
         """An active geyser with ticks_remaining=1 goes dormant."""
-        world.state["obstacles"].append({
-            "type": "air_geyser",
-            "position": [10, 10],
-            "active": True,
-            "ticks_remaining": 1,
-        })
+        world.state["obstacles"].append(
+            {
+                "type": "air_geyser",
+                "position": [10, 10],
+                "active": True,
+                "ticks_remaining": 1,
+            }
+        )
         events = _update_geysers()
         geyser = world.state["obstacles"][0]
         self.assertFalse(geyser["active"])
@@ -1744,12 +1776,14 @@ class TestGeyserCycle(unittest.TestCase):
 
     def test_no_event_while_counting_down(self):
         """Geyser with ticks_remaining > 1 just decrements."""
-        world.state["obstacles"].append({
-            "type": "air_geyser",
-            "position": [10, 10],
-            "active": False,
-            "ticks_remaining": 5,
-        })
+        world.state["obstacles"].append(
+            {
+                "type": "air_geyser",
+                "position": [10, 10],
+                "active": False,
+                "ticks_remaining": 5,
+            }
+        )
         events = _update_geysers()
         geyser = world.state["obstacles"][0]
         self.assertFalse(geyser["active"])
@@ -1768,7 +1802,8 @@ class TestObstacleGeneration(unittest.TestCase):
         _ensure_chunk(0, 0)
         # Filter obstacles to origin chunk area (0..15, 0..15)
         origin_obstacles = [
-            o for o in world.state.get("obstacles", [])
+            o
+            for o in world.state.get("obstacles", [])
             if 0 <= o["position"][0] < CHUNK_SIZE and 0 <= o["position"][1] < CHUNK_SIZE
         ]
         self.assertEqual(len(origin_obstacles), 0)
@@ -1801,17 +1836,21 @@ class TestObstacleSnapshot(unittest.TestCase):
 
     def test_snapshot_only_shows_revealed_obstacles(self):
         # Place obstacle at revealed position
-        world.state["obstacles"].append({
-            "type": "ice_mountain",
-            "position": [0, 0],
-        })
+        world.state["obstacles"].append(
+            {
+                "type": "ice_mountain",
+                "position": [0, 0],
+            }
+        )
         # Place obstacle at unrevealed position (far away)
-        world.state["obstacles"].append({
-            "type": "air_geyser",
-            "position": [100, 100],
-            "active": False,
-            "ticks_remaining": 5,
-        })
+        world.state["obstacles"].append(
+            {
+                "type": "air_geyser",
+                "position": [100, 100],
+                "active": False,
+                "ticks_remaining": 5,
+            }
+        )
         snap = get_snapshot()
         # Only the one at (0,0) should be visible (station/rover at origin reveals it)
         visible_obs = snap.get("obstacles", [])
@@ -1832,12 +1871,14 @@ class TestNextTickGeyserIntegration(unittest.TestCase):
         self.assertEqual(len(result), 2)
 
     def test_next_tick_eruption_event(self):
-        world.state["obstacles"].append({
-            "type": "air_geyser",
-            "position": [20, 20],
-            "active": False,
-            "ticks_remaining": 1,
-        })
+        world.state["obstacles"].append(
+            {
+                "type": "air_geyser",
+                "position": [20, 20],
+                "active": False,
+                "ticks_remaining": 1,
+            }
+        )
         tick, events = next_tick()
         self.assertEqual(len(events), 1)
         self.assertEqual(events[0]["type"], "eruption")

@@ -257,11 +257,7 @@ class MistralRoverReasoner:
                 else ""
             )
             + f"\nSolar panels remaining: {agent.get('solar_panels_remaining', 0)}"
-            + (
-                "\n⚠️ BATTERY CRITICAL — return to station now!"
-                if battery_critical
-                else ""
-            )
+            + ("\n⚠️ BATTERY CRITICAL — return to station now!" if battery_critical else "")
         )
 
         # Nearby solar panels
