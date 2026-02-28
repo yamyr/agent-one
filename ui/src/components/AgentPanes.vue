@@ -38,6 +38,12 @@ function agentPosition(id) {
   return `(${a.position[0]}, ${a.position[1]})`
 }
 
+function agentModel(id) {
+  if (!props.worldState) return ''
+  const a = props.worldState.agents[id]
+  return a && a.model ? a.model : ''
+}
+
 function inventorySummary(id) {
   if (!props.worldState) return ''
   const a = props.worldState.agents[id]
@@ -68,6 +74,7 @@ function agentMemory(id) {
       v-for="id in agentIds"
       :key="id"
       :agent-id="id"
+      :model="agentModel(id)"
       :position="agentPosition(id)"
       :battery="batteryPct(id)"
       :battery-level="batteryRaw(id)"

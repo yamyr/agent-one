@@ -6,6 +6,10 @@ defineProps({
     type: String,
     required: true,
   },
+  model: {
+    type: String,
+    default: '',
+  },
   position: {
     type: String,
     default: '',
@@ -50,18 +54,24 @@ const emit = defineEmits(['select-agent'])
       style="cursor:pointer"
       @click="emit('select-agent', agentId)"
     >
-      <span
-        class="agent-name"
-        :style="{ color }"
-      >{{ agentId }}</span>
-      <span class="agent-stats">
+      <div class="agent-row-1">
+        <span
+          class="agent-name"
+          :style="{ color }"
+        >{{ agentId }}</span>
+        <span
+          v-if="model"
+          class="agent-model"
+        >{{ model }}</span>
+      </div>
+      <div class="agent-row-2">
         {{ position }}
         <span
           v-if="inventorySummary"
           class="agent-inv"
         >&middot; {{ inventorySummary }}</span>
         &middot; <BatteryBar :level="batteryLevel" />
-      </span>
+      </div>
     </div>
     <div
       v-if="mission"
@@ -131,12 +141,21 @@ const emit = defineEmits(['select-agent'])
 }
 
 .agent-header {
+  padding: 0.3rem 0.6rem;
+  border-bottom: 1px solid var(--border-subtle);
+  flex-shrink: 0;
+}
+
+.agent-row-1 {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 0.4rem 0.6rem;
-  border-bottom: 1px solid var(--border-subtle);
-  flex-shrink: 0;
+}
+
+.agent-row-2 {
+  font-size: 0.7rem;
+  color: var(--text-tertiary);
+  margin-top: 0.15rem;
 }
 
 .agent-name {
@@ -144,9 +163,9 @@ const emit = defineEmits(['select-agent'])
   font-weight: bold;
 }
 
-.agent-stats {
+.agent-model {
   font-size: 0.7rem;
-  color: var(--text-tertiary);
+  color: var(--text-muted);
 }
 
 .agent-inv {

@@ -876,6 +876,7 @@ class RoverMistralLoop(RoverLoop):
     def __init__(self, interval: float = 3.0):
         super().__init__(agent_id="rover-mistral", interval=interval)
         self._reasoner = MistralRoverReasoner(agent_id=self.agent_id)
+        WORLD["agents"][self.agent_id]["model"] = self._reasoner.model
 
 
 class DroneLoop(BaseAgent):
@@ -961,3 +962,4 @@ class DroneMistralLoop(DroneLoop):
     def __init__(self, interval: float = 2.0):
         super().__init__(agent_id="drone-mistral", interval=interval)
         self._reasoner = DroneAgent(agent_id=self.agent_id)
+        WORLD["agents"][self.agent_id]["model"] = self._reasoner.model
