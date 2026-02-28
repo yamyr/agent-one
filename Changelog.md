@@ -37,3 +37,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Updated rover task planning in `server/app/world.py` to keep revealed-tile filtering lint-clean in CI
 - Applied Ruff formatting to `server/app/world.py` and `server/tests/test_world.py` to keep merge-ref CI formatting checks green
 - Fixed Release Please TOML version path in `release-please-config.json` so `server/pyproject.toml` bumps on every release
+- Made agent turn interval configurable via `agent_turn_interval_seconds` (mock, 0.5s) and `llm_turn_interval_seconds` (LLM, 3.0s) to prevent Mistral API rate-limit pressure
+- Added RoverAgent runtime fallback so `rover-mistral` keeps moving with deterministic mock logic when LLM calls fail or return no tool action
+- Narrowed RoverAgent exception handling from broad `Exception` to `(SDKError, ConnectionError, TimeoutError, RuntimeError)` so programming bugs surface instead of being silently swallowed
+- Cached mock fallback instance in RoverAgent instead of creating a new `MockRoverAgent` per failure
+- Added logging for hallucinated tool names and LLM thinking when no valid tool action is returned
+- Installed GitHub Spec Kit (`github/spec-kit`) with shorthand aliases: `/c`, `/s`, `/p`, `/t`, `/i`, `/t2i`

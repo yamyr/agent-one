@@ -4,7 +4,7 @@ import json
 import logging
 import random
 
-from mistralai import Mistral
+from mistralai import Mistral, SDKError
 
 from .config import settings
 from .world import (
@@ -72,6 +72,7 @@ class RoverAgent:
         self.agent_id = agent_id
         self.model = model
         self._client = None
+        self._mock_fallback = MockRoverAgent(agent_id=agent_id)
 
     def _get_client(self):
         if self._client is None:
@@ -212,41 +213,61 @@ class RoverAgent:
 
     def run_turn(self):
         """Single-shot LLM call. Returns {thinking, action} dict."""
-        client = self._get_client()
-        context = self._build_context()
-        WORLD["agents"][self.agent_id]["last_context"] = context
+        try:
+            client = self._get_client()
+            context = self._build_context()
+            WORLD["agents"][self.agent_id]["last_context"] = context
 
-        messages = [
-            {"role": "system", "content": context},
-            {"role": "user", "content": "Observe your surroundings and decide your next move."},
-        ]
+            messages = [
+                {"role": "system", "content": context},
+                {"role": "user", "content": "Observe your surroundings and decide your next move."},
+            ]
 
-        logger.info("Calling Mistral (%s) for %s", self.model, self.agent_id)
-        response = client.chat.complete(
-            model=self.model,
-            messages=messages,
-            tools=ROVER_TOOLS,
-        )
-        choice = response.choices[0]
-
-        thinking = choice.message.content or None
-        action = None
-
-        if thinking:
-            logger.info("Rover thinking: %s", thinking)
-
-        if choice.message.tool_calls:
-            tc = choice.message.tool_calls[0]
-            name = tc.function.name
-            args = (
-                json.loads(tc.function.arguments)
-                if isinstance(tc.function.arguments, str)
-                else tc.function.arguments
+            logger.info("Calling Mistral (%s) for %s", self.model, self.agent_id)
+            response = client.chat.complete(
+                model=self.model,
+                messages=messages,
+                tools=ROVER_TOOLS,
             )
-            if name in ("move", "dig", "pickup"):
-                action = {"name": name, "params": args}
+            choice = response.choices[0]
 
-        return {"thinking": thinking, "action": action}
+            thinking = choice.message.content or None
+            action = None
+
+            if thinking:
+                logger.info("Rover thinking: %s", thinking)
+
+            if choice.message.tool_calls:
+                tc = choice.message.tool_calls[0]
+                name = tc.function.name
+                args = (
+                    json.loads(tc.function.arguments)
+                    if isinstance(tc.function.arguments, str)
+                    else tc.function.arguments
+                )
+                if name in ("move", "dig", "pickup"):
+                    action = {"name": name, "params": args}
+                else:
+                    logger.warning("%s called unknown tool %r, ignoring", self.agent_id, name)
+
+            if action is None:
+                logger.warning(
+                    "%s returned no valid tool action (thinking=%r), using fallback",
+                    self.agent_id, thinking,
+                )
+                return self._fallback_turn("No valid tool action from model")
+
+            return {"thinking": thinking, "action": action}
+        except (SDKError, ConnectionError, TimeoutError, RuntimeError) as exc:
+            logger.exception("Rover LLM turn failed for %s, using fallback", self.agent_id)
+            return self._fallback_turn(f"LLM unavailable ({type(exc).__name__})")
+
+    def _fallback_turn(self, reason):
+        fallback = self._mock_fallback.run_turn()
+        fallback_thinking = fallback.get("thinking") or ""
+        prefix = f"LLM fallback: {reason}. "
+        fallback["thinking"] = (prefix + fallback_thinking).strip()
+        return fallback
 
 
 class MockRoverAgent:

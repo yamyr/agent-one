@@ -24,6 +24,10 @@ class Settings(BaseSettings):
     # Mistral
     mistral_api_key: str = ""
 
+    # Simulation timing
+    agent_turn_interval_seconds: float = 0.5
+    llm_turn_interval_seconds: float = 3.0
+
     # World generation seed (empty = random)
     world_seed: str = ""
 

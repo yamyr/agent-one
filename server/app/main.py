@@ -174,8 +174,12 @@ async def _start_simulation():
         logger.exception("Station startup failed")
 
     _agent_tasks.clear()
-    _agent_tasks.append(asyncio.create_task(agent_loop(MockRoverAgent(), interval=2)))
-    _agent_tasks.append(asyncio.create_task(agent_loop(RoverAgent(), interval=2)))
+    _agent_tasks.append(asyncio.create_task(
+        agent_loop(MockRoverAgent(), interval=settings.agent_turn_interval_seconds)
+    ))
+    _agent_tasks.append(asyncio.create_task(
+        agent_loop(RoverAgent(), interval=settings.llm_turn_interval_seconds)
+    ))
 
 
 def _stop_simulation():
