@@ -1,5 +1,6 @@
 <script setup>
 import { computed } from 'vue'
+import MapLegend from './MapLegend.vue'
 import { VIEWPORT_W, VIEWPORT_H, VEIN_COLORS, agentColor } from '../constants.js'
 
 const props = defineProps({
@@ -180,6 +181,7 @@ function onClick(e) {
     >
       No data
     </div>
+    <MapLegend />
   </section>
 </template>
 
@@ -189,6 +191,7 @@ function onClick(e) {
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-md);
   background: var(--bg-card);
+  position: relative;
 }
 
 .minimap-svg {
