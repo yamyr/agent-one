@@ -89,11 +89,19 @@ def _random_free_pos(occupied, rng=None, cx=0, cy=0):
     """Pick a random position within a chunk area not in `occupied`."""
     r = rng or random
     x0, y0 = cx * CHUNK_SIZE, cy * CHUNK_SIZE
-    while True:
+    for _ in range(CHUNK_SIZE * CHUNK_SIZE * 2):
         x = r.randint(x0, x0 + CHUNK_SIZE - 1)
         y = r.randint(y0, y0 + CHUNK_SIZE - 1)
         if (x, y) not in occupied:
             return x, y
+    # Fallback: linear scan for any free position
+    for y in range(y0, y0 + CHUNK_SIZE):
+        for x in range(x0, x0 + CHUNK_SIZE):
+            if (x, y) not in occupied:
+                return x, y
+    # Chunk fully occupied — return origin as last resort
+    logger.warning("Chunk (%d,%d) fully occupied, returning origin", cx, cy)
+    return x0, y0
 
 
 # --------------- Chunk-based procedural generation ---------------
@@ -256,16 +264,21 @@ def _update_bounds(x, y):
 
 def _tools_for_ui(tool_schemas):
     """Extract {name, description} from Mistral tool schemas for the UI."""
-    return [{"name": t["function"]["name"], "description": t["function"]["description"]} for t in tool_schemas]
+    return [
+        {"name": t["function"]["name"], "description": t["function"]["description"]}
+        for t in tool_schemas
+    ]
 
 
 def _rover_tools_for_ui():
     from .agent import ROVER_TOOLS
+
     return _tools_for_ui(ROVER_TOOLS)
 
 
 def _drone_tools_for_ui():
     from .agent import DRONE_TOOLS
+
     return _tools_for_ui(DRONE_TOOLS)
 
 
