@@ -28,6 +28,9 @@ function batteryPct() {
 <template>
   <div
     class="modal-overlay"
+    role="dialog"
+    aria-modal="true"
+    :aria-label="`Agent details for ${agentId}`"
     @click.self="emit('close')"
   >
     <div
@@ -41,6 +44,8 @@ function batteryPct() {
         >{{ agentId }}</span>
         <button
           class="modal-close"
+          type="button"
+          aria-label="Close agent details"
           @click="emit('close')"
         >
           x
@@ -292,8 +297,8 @@ function batteryPct() {
 }
 
 .inv-stone.unknown {
-  color: #4a4a6a;
-  border-color: #2a2a3a;
+  color: var(--accent-unknown);
+  border-color: var(--accent-unknown-border);
 }
 
 .modal-context {

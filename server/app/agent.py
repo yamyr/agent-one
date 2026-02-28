@@ -19,8 +19,8 @@ from .world import WORLD, GRID_W, GRID_H, DIRECTIONS, MAX_MOVE_DISTANCE, MAX_MOV
 from .world import FUEL_CAPACITY_ROVER, FUEL_CAPACITY_DRONE, DRONE_REVEAL_RADIUS
 from .world import BATTERY_COST_MOVE, BATTERY_COST_MOVE_DRONE, BATTERY_COST_DIG
 from .world import BATTERY_COST_PICKUP, BATTERY_COST_ANALYZE, BATTERY_COST_ANALYZE_GROUND
-from .world import BATTERY_COST_SCAN, RETURN_TO_BASE_THRESHOLD
-from .world import check_ground, _direction_hint, must_return_to_base
+from .world import BATTERY_COST_SCAN, BATTERY_COST_NOTIFY, MAX_INVENTORY_ROVER
+from .world import check_ground, _direction_hint
 from .world import execute_action, get_snapshot, charge_agent, next_tick
 from .rag import format_rag_context, retrieve_context
 
@@ -105,6 +105,15 @@ USE_SOLAR_BATTERY_TOOL = {
     },
 }
 
+NOTIFY_BASE_TOOL = {
+    "type": "function",
+    "function": {
+        "name": "notify_base",
+        "description": f"Send a radio notification to station about collected stones. Costs 2 fuel units (~{BATTERY_COST_NOTIFY:.2%} battery). Use after picking up a vein to inform the station.",
+        "parameters": {"type": "object", "properties": {}},
+    },
+}
+
 ROVER_TOOLS = [
     MOVE_TOOL,
     ANALYZE_TOOL,
@@ -113,6 +122,7 @@ ROVER_TOOLS = [
     ANALYZE_GROUND_TOOL,
     DEPLOY_SOLAR_PANEL_TOOL,
     USE_SOLAR_BATTERY_TOOL,
+    NOTIFY_BASE_TOOL,
 ]
 
 
@@ -233,8 +243,7 @@ class MistralRoverReasoner:
             f"Position: ({x}, {y})\n"
             f"Battery: {battery:.0%} ({moves_on_battery} moves remaining, {FUEL_CAPACITY_ROVER} fuel capacity)\n"
             f"Distance to station: {dist_to_station} tiles\n"
-            f"Safety margin: {'OK' if battery > RETURN_TO_BASE_THRESHOLD else 'LOW — return to station immediately'}\n"
-            f"Inventory: {len(inventory)} veins"
+            f"Inventory: {len(inventory)}/{MAX_INVENTORY_ROVER} veins"
             + (
                 " ("
                 + ", ".join(f"{s.get('grade', '?')} qty={s.get('quantity', 0)}" for s in inventory)
@@ -368,6 +377,7 @@ class MistralRoverReasoner:
                     "analyze_ground",
                     "deploy_solar_panel",
                     "use_solar_battery",
+                    "notify_base",
                 ):
                     action = {"name": name, "params": args}
                 else:
@@ -543,7 +553,6 @@ class DroneAgent:
             f"Position: ({x}, {y})\n"
             f"Battery: {battery:.0%} ({moves_on_battery} moves remaining, {FUEL_CAPACITY_DRONE} fuel capacity)\n"
             f"Distance to station: {dist_to_station} tiles\n"
-            f"Safety margin: {'OK' if battery > RETURN_TO_BASE_THRESHOLD else 'LOW — return to station'}\n"
             f"Tiles visited: {len(agent.get('visited', []))}\n"
             f"Scans performed: {len(WORLD.get('drone_scans', []))}"
         )
@@ -686,10 +695,12 @@ class MockDroneAgent:
                     },
                 }
 
-        # Battery safety — return to base if battery is low
-        if must_return_to_base(agent):
-            station = WORLD["agents"].get("station")
-            sp = station["position"] if station else [0, 0]
+        # Battery safety — mock agent's own reasoning (not engine logic)
+        station = WORLD["agents"].get("station")
+        sp = station["position"] if station else [0, 0]
+        dist = abs(x - sp[0]) + abs(y - sp[1])
+        cost_to_return = dist * BATTERY_COST_MOVE_DRONE
+        if agent["battery"] <= cost_to_return + 0.06 and [x, y] != sp:
             dx, dy = sp[0] - x, sp[1] - y
             if dx != 0:
                 direction = "east" if dx > 0 else "west"

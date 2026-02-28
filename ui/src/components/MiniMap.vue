@@ -1,6 +1,6 @@
 <script setup>
 import { computed } from 'vue'
-import { VIEWPORT_W, VIEWPORT_H, agentColor } from '../constants.js'
+import { VIEWPORT_W, VIEWPORT_H, VEIN_COLORS, agentColor } from '../constants.js'
 
 const props = defineProps({
   worldState: {
@@ -13,6 +13,18 @@ const props = defineProps({
   },
   camX: { type: Number, default: 0 },
   camY: { type: Number, default: 0 },
+})
+
+const veins = computed(() => {
+  if (!props.worldState) return []
+  return (props.worldState.stones || [])
+    .filter(s => revealedSet.value.has(`${s.position[0]},${s.position[1]}`))
+    .map((s, i) => ({
+      key: `vein-${i}-${s.position[0]}-${s.position[1]}`,
+      cx: (s.position[0] - bounds.value.min_x) * MINI_TILE + MINI_TILE / 2,
+      cy: (bounds.value.max_y - s.position[1]) * MINI_TILE + MINI_TILE / 2,
+      color: VEIN_COLORS[s.grade || 'unknown'] || VEIN_COLORS.unknown,
+    }))
 })
 
 const emit = defineEmits(['navigate'])
@@ -112,7 +124,7 @@ function onClick(e) {
         y="0"
         :width="mapW"
         :height="mapH"
-        fill="#060609"
+        fill="var(--bg-minimap)"
       />
 
       <!-- Revealed tiles -->
@@ -123,7 +135,7 @@ function onClick(e) {
         :y="t.sy"
         :width="MINI_TILE"
         :height="MINI_TILE"
-        fill="#1a1a28"
+        fill="var(--bg-minimap-revealed)"
       />
 
       <!-- Agent dots -->
@@ -137,6 +149,17 @@ function onClick(e) {
         opacity="0.9"
       />
 
+      <!-- Vein indicators -->
+      <circle
+        v-for="v in veins"
+        :key="v.key"
+        :cx="v.cx"
+        :cy="v.cy"
+        r="1"
+        :fill="v.color"
+        opacity="0.95"
+      />
+
       <!-- Viewport rectangle -->
       <rect
         :x="viewRect.x"
@@ -144,7 +167,7 @@ function onClick(e) {
         :width="viewRect.w"
         :height="viewRect.h"
         fill="none"
-        stroke="#668"
+        stroke="var(--accent-think)"
         stroke-width="1"
         opacity="0.7"
       />
@@ -171,5 +194,11 @@ function onClick(e) {
   max-height: 120px;
   display: block;
   cursor: crosshair;
+}
+
+@media (max-width: 480px) {
+  .minimap {
+    display: none;
+  }
 }
 </style>

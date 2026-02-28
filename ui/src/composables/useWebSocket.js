@@ -1,12 +1,13 @@
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 
-export function useWebSocket({ onConnect } = {}) {
+export function useWebSocket({ onConnect, onEvent } = {}) {
   const events = ref([])
   const connected = ref(false)
   const worldState = ref(null)
   const narration = ref(null)
   const narrationChunk = ref(null)
   let ws = null
+  let eventUid = 0
 
   const agentEvents = computed(() => {
     const byAgent = {}
@@ -43,10 +44,12 @@ export function useWebSocket({ onConnect } = {}) {
       } else if (event.source === 'narrator' && event.name === 'narration_chunk') {
         narrationChunk.value = event.payload
       } else {
+        event._uid = ++eventUid
         events.value.unshift(event)
         if (events.value.length > 200) {
           events.value.length = 200
         }
+        if (onEvent) onEvent(event)
       }
     }
 

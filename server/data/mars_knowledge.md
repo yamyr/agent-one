@@ -76,7 +76,7 @@ Battery is the critical resource constraining all agent operations:
 - Scan: 2 fuel units (~0.80% battery)
 - Reveal radius: 6 tiles around position
 
-**Return-to-base threshold**: 67% — agents must return to station when battery drops to this level.
+**Return-to-base**: Agents must maintain sufficient battery to return to station based on distance.
 Solar panels provide 25% emergency recharge each.
 
 ## Exploration Strategy
@@ -120,5 +120,5 @@ The complete mission workflow for basalt collection:
 
 **Key decision points**:
 - Skip low-grade veins if battery allows further exploration (unless target is nearly met)
-- Return early with partial load if battery is approaching 67%
+- Return early with partial load if battery is running low
 - Coordinate with drone scan data to minimize wasted exploration moves

@@ -30,7 +30,6 @@ def generate_knowledge():
         BATTERY_COST_ANALYZE,
         BATTERY_COST_ANALYZE_GROUND,
         BATTERY_COST_SCAN,
-        RETURN_TO_BASE_THRESHOLD,
         ROVER_REVEAL_RADIUS,
         DRONE_REVEAL_RADIUS,
         MAX_MOVE_DISTANCE,
@@ -134,7 +133,7 @@ Battery is the critical resource constraining all agent operations:
 - Scan: {int(BATTERY_COST_SCAN * FUEL_CAPACITY_DRONE)} fuel units (~{BATTERY_COST_SCAN:.2%} battery)
 - Reveal radius: {DRONE_REVEAL_RADIUS} tiles around position
 
-**Return-to-base threshold**: {RETURN_TO_BASE_THRESHOLD:.0%} — agents must return to station when battery drops to this level.
+**Return-to-base**: Agents must maintain sufficient battery to return to station based on distance.
 Solar panels provide {SOLAR_BATTERY_CAPACITY:.0%} emergency recharge each.
 
 ## Exploration Strategy
@@ -178,7 +177,7 @@ The complete mission workflow for basalt collection:
 
 **Key decision points**:
 - Skip low-grade veins if battery allows further exploration (unless target is nearly met)
-- Return early with partial load if battery is approaching {RETURN_TO_BASE_THRESHOLD:.0%}
+- Return early with partial load if battery is running low
 - Coordinate with drone scan data to minimize wasted exploration moves
 """
 

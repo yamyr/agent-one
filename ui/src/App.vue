@@ -1,6 +1,8 @@
 <script setup>
 import { ref, computed } from 'vue'
 import { useWebSocket } from './composables/useWebSocket.js'
+import { useKeyboard } from './composables/useKeyboard.js'
+import { useToasts } from './composables/useToasts.js'
 import { agentColor } from './constants.js'
 import AppHeader from './components/AppHeader.vue'
 import WorldMap from './components/WorldMap.vue'
@@ -10,6 +12,8 @@ import MissionBar from './components/MissionBar.vue'
 import EventLog from './components/EventLog.vue'
 import AgentDetailModal from './components/AgentDetailModal.vue'
 import NarrationPlayer from './components/NarrationPlayer.vue'
+import StatsBar from './components/StatsBar.vue'
+import ToastOverlay from './components/ToastOverlay.vue'
 
 const selectedAgent = ref(null)
 const paused = ref(false)
@@ -61,7 +65,29 @@ async function resetSimulation() {
   }
 }
 
-const { events, connected, worldState, agentIds, agentEvents, narration, narrationChunk } = useWebSocket({ onConnect: onWsConnect })
+const { toasts, addToast, dismiss: dismissToast } = useToasts()
+
+function onSimEvent(event) {
+  switch (event.name) {
+    case 'mission_success':
+      addToast(`Mission complete — ${event.payload?.collected_quantity ?? '?'} collected`, { type: 'success', duration: 6000 })
+      break
+    case 'mission_aborted':
+      addToast(`Mission aborted — ${event.payload?.reason || 'unknown'}`, { type: 'error', duration: 6000 })
+      break
+    case 'alert':
+      addToast(`${event.source}: ${event.payload?.message || 'Alert'}`, { type: 'warning' })
+      break
+    case 'analyze':
+      if (event.payload?.stone)
+        addToast(`${event.source}: found ${event.payload.stone.grade} vein`, { type: 'info' })
+      break
+    default:
+      break
+  }
+}
+
+const { events, connected, worldState, agentIds, agentEvents, narration, narrationChunk } = useWebSocket({ onConnect: onWsConnect, onEvent: onSimEvent })
 
 async function togglePause() {
   const endpoint = paused.value ? '/api/simulation/resume' : '/api/simulation/pause'
@@ -98,6 +124,24 @@ function setFollowAgent(id) {
 function onUnfollow() {
   followAgent.value = null
 }
+
+// Keyboard shortcuts
+useKeyboard({
+  onTogglePause: () => togglePause(),
+  onPanCamera: (dx, dy) => {
+    if (worldMapRef.value) {
+      worldMapRef.value.panCamera(dx, dy)
+      followAgent.value = null
+    }
+  },
+  onFollowAgent: (idx) => {
+    if (mobileAgents.value[idx]) {
+      setFollowAgent(mobileAgents.value[idx])
+    }
+  },
+  onFreeCamera: () => { followAgent.value = null },
+  onCloseModal: () => { selectedAgent.value = null },
+})
 </script>
 
 <template>
@@ -121,6 +165,12 @@ function onUnfollow() {
       @abort="abortMission"
     />
 
+    <StatsBar
+      :world-state="worldState"
+      :agent-ids="agentIds"
+      :event-count="events.length"
+    />
+
     <div class="top-row">
       <div class="left-col">
         <!-- Entity follow selector -->
@@ -130,14 +180,16 @@ function onUnfollow() {
             v-for="id in mobileAgents"
             :key="id"
             :class="['follow-btn', { active: followAgent === id }]"
-            :style="{ borderColor: agentColor(id), color: followAgent === id ? '#0a0a0f' : agentColor(id), backgroundColor: followAgent === id ? agentColor(id) : 'transparent' }"
+            :style="{ borderColor: agentColor(id), color: followAgent === id ? 'var(--bg-primary)' : agentColor(id), backgroundColor: followAgent === id ? agentColor(id) : 'transparent' }"
+            :aria-label="`Follow ${id}`"
             @click="setFollowAgent(id)"
           >
             {{ id }}
           </button>
           <button
             :class="['follow-btn', { active: !followAgent }]"
-            :style="{ borderColor: '#555', color: !followAgent ? '#0a0a0f' : '#555', backgroundColor: !followAgent ? '#555' : 'transparent' }"
+            :style="{ borderColor: 'var(--accent-free)', color: !followAgent ? 'var(--bg-primary)' : 'var(--accent-free)', backgroundColor: !followAgent ? 'var(--accent-free)' : 'transparent' }"
+            aria-label="Switch to free camera"
             @click="followAgent = null"
           >
             Free
@@ -168,12 +220,19 @@ function onUnfollow() {
       />
     </div>
 
-    <AgentDetailModal
-      v-if="selectedAgent"
-      :agent="agentData(selectedAgent)"
-      :agent-id="selectedAgent"
-      @close="closeAgent"
+    <ToastOverlay
+      :toasts="toasts"
+      @dismiss="dismissToast"
     />
+
+    <Transition name="modal">
+      <AgentDetailModal
+        v-if="selectedAgent"
+        :agent="agentData(selectedAgent)"
+        :agent-id="selectedAgent"
+        @close="closeAgent"
+      />
+    </Transition>
   </div>
 </template>
 
@@ -217,6 +276,11 @@ function onUnfollow() {
   --accent-task: #e0a040;
   --accent-memory: #7a9a7a;
   --accent-mission: #8a8a6a;
+  --accent-think: #668;
+  --accent-unknown: #4a4a6a;
+  --accent-unknown-border: #2a2a3a;
+  --accent-free: #555;
+  --accent-panel-stroke: #aa8020;
 
   /* Status backgrounds */
   --bg-status-ok: #113311;
@@ -224,6 +288,8 @@ function onUnfollow() {
   --bg-status-info: #1a1a30;
   --bg-status-warn: #2a1a0a;
   --bg-status-narration: #2a1a30;
+  --bg-minimap: #060609;
+  --bg-minimap-revealed: #1a1a28;
 
   /* Typography */
   --font-mono: 'JetBrains Mono', monospace;
@@ -293,6 +359,32 @@ h2 {
   border-radius: 2px;
 }
 
+/* ── Modal transition ── */
+.modal-enter-active,
+.modal-leave-active {
+  transition: opacity 0.25s ease;
+}
+
+.modal-enter-active .modal,
+.modal-leave-active .modal {
+  transition: transform 0.25s ease, opacity 0.25s ease;
+}
+
+.modal-enter-from,
+.modal-leave-to {
+  opacity: 0;
+}
+
+.modal-enter-from .modal {
+  transform: translateY(16px) scale(0.97);
+  opacity: 0;
+}
+
+.modal-leave-to .modal {
+  transform: translateY(8px) scale(0.98);
+  opacity: 0;
+}
+
 .follow-bar {
   display: flex;
   align-items: center;
@@ -324,5 +416,56 @@ h2 {
 
 .follow-btn.active {
   font-weight: bold;
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent-blue);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* ── Responsive: Tablet (≤768px) ── */
+@media (max-width: 768px) {
+  .app {
+    padding: 0.5rem;
+  }
+
+  .top-row {
+    flex-direction: column;
+  }
+
+  .left-col {
+    flex: none;
+  }
+}
+
+/* ── Responsive: Mobile (≤480px) ── */
+@media (max-width: 480px) {
+  .app {
+    padding: 0.25rem;
+  }
+
+  h2 {
+    font-size: 0.75rem;
+  }
+
+  .follow-bar {
+    gap: 0.2rem;
+  }
+
+  .follow-btn {
+    font-size: 0.55rem;
+    padding: 0.1rem 0.3rem;
+  }
 }
 </style>

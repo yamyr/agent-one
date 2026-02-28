@@ -5,7 +5,7 @@ from app.world import WORLD, GRID_W, GRID_H, move_agent, execute_action, get_sna
 from app.world import check_mission_status, charge_rover, charge_agent
 from app.world import BATTERY_COST_MOVE, BATTERY_COST_DIG, BATTERY_COST_PICKUP
 from app.world import BATTERY_COST_ANALYZE, BATTERY_COST_ANALYZE_GROUND
-from app.world import BATTERY_COST_SCAN, BATTERY_COST_MOVE_DRONE
+from app.world import BATTERY_COST_SCAN, BATTERY_COST_MOVE_DRONE, BATTERY_COST_NOTIFY
 from app.world import CHARGE_RATE, REVEAL_RADIUS, ROVER_REVEAL_RADIUS, DRONE_REVEAL_RADIUS
 from app.world import AGENT_STARTS
 from app.world import abort_mission, all_agents_at_station
@@ -13,6 +13,7 @@ from app.world import assign_mission, _cells_in_radius, record_memory, MEMORY_MA
 from app.world import update_tasks, _direction_hint
 from app.world import observe_rover, observe_station
 from app.world import VEIN_GRADES, VEIN_WEIGHTS, VEIN_QUANTITY_RANGES, TARGET_QUANTITY
+from app.world import MAX_INVENTORY_ROVER
 from app.models import RoverContext, StationContext, StoneInfo
 
 
@@ -639,6 +640,16 @@ class TestPickup(unittest.TestCase):
         self.assertFalse(result["ok"])
         self.assertIn("not yet analyzed", result["error"])
 
+    def test_pickup_inventory_full(self):
+        """Pickup should fail when inventory already has MAX_INVENTORY_ROVER veins."""
+        WORLD["agents"]["rover-mistral"]["inventory"] = [
+            {"type": "basalt_vein", "grade": "low", "quantity": 50}
+            for _ in range(MAX_INVENTORY_ROVER)
+        ]
+        result = execute_action("rover-mistral", "pickup", {})
+        self.assertFalse(result["ok"])
+        self.assertIn("Inventory full", result["error"])
+
     def test_dig_then_pickup(self):
         WORLD["stones"] = [_make_vein([5, 5], grade="medium", quantity=100, analyzed=True)]
         result = execute_action("rover-mistral", "dig", {})
@@ -858,11 +869,13 @@ class TestMissionCompletion(unittest.TestCase):
         self.assertEqual(snap["mission"]["status"], "running")
 
     def test_collected_quantity_updates_on_pickup(self):
+        """Pickup away from station: vein is in transit, not yet collected."""
         WORLD["stones"] = [
             _make_vein([5, 5], grade="high", quantity=200, analyzed=True, extracted=True)
         ]
         execute_action("rover-mistral", "pickup", {})
-        self.assertEqual(WORLD["mission"]["collected_quantity"], 200)
+        self.assertEqual(WORLD["mission"]["collected_quantity"], 0)
+        self.assertEqual(WORLD["mission"]["in_transit_quantity"], 200)
 
     def test_pickup_away_from_station_no_success(self):
         """Picking up a vein away from station should NOT trigger success."""
@@ -873,7 +886,8 @@ class TestMissionCompletion(unittest.TestCase):
         result = execute_action("rover-mistral", "pickup", {})
         self.assertEqual(WORLD["mission"]["status"], "running")
         self.assertNotIn("mission", result)
-        self.assertEqual(WORLD["mission"]["collected_quantity"], 900)
+        self.assertEqual(WORLD["mission"]["collected_quantity"], 0)
+        self.assertEqual(WORLD["mission"]["in_transit_quantity"], 900)
 
     def test_mission_success_on_delivery_to_station(self):
         """Success requires the rover to deliver basalt to the station."""
@@ -1130,14 +1144,14 @@ class TestUpdateTasks(unittest.TestCase):
         self.assertIn("Navigate", tasks[0])
         self.assertIn("east", tasks[0])
 
-    def test_return_to_station_when_has_target(self):
+    def test_inventory_status_when_has_basalt(self):
         WORLD["agents"]["rover-mistral"]["inventory"] = [
             {"type": "basalt_vein", "grade": "high", "quantity": 200}
         ]
         update_tasks("rover-mistral")
         tasks = WORLD["agents"]["rover-mistral"]["tasks"]
-        self.assertEqual(len(tasks), 1)
-        self.assertIn("station", tasks[0].lower())
+        self.assertTrue(any("Inventory" in t for t in tasks))
+        self.assertTrue(any("1/3" in t for t in tasks))
 
 
 class TestObserveRover(unittest.TestCase):
@@ -1599,3 +1613,75 @@ class TestStoneProximityConcentration(unittest.TestCase):
         WORLD["stones"] = [_make_vein([5, 5])]
         val = _stone_proximity_concentration(50, 50)
         self.assertEqual(val, 0.0)
+
+
+class TestNotifyBase(unittest.TestCase):
+    def setUp(self):
+        WORLD["agents"]["rover-mistral"]["position"] = [5, 5]
+        WORLD["agents"]["rover-mistral"]["battery"] = 1.0
+        WORLD["agents"]["rover-mistral"]["inventory"] = [
+            {"type": "basalt_vein", "grade": "rich", "quantity": 400},
+        ]
+        WORLD["agents"]["rover-mistral"]["visited"] = [[5, 5]]
+        WORLD["agents"]["rover-mistral"]["memory"] = []
+        self._original_stones = WORLD.get("stones", [])
+        WORLD["stones"] = []
+
+    def tearDown(self):
+        WORLD["stones"] = self._original_stones
+
+    def test_notify_base_success(self):
+        result = execute_action("rover-mistral", "notify_base", {})
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["position"], [5, 5])
+        self.assertIn("rich", result["message"])
+        self.assertEqual(len(result["inventory_summary"]), 1)
+        self.assertEqual(result["inventory_summary"][0]["grade"], "rich")
+        self.assertEqual(result["inventory_summary"][0]["quantity"], 400)
+        self.assertAlmostEqual(
+            WORLD["agents"]["rover-mistral"]["battery"], 1.0 - BATTERY_COST_NOTIFY
+        )
+
+    def test_notify_base_empty_inventory(self):
+        WORLD["agents"]["rover-mistral"]["inventory"] = []
+        result = execute_action("rover-mistral", "notify_base", {})
+        self.assertFalse(result["ok"])
+        self.assertIn("empty", result["error"])
+
+    def test_notify_base_low_battery(self):
+        WORLD["agents"]["rover-mistral"]["battery"] = 0.0
+        result = execute_action("rover-mistral", "notify_base", {})
+        self.assertFalse(result["ok"])
+        self.assertIn("Not enough battery", result["error"])
+
+    def test_notify_base_drone_rejected(self):
+        result = execute_action("drone-mistral", "notify_base", {})
+        self.assertFalse(result["ok"])
+        self.assertIn("Drones cannot", result["error"])
+
+
+class TestInTransitQuantity(unittest.TestCase):
+    def setUp(self):
+        WORLD["agents"]["rover-mistral"]["position"] = [5, 5]
+        WORLD["agents"]["rover-mistral"]["battery"] = 1.0
+        WORLD["agents"]["rover-mistral"]["inventory"] = [
+            {"type": "basalt_vein", "grade": "high", "quantity": 200},
+        ]
+        WORLD["agents"]["station"]["position"] = [0, 0]
+        WORLD["mission"]["status"] = "running"
+        WORLD["mission"]["target_type"] = "basalt_vein"
+        WORLD["mission"]["target_quantity"] = 500
+        self._original_stones = WORLD.get("stones", [])
+        WORLD["stones"] = []
+
+    def tearDown(self):
+        WORLD["stones"] = self._original_stones
+
+    def test_in_transit_quantity_tracked(self):
+        check_mission_status()
+        self.assertEqual(WORLD["mission"]["in_transit_quantity"], 200)
+
+    def test_in_transit_zero_when_at_station(self):
+        WORLD["agents"]["rover-mistral"]["position"] = [0, 0]
+        check_mission_status()
+        self.assertEqual(WORLD["mission"]["in_transit_quantity"], 0)

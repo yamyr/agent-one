@@ -40,6 +40,10 @@ const progressPct = computed(() => Math.min(100, Math.round((collected.value / t
       <span class="mission-progress">{{ collected }} / {{ target }}</span>
     </span>
     <span
+      v-if="mission.in_transit_quantity"
+      class="mission-transit"
+    >{{ mission.in_transit_quantity }} in transit</span>
+    <span
       class="mission-status"
       :class="mission.status"
     >{{ mission.status }}</span>
@@ -104,6 +108,11 @@ const progressPct = computed(() => Math.min(100, Math.round((collected.value / t
 .mission-progress {
   color: var(--text-primary);
   font-weight: bold;
+}
+
+.mission-transit {
+  color: #c9a227;
+  font-size: 0.7rem;
 }
 
 .mission-status {

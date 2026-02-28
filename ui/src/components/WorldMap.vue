@@ -1,5 +1,5 @@
 <script setup>
-import { computed, ref, watch } from 'vue'
+import { computed, ref, watch, onMounted, onUnmounted } from 'vue'
 import { TILE_SIZE, MAP_W, MAP_H, VIEWPORT_W, VIEWPORT_H, VEIN_COLORS, VEIN_SIZES, SOLAR_PANEL_COLOR, SOLAR_PANEL_DEPLETED_COLOR, agentColor, revealRadius } from '../constants.js'
 
 const props = defineProps({
@@ -23,17 +23,43 @@ const emit = defineEmits(['select-agent', 'unfollow'])
 const camX = ref(-Math.floor(VIEWPORT_W / 2))
 const camY = ref(-Math.floor(VIEWPORT_H / 2))
 
+// Smooth camera: targets that camX/camY interpolate toward
+const targetCamX = ref(camX.value)
+const targetCamY = ref(camY.value)
+const LERP_SPEED = 0.15 // fraction per frame (higher = snappier)
+let rafId = null
+const zoom = ref(1)
+const ZOOM_MIN = 0.7
+const ZOOM_MAX = 2.2
+const ZOOM_STEP = 0.1
+
+function cameraLoop() {
+  const dx = targetCamX.value - camX.value
+  const dy = targetCamY.value - camY.value
+  if (Math.abs(dx) > 0.01 || Math.abs(dy) > 0.01) {
+    camX.value += dx * LERP_SPEED
+    camY.value += dy * LERP_SPEED
+    // Snap when very close
+    if (Math.abs(dx) < 0.05) camX.value = targetCamX.value
+    if (Math.abs(dy) < 0.05) camY.value = targetCamY.value
+  }
+  rafId = requestAnimationFrame(cameraLoop)
+}
+
+onMounted(() => { rafId = requestAnimationFrame(cameraLoop) })
+onUnmounted(() => { if (rafId) cancelAnimationFrame(rafId) })
+
 // Track drag state
 const dragging = ref(false)
 const dragStart = ref({ x: 0, y: 0 })
 
-// Follow selected agent: center camera on it when worldState updates
+// Follow selected agent: update target (smooth interpolation via rAF)
 watch([() => props.worldState, () => props.followAgent], () => {
   if (!props.worldState || !props.followAgent) return
   const a = props.worldState.agents?.[props.followAgent]
   if (a) {
-    camX.value = a.position[0] - Math.floor(VIEWPORT_W / 2)
-    camY.value = a.position[1] - Math.floor(VIEWPORT_H / 2)
+    targetCamX.value = a.position[0] - Math.floor(VIEWPORT_W / 2)
+    targetCamY.value = a.position[1] - Math.floor(VIEWPORT_H / 2)
   }
 }, { deep: true })
 
@@ -89,6 +115,36 @@ const revealedSet = computed(() => {
 
 function isRevealed(x, y) {
   return revealedSet.value.has(`${x},${y}`)
+}
+
+// Grade weights for concentration radius (mirrors server logic)
+const GRADE_ORDER = ['low', 'medium', 'high', 'rich', 'pristine']
+
+function tileConcentration(x, y) {
+  if (!props.worldState) return 0
+  const stones = props.worldState.stones || []
+  let max = 0
+  for (const s of stones) {
+    const [sx, sy] = s.position
+    const d = Math.abs(x - sx) + Math.abs(y - sy)
+    if (d === 0) return 1
+    const gi = GRADE_ORDER.indexOf(s.grade !== 'unknown' ? s.grade : 'low')
+    const radius = 10 + (gi >= 0 ? gi : 0) * 2
+    const c = Math.max(0, 1 - d / radius)
+    if (c > max) max = c
+  }
+  return max
+}
+
+function tileFill(t) {
+  if (!isRevealed(t.x, t.y)) return null // CSS class handles unrevealed
+  const c = tileConcentration(t.x, t.y)
+  if (c <= 0.05) return null // use CSS default for near-zero
+  // Interpolate from revealed base (#0e0e16) toward warm amber (#443010)
+  const r = Math.round(14 + c * 54)  // 0e → 44
+  const g = Math.round(14 + c * 34)  // 0e → 30
+  const b = Math.round(22 + c * -6)  // 16 → 10
+  return `rgb(${r},${g},${b})`
 }
 
 function worldToScreen(wx, wy) {
@@ -179,13 +235,16 @@ function onMouseMove(e) {
   const tilePixelH = rect.height / VIEWPORT_H
   if (Math.abs(dx) >= tilePixelW) {
     const tileDx = Math.round(dx / tilePixelW)
-    camX.value -= tileDx
+    // Drag is instant — move both target and camera directly
+    targetCamX.value -= tileDx
+    camX.value = targetCamX.value
     dragStart.value.x = e.clientX
     emit('unfollow')
   }
   if (Math.abs(dy) >= tilePixelH) {
     const tileDy = Math.round(dy / tilePixelH)
-    camY.value += tileDy
+    targetCamY.value += tileDy
+    camY.value = targetCamY.value
     dragStart.value.y = e.clientY
     emit('unfollow')
   }
@@ -195,8 +254,138 @@ function onMouseUp() {
   dragging.value = false
 }
 
-// Expose camera for minimap
-defineExpose({ camX, camY })
+function clamp(v, min, max) {
+  return Math.max(min, Math.min(max, v))
+}
+
+function zoomIn() {
+  zoom.value = clamp(Number((zoom.value + ZOOM_STEP).toFixed(2)), ZOOM_MIN, ZOOM_MAX)
+}
+
+function zoomOut() {
+  zoom.value = clamp(Number((zoom.value - ZOOM_STEP).toFixed(2)), ZOOM_MIN, ZOOM_MAX)
+}
+
+function resetZoom() {
+  zoom.value = 1
+}
+
+function onWheel(e) {
+  e.preventDefault()
+  if (e.deltaY < 0) zoomIn()
+  else zoomOut()
+}
+
+const mapViewBox = computed(() => {
+  const vbW = MAP_W / zoom.value
+  const vbH = MAP_H / zoom.value
+  const x = (MAP_W - vbW) / 2
+  const y = (MAP_H - vbH) / 2
+  return `${x} ${y} ${vbW} ${vbH}`
+})
+
+// Agent trail data: last N visited positions per mobile agent
+const TRAIL_LENGTH = 20
+
+const agentTrails = computed(() => {
+  if (!props.worldState) return []
+  const trails = []
+  for (const id of props.agentIds) {
+    const a = props.worldState.agents[id]
+    if (!a || a.type === 'station') continue
+    const visited = a.visited || []
+    if (visited.length < 2) continue
+    // Take last TRAIL_LENGTH positions (most recent at end)
+    const recent = visited.slice(-TRAIL_LENGTH)
+    trails.push({ id, positions: recent, color: agentColor(id) })
+  }
+  return trails
+})
+
+function trailSegments(trail) {
+  const segs = []
+  const positions = trail.positions
+  const total = positions.length
+  for (let i = 0; i < total - 1; i++) {
+    const from = worldToScreen(positions[i][0], positions[i][1])
+    const to = worldToScreen(positions[i + 1][0], positions[i + 1][1])
+    // Opacity fades: oldest = 0.05, newest = 0.4
+    const t = i / (total - 1)
+    const opacity = 0.05 + t * 0.35
+    segs.push({
+      key: `${trail.id}-${i}`,
+      x1: from.sx,
+      y1: from.sy,
+      x2: to.sx,
+      y2: to.sy,
+      opacity,
+    })
+  }
+  return segs
+}
+
+// Tooltip helpers
+function agentTooltip(id) {
+  if (!props.worldState) return id
+  const a = props.worldState.agents[id]
+  if (!a) return id
+  const pos = `(${a.position[0]}, ${a.position[1]})`
+  const bat = Math.round((a.battery ?? 1) * 100)
+  const type = a.type || 'rover'
+  return `${id} [${type}]\nPosition: ${pos}\nBattery: ${bat}%\nTiles visited: ${(a.visited || []).length}`
+}
+
+function stoneTooltip(s) {
+  const grade = s.grade || 'unknown'
+  const qty = s.quantity ?? '?'
+  const pos = `(${s.position[0]}, ${s.position[1]})`
+  return `${grade.toUpperCase()} vein\nPosition: ${pos}\nQuantity: ${qty}`
+}
+
+function panelTooltip(p) {
+  const pos = `(${p.position[0]}, ${p.position[1]})`
+  return `Solar Panel ${p.depleted ? '(depleted)' : '(active)'}\nPosition: ${pos}`
+}
+
+function roverInventory(id) {
+  if (!props.worldState) return []
+  const a = props.worldState.agents[id]
+  if (!a || a.type !== 'rover') return []
+  return a.inventory || []
+}
+
+function carriedOreMarkers(id) {
+  const inv = roverInventory(id)
+  if (!inv.length) return []
+  return inv.slice(0, 3).map((stone, i) => ({
+    key: `${id}-ore-${i}`,
+    x: 8 + i * 3.8,
+    y: -7 + i * 1.8,
+    color: VEIN_COLORS[stone.grade || 'unknown'] || VEIN_COLORS.unknown,
+  }))
+}
+
+// Fog-of-war: compute screen positions for each mobile agent's clear zone
+const fogAgents = computed(() => {
+  if (!props.worldState) return []
+  const agents = []
+  for (const id of props.agentIds) {
+    const a = props.worldState.agents[id]
+    if (!a || a.type === 'station') continue
+    const { sx, sy } = worldToScreen(a.position[0], a.position[1])
+    const r = revealRadius(id) * TILE_SIZE
+    agents.push({ id, cx: sx, cy: sy, r: r + TILE_SIZE }) // +1 tile feather
+  }
+  return agents
+})
+
+function panCamera(dx, dy) {
+  targetCamX.value += dx
+  targetCamY.value += dy
+}
+
+// Expose camera for minimap & keyboard shortcuts
+defineExpose({ camX, camY, panCamera })
 </script>
 
 <template>
@@ -212,14 +401,47 @@ defineExpose({ camX, camY })
         class="cam-hint"
       >(free camera · drag to pan)</span>
     </h2>
+    <div class="map-controls">
+      <button
+        class="zoom-btn"
+        title="Zoom out"
+        type="button"
+        aria-label="Zoom out map"
+        @click="zoomOut"
+      >
+        −
+      </button>
+      <span class="zoom-label">{{ Math.round(zoom * 100) }}%</span>
+      <button
+        class="zoom-btn"
+        title="Zoom in"
+        type="button"
+        aria-label="Zoom in map"
+        @click="zoomIn"
+      >
+        +
+      </button>
+      <button
+        class="zoom-btn reset"
+        title="Reset zoom"
+        type="button"
+        aria-label="Reset map zoom"
+        @click="resetZoom"
+      >
+        Reset
+      </button>
+    </div>
     <svg
       v-if="worldState"
-      :viewBox="`0 0 ${MAP_W} ${MAP_H}`"
+      :viewBox="mapViewBox"
       class="map-svg"
+      role="img"
+      aria-label="Interactive world map. Drag or use keyboard arrows/WASD to pan, mouse wheel to zoom."
       @mousedown.prevent="onMouseDown"
       @mousemove="onMouseMove"
       @mouseup="onMouseUp"
       @mouseleave="onMouseUp"
+      @wheel="onWheel"
     >
       <!-- grid tiles -->
       <rect
@@ -230,9 +452,10 @@ defineExpose({ camX, camY })
         :width="TILE_SIZE"
         :height="TILE_SIZE"
         :class="isRevealed(t.x, t.y) ? 'grid-tile revealed' : 'grid-tile'"
+        :fill="tileFill(t) || undefined"
       />
 
-      <!-- SVG filter for vein glow -->
+      <!-- SVG defs: filters, gradients, masks -->
       <defs>
         <filter
           id="vein-glow"
@@ -251,6 +474,42 @@ defineExpose({ camX, camY })
             <feMergeNode in="SourceGraphic" />
           </feMerge>
         </filter>
+
+        <!-- Fog-of-war: radial gradient for clear zones -->
+        <radialGradient id="fog-clear-grad">
+          <stop
+            offset="0%"
+            stop-color="black"
+          />
+          <stop
+            offset="55%"
+            stop-color="black"
+          />
+          <stop
+            offset="100%"
+            stop-color="black"
+            stop-opacity="0"
+          />
+        </radialGradient>
+
+        <!-- Fog mask: white = fog visible, agent circles punch soft holes -->
+        <mask id="fog-mask">
+          <rect
+            x="0"
+            y="0"
+            :width="MAP_W"
+            :height="MAP_H"
+            fill="white"
+          />
+          <circle
+            v-for="fa in fogAgents"
+            :key="'fog-'+fa.id"
+            :cx="fa.cx"
+            :cy="fa.cy"
+            :r="fa.r"
+            fill="url(#fog-clear-grad)"
+          />
+        </mask>
       </defs>
 
       <!-- veins (stones) -->
@@ -264,11 +523,13 @@ defineExpose({ camX, camY })
           :y="stoneScreenY(s)"
           :width="veinSize(s)"
           :height="veinSize(s)"
-          :fill="VEIN_COLORS[veinGrade(s)] || '#666'"
+          :fill="VEIN_COLORS[veinGrade(s)] || 'var(--text-tertiary)'"
           :opacity="veinHasGlow(s) ? 0.95 : 0.85"
           :transform="stoneRotateCenter(s)"
           :filter="veinHasGlow(s) ? 'url(#vein-glow)' : undefined"
-        />
+        >
+          <title>{{ stoneTooltip(s) }}</title>
+        </rect>
       </template>
 
       <!-- solar panels -->
@@ -277,6 +538,7 @@ defineExpose({ camX, camY })
         :key="'panel-'+i"
       >
         <g v-if="isPanelVisible(p)">
+          <title>{{ panelTooltip(p) }}</title>
           <rect
             :x="panelScreenX(p)"
             :y="panelScreenY(p)"
@@ -291,7 +553,7 @@ defineExpose({ camX, camY })
             :y1="panelScreenY(p)"
             :x2="panelScreenX(p) + (TILE_SIZE - 4) / 2"
             :y2="panelScreenY(p) + TILE_SIZE - 4"
-            :stroke="p.depleted ? '#333' : '#aa8020'"
+            :stroke="p.depleted ? 'var(--text-dim)' : 'var(--accent-panel-stroke)'"
             stroke-width="0.5"
           />
           <line
@@ -299,10 +561,41 @@ defineExpose({ camX, camY })
             :y1="panelScreenY(p) + (TILE_SIZE - 4) / 2"
             :x2="panelScreenX(p) + TILE_SIZE - 4"
             :y2="panelScreenY(p) + (TILE_SIZE - 4) / 2"
-            :stroke="p.depleted ? '#333' : '#aa8020'"
+            :stroke="p.depleted ? 'var(--text-dim)' : 'var(--accent-panel-stroke)'"
             stroke-width="0.5"
           />
         </g>
+      </template>
+
+      <!-- fog-of-war overlay -->
+      <rect
+        x="0"
+        y="0"
+        :width="MAP_W"
+        :height="MAP_H"
+        fill="var(--bg-primary)"
+        opacity="0.6"
+        mask="url(#fog-mask)"
+        class="fog-overlay"
+      />
+
+      <!-- agent movement trails -->
+      <template
+        v-for="trail in agentTrails"
+        :key="'trail-'+trail.id"
+      >
+        <line
+          v-for="seg in trailSegments(trail)"
+          :key="seg.key"
+          :x1="seg.x1"
+          :y1="seg.y1"
+          :x2="seg.x2"
+          :y2="seg.y2"
+          :stroke="trail.color"
+          :stroke-opacity="seg.opacity"
+          stroke-width="1.5"
+          stroke-linecap="round"
+        />
       </template>
 
       <!-- station markers (square) -->
@@ -315,6 +608,7 @@ defineExpose({ camX, camY })
         style="cursor:pointer"
         @click="emit('select-agent', id)"
       >
+        <title>{{ agentTooltip(id) }}</title>
         <rect
           x="-7"
           y="-7"
@@ -385,6 +679,7 @@ defineExpose({ camX, camY })
         style="cursor:pointer"
         @click="emit('select-agent', id)"
       >
+        <title>{{ agentTooltip(id) }}</title>
         <circle
           r="7"
           :fill="agentColor(id)"
@@ -397,6 +692,19 @@ defineExpose({ camX, camY })
             repeatCount="indefinite"
           />
         </circle>
+        <rect
+          v-for="m in carriedOreMarkers(id)"
+          :key="m.key"
+          :x="m.x"
+          :y="m.y"
+          width="3"
+          height="3"
+          :fill="m.color"
+          stroke="var(--bg-primary)"
+          stroke-width="0.4"
+          transform="rotate(45)"
+          class="ore-marker"
+        />
         <circle
           r="12"
           fill="none"
@@ -444,6 +752,7 @@ defineExpose({ camX, camY })
         style="cursor:pointer"
         @click="emit('select-agent', id)"
       >
+        <title>{{ agentTooltip(id) }}</title>
         <polygon
           points="0,-9 8,6 -8,6"
           :fill="agentColor(id)"
@@ -532,12 +841,50 @@ defineExpose({ camX, camY })
   font-size: 6px;
 }
 
+.ore-marker {
+  opacity: 0.95;
+}
+
 .cam-hint {
   font-size: 0.6rem;
   color: var(--text-dimmer);
   font-weight: normal;
   text-transform: none;
   letter-spacing: 0;
+}
+
+.map-controls {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  margin-bottom: 0.35rem;
+}
+
+.zoom-btn {
+  font-family: var(--font-mono);
+  font-size: 0.65rem;
+  padding: 0.12rem 0.35rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--text-muted);
+  background: var(--bg-input);
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.zoom-btn:hover {
+  border-color: var(--text-secondary);
+  color: var(--text-primary);
+}
+
+.zoom-btn.reset {
+  margin-left: 0.2rem;
+}
+
+.zoom-label {
+  font-size: 0.65rem;
+  color: var(--text-muted);
+  min-width: 2.4rem;
+  text-align: center;
 }
 
 .map-svg {
