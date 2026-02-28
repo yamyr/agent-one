@@ -695,6 +695,24 @@ def charge_agent(agent_id):
 charge_rover = charge_agent
 
 
+# --- Agent setters (seal direct WORLD writes from other modules) ---
+
+
+def set_agent_model(agent_id: str, model: str):
+    WORLD["agents"][agent_id]["model"] = model
+
+
+def set_agent_last_context(agent_id: str, context: str):
+    WORLD["agents"][agent_id]["last_context"] = context
+
+
+def set_pending_commands(agent_id: str, commands: list | None):
+    if commands:
+        WORLD["agents"][agent_id]["pending_commands"] = commands
+    else:
+        WORLD["agents"][agent_id].pop("pending_commands", None)
+
+
 def _execute_deploy_solar_panel(agent_id):
     agent = WORLD["agents"].get(agent_id)
     if agent is None or agent.get("type") != "rover":
@@ -853,7 +871,7 @@ def record_memory(agent_id, text):
         del mem[: len(mem) - MEMORY_MAX]
 
 
-def _direction_hint(dx, dy):
+def direction_hint(dx, dy):
     """Return human-readable direction hint from deltas.
 
     Math convention: north = +Y, south = -Y.
@@ -884,7 +902,7 @@ def update_tasks(agent_id):
             agent["tasks"] = ["At station — mission aborted, standing by"]
         else:
             dist = abs(sp[0] - x) + abs(sp[1] - y)
-            hint = _direction_hint(sp[0] - x, sp[1] - y)
+            hint = direction_hint(sp[0] - x, sp[1] - y)
             agent["tasks"] = [
                 f"MISSION ABORTED — return to station at ({sp[0]},{sp[1]}) — {hint}, {dist} tiles"
             ]
@@ -926,7 +944,7 @@ def _update_drone_tasks(agent_id, agent):
                 best_target = (gx, gy)
 
     if best_target and best_dist > 0:
-        hint = _direction_hint(best_target[0] - x, best_target[1] - y)
+        hint = direction_hint(best_target[0] - x, best_target[1] - y)
         tasks.append(
             f"Fly to unscanned area at ({best_target[0]},{best_target[1]}) — {hint}, {best_dist} tiles"
         )
@@ -980,7 +998,7 @@ def _update_rover_tasks(agent_id, agent):
     if known_stones:
         _priority, dist, stone = known_stones[0]
         sx, sy = stone["position"]
-        hint = _direction_hint(sx - x, sy - y)
+        hint = direction_hint(sx - x, sy - y)
         if stone["type"] == "unknown":
             label = "unknown vein"
         else:
@@ -992,7 +1010,7 @@ def _update_rover_tasks(agent_id, agent):
         best_hotspot = _best_drone_hotspot(x, y, revealed_set)
         if best_hotspot:
             hx, hy, conc = best_hotspot
-            hint = _direction_hint(hx - x, hy - y)
+            hint = direction_hint(hx - x, hy - y)
             dist = abs(hx - x) + abs(hy - y)
             tasks.append(
                 f"Navigate to drone-scanned hotspot at ({hx},{hy}) — {hint}, {dist} tiles, concentration={conc:.2f}"
@@ -1078,7 +1096,7 @@ def observe_rover(agent_id):
         if sp in revealed_set and list(sp) != [x, y]:
             dist = abs(sp[0] - x) + abs(sp[1] - y)
             status = "analyzed" if stone.get("analyzed") else "unknown"
-            hint = _direction_hint(sp[0] - x, sp[1] - y)
+            hint = direction_hint(sp[0] - x, sp[1] - y)
             grade_info = stone.get("grade", "unknown")
             qty_info = stone.get("quantity", 0)
             label = (

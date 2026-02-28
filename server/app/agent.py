@@ -20,7 +20,8 @@ from .world import FUEL_CAPACITY_ROVER, FUEL_CAPACITY_DRONE, DRONE_REVEAL_RADIUS
 from .world import BATTERY_COST_MOVE, BATTERY_COST_MOVE_DRONE, BATTERY_COST_DIG
 from .world import BATTERY_COST_ANALYZE, BATTERY_COST_SCAN, BATTERY_COST_NOTIFY
 from .world import MAX_INVENTORY_ROVER
-from .world import check_ground, _direction_hint, _find_stone_at
+from .world import check_ground, direction_hint
+from .world import set_agent_model, set_agent_last_context, set_pending_commands
 from .world import execute_action, get_snapshot, charge_agent, next_tick, all_agents_at_station
 
 logger = logging.getLogger(__name__)
@@ -249,7 +250,7 @@ class MistralRoverReasoner:
             if sp in revealed_set and list(sp) != [x, y]:
                 dist = abs(sp[0] - x) + abs(sp[1] - y)
                 status = "analyzed" if stone.get("analyzed") else "unknown"
-                hint = _direction_hint(sp[0] - x, sp[1] - y)
+                hint = direction_hint(sp[0] - x, sp[1] - y)
                 grade_info = stone.get("grade", "unknown")
                 qty_info = stone.get("quantity", 0)
                 label = (
@@ -302,7 +303,7 @@ class MistralRoverReasoner:
         try:
             client = self._get_client()
             context = self._build_context()
-            WORLD["agents"][self.agent_id]["last_context"] = context
+            set_agent_last_context(self.agent_id, context)
 
             messages = [
                 {"role": "system", "content": context},
@@ -544,7 +545,7 @@ class DroneAgent:
         try:
             client = self._get_client()
             context = self._build_context()
-            WORLD["agents"][self.agent_id]["last_context"] = context
+            set_agent_last_context(self.agent_id, context)
 
             messages = [
                 {"role": "system", "content": context},
@@ -615,7 +616,7 @@ class MockDroneAgent:
             f"Mock drone at ({x},{y}), battery={agent['battery']:.0%}, "
             f"scans={len(WORLD.get('drone_scans', []))}"
         )
-        agent["last_context"] = context
+        set_agent_last_context(self.agent_id, context)
 
         # Check for recall command — override everything, head to station
         for cmd in agent.get("pending_commands", []):
@@ -748,10 +749,7 @@ class RoverLoop(BaseAgent):
             pending = [
                 {"name": "recall", "payload": {"reason": "Mission aborted — return to station"}}
             ]
-        if pending:
-            WORLD["agents"][self.agent_id]["pending_commands"] = pending
-        else:
-            WORLD["agents"][self.agent_id].pop("pending_commands", None)
+        set_pending_commands(self.agent_id, pending if pending else None)
 
         # If aborted and already at station, stop this agent's loop
         rover = WORLD["agents"].get(self.agent_id)
@@ -845,7 +843,7 @@ class RoverMistralLoop(RoverLoop):
     def __init__(self, interval: float = 3.0):
         super().__init__(agent_id="rover-mistral", interval=interval)
         self._reasoner = MistralRoverReasoner(agent_id=self.agent_id)
-        WORLD["agents"][self.agent_id]["model"] = self._reasoner.model
+        set_agent_model(self.agent_id, self._reasoner.model)
 
 
 class DroneLoop(BaseAgent):
@@ -870,9 +868,9 @@ class DroneLoop(BaseAgent):
 
         # During abort, force recall so drone heads to station
         if mission_status == "aborted":
-            WORLD["agents"][self.agent_id]["pending_commands"] = [
+            set_pending_commands(self.agent_id, [
                 {"name": "recall", "payload": {"reason": "Mission aborted — return to station"}}
-            ]
+            ])
 
         turn = await asyncio.to_thread(self._reasoner.run_turn)
         next_tick()
@@ -931,4 +929,4 @@ class DroneMistralLoop(DroneLoop):
     def __init__(self, interval: float = 2.0):
         super().__init__(agent_id="drone-mistral", interval=interval)
         self._reasoner = DroneAgent(agent_id=self.agent_id)
-        WORLD["agents"][self.agent_id]["model"] = self._reasoner.model
+        set_agent_model(self.agent_id, self._reasoner.model)

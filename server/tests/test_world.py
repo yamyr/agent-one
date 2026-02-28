@@ -10,7 +10,8 @@ from app.world import CHARGE_RATE, REVEAL_RADIUS, ROVER_REVEAL_RADIUS, DRONE_REV
 from app.world import AGENT_STARTS
 from app.world import abort_mission, all_agents_at_station
 from app.world import assign_mission, _cells_in_radius, record_memory, MEMORY_MAX
-from app.world import update_tasks, _direction_hint
+from app.world import update_tasks, direction_hint
+from app.world import set_agent_model, set_agent_last_context, set_pending_commands
 from app.world import observe_rover, observe_station
 from app.world import VEIN_GRADES, VEIN_WEIGHTS, VEIN_QUANTITY_RANGES, TARGET_QUANTITY
 from app.world import MAX_INVENTORY_ROVER
@@ -945,22 +946,22 @@ class TestDirectionHint(unittest.TestCase):
     """Direction hints use math convention: north = +Y, south = -Y."""
 
     def test_north(self):
-        self.assertEqual(_direction_hint(0, 3), "north")
+        self.assertEqual(direction_hint(0, 3), "north")
 
     def test_south(self):
-        self.assertEqual(_direction_hint(0, -3), "south")
+        self.assertEqual(direction_hint(0, -3), "south")
 
     def test_south_east(self):
-        self.assertEqual(_direction_hint(2, -5), "south, east")
+        self.assertEqual(direction_hint(2, -5), "south, east")
 
     def test_north_east(self):
-        self.assertEqual(_direction_hint(2, 5), "north, east")
+        self.assertEqual(direction_hint(2, 5), "north, east")
 
     def test_west(self):
-        self.assertEqual(_direction_hint(-1, 0), "west")
+        self.assertEqual(direction_hint(-1, 0), "west")
 
     def test_here(self):
-        self.assertEqual(_direction_hint(0, 0), "here")
+        self.assertEqual(direction_hint(0, 0), "here")
 
 
 class TestUpdateTasks(unittest.TestCase):
@@ -1543,3 +1544,19 @@ class TestInTransitQuantity(unittest.TestCase):
         WORLD["agents"]["rover-mistral"]["position"] = [0, 0]
         check_mission_status()
         self.assertEqual(WORLD["mission"]["in_transit_quantity"], 0)
+
+
+class TestWorldSetters(unittest.TestCase):
+    def test_set_agent_model(self):
+        set_agent_model("rover-mistral", "test-model")
+        self.assertEqual(WORLD["agents"]["rover-mistral"]["model"], "test-model")
+
+    def test_set_agent_last_context(self):
+        set_agent_last_context("rover-mistral", "some prompt")
+        self.assertEqual(WORLD["agents"]["rover-mistral"]["last_context"], "some prompt")
+
+    def test_set_pending_commands_set_and_clear(self):
+        set_pending_commands("rover-mistral", [{"name": "recall"}])
+        self.assertEqual(WORLD["agents"]["rover-mistral"]["pending_commands"], [{"name": "recall"}])
+        set_pending_commands("rover-mistral", None)
+        self.assertNotIn("pending_commands", WORLD["agents"]["rover-mistral"])

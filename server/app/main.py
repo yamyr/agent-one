@@ -14,7 +14,7 @@ from .db import init_db, close_db
 from .host import Host
 from .narrator import Narrator
 from .views import router as views_router
-from .world import WORLD, reset_world
+from .world import reset_world, set_agent_model
 
 logging.basicConfig(
     level=logging.INFO,
@@ -37,7 +37,7 @@ AGENT_MAP = {
 def _register_agents():
     """Construct and register agents from settings.active_agents."""
     # Station model — set here so it survives reset_world()
-    WORLD["agents"]["station"]["model"] = host._station.model
+    set_agent_model("station", host._station.model)
     active = [a.strip() for a in settings.active_agents.split(",") if a.strip()]
     for name in active:
         factory = AGENT_MAP.get(name)
