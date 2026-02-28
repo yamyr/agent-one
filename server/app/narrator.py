@@ -363,9 +363,7 @@ class Narrator:
             elevenlabs = self._get_elevenlabs()
             audio_bytes = None
             if elevenlabs:
-                audio_bytes = await asyncio.to_thread(
-                    _generate_audio, narration_text, elevenlabs
-                )
+                audio_bytes = await asyncio.to_thread(_generate_audio, narration_text, elevenlabs)
 
             if not audio_bytes:
                 # Fallback: send text-only narration
