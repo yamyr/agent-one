@@ -20,23 +20,24 @@ Mars Mission — Multi-Agent LLM Simulation (Mistral Hackathon)
 - [x] Rover agent: RoverAgent (Mistral LLM) + MockRoverAgent (random)
 - [x] Rover tools: `move` (cardinal directions), `check_ground` (auto after move)
 - [x] Rover memory: visited positions tracked, agents prefer unvisited tiles
-- [ ] Rover tool: `pick_up` — pick up stone at current position
-- [ ] Agent inventory: `carrying` field on agent state
-- [ ] Mission success: rover has a stone in inventory
+- [x] Rover tool: `pick_up` — pick up stone at current position
+- [x] Agent inventory: `carrying` field on agent state
+- [x] Mission success: rover has a stone in inventory
 
-**Done when:** rover explores the grid, lands on a stone, picks it up.
+**Done when:** rover explores the grid, lands on a stone, picks it up. ✅
 
 ## Milestone 2: Station Agent
 
 **Goal:** base station agent monitors and supports the rover.
 
-- [ ] Station agent: power management, telemetry monitoring
+- [x] Station agent: power management, telemetry monitoring
+- [x] Station tools: `charge_rover(agent_id)` — charge co-located rovers
 - [ ] Station tools: `allocate_power(agent, amount)`, `broadcast_alert(message)`
 - [ ] Station emits PowerBudgetWarning, EmergencyModeActivated actions
 - [ ] Goal confidence tracking: updates after each drill, visible in UI
-- [ ] Mission completion: goal threshold reached -> mission success message
+- [x] Mission completion: deliver target stones to station -> mission success
 
-**Done when:** station monitors rover, manages power, mission completes.
+**Done when:** station monitors rover, manages power, mission completes. (Partial — charging and mission completion done)
 
 ## Milestone 3: Drone + Action Piping
 
