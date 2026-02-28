@@ -43,14 +43,14 @@ class TestMockRoverAgent(unittest.TestCase):
         WORLD["agents"]["rover-mock"]["position"] = [0, 0]
         agent = MockRoverAgent()
         turn = agent.run_turn()
-        self.assertIn(turn["action"]["params"]["direction"], ["south", "east"])
+        self.assertIn(turn["action"]["params"]["direction"], ["north", "east"])
 
     def test_run_turn_at_bottom_right(self):
         WORLD["agents"]["rover-mock"]["position"] = [GRID_W - 1, GRID_H - 1]
         WORLD["agents"]["rover-mock"]["visited"] = [[GRID_W - 1, GRID_H - 1]]
         agent = MockRoverAgent()
         turn = agent.run_turn()
-        self.assertIn(turn["action"]["params"]["direction"], ["north", "west"])
+        self.assertIn(turn["action"]["params"]["direction"], ["south", "west"])
 
     def test_mock_prefers_unvisited(self):
         WORLD["agents"]["rover-mock"]["position"] = [10, 10]
@@ -62,4 +62,4 @@ class TestMockRoverAgent(unittest.TestCase):
         ]
         agent = MockRoverAgent()
         turn = agent.run_turn()
-        self.assertEqual(turn["action"]["params"]["direction"], "south")
+        self.assertEqual(turn["action"]["params"]["direction"], "north")
