@@ -229,7 +229,10 @@ class MistralRoverReasoner:
             "- Once you have collected enough basalt, RETURN TO STATION to deliver and complete the mission.\n"
             "- CRITICAL: Once you have collected the target quantity of basalt, STOP exploring and RETURN TO STATION IMMEDIATELY.\n"
             "- Prefer unvisited tiles when exploring. Don't backtrack aimlessly.\n"
-            "- Ground is auto-scanned after every move. No need to check manually.".format(
+            "- Ground is auto-scanned after every move. No need to check manually.\n"
+            f"- MOVEMENT EFFICIENCY: You can move up to {MAX_MOVE_DISTANCE} tiles per move action.\n"
+            f"  When heading to a known target, ALWAYS set distance={MAX_MOVE_DISTANCE} (or the remaining distance if closer).\n"
+            "  Moving 1 tile at a time wastes turns. Use the full distance.".format(
                 sx=station_pos[0], sy=station_pos[1]
             )
         )
@@ -673,9 +676,18 @@ class DroneAgent:
                     logger.warning("%s called unknown tool %r, ignoring", self.agent_id, name)
 
             if action is None:
-                raise RuntimeError(
-                    f"{self.agent_id} returned no valid tool action (thinking={thinking!r})"
-                )
+                agent = self._world.get_agent(self.agent_id)
+                is_first_turn = not agent.get("memory")
+                if is_first_turn:
+                    logger.warning(
+                        "%s returned no tool call on first turn, falling back to scan",
+                        self.agent_id,
+                    )
+                    action = {"name": "scan", "params": {}}
+                else:
+                    raise RuntimeError(
+                        f"{self.agent_id} returned no valid tool action (thinking={thinking!r})"
+                    )
 
             if thinking:
                 logger.info("Drone thinking: %s", thinking)
@@ -902,8 +914,12 @@ class RoverLoop(BaseAgent):
                         payload={"message": result["message"], "position": result["position"]},
                     )
                     messages.append(notify_msg)
-                    # Log receipt on station
+                    # Save to station memory so it persists across LLM calls
                     pos = result["position"]
+                    station_state = self._world.get_agents().get("station")
+                    if station_state:
+                        mem = station_state.setdefault("memory", [])
+                        mem.append(f"Radio from {self.agent_id} at ({pos[0]},{pos[1]}): {result['message']}")
                     station_log = make_message(
                         source="station",
                         type="event",
@@ -959,7 +975,7 @@ class RoverLoop(BaseAgent):
                 charge_msg = make_message(
                     source="station",
                     type="action",
-                    name="charge_rover",
+                    name="charge_agent",
                     payload=charge_result,
                 )
                 await host.broadcast(charge_msg.to_dict())
@@ -1038,8 +1054,12 @@ class DroneLoop(BaseAgent):
                         payload={"message": result["message"], "position": result["position"]},
                     )
                     messages.append(notify_msg)
-                    # Log receipt on station
+                    # Save to station memory so it persists across LLM calls
                     pos = result["position"]
+                    station_state = self._world.get_agents().get("station")
+                    if station_state:
+                        mem = station_state.setdefault("memory", [])
+                        mem.append(f"Radio from {self.agent_id} at ({pos[0]},{pos[1]}): {result['message']}")
                     station_log = make_message(
                         source="station",
                         type="event",
@@ -1083,7 +1103,7 @@ class DroneLoop(BaseAgent):
                 charge_msg = make_message(
                     source="station",
                     type="action",
-                    name="charge_rover",
+                    name="charge_agent",
                     payload=charge_result,
                 )
                 await host.broadcast(charge_msg.to_dict())

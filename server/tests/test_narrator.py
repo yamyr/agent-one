@@ -111,12 +111,12 @@ class TestBuildNarrationPrompt(unittest.TestCase):
         self.assertIn("Station assigned mission", prompt)
         self.assertIn("Collect 3 core stones", prompt)
 
-    def test_charge_rover_event(self):
+    def test_charge_agent_event(self):
         events = [
             {
                 "source": "station",
-                "name": "charge_rover",
-                "payload": {"battery_before": 0.3, "battery_after": 1.0},
+                "name": "charge_agent",
+                "payload": {"agent_id": "rover-mistral", "battery_before": 0.3, "battery_after": 1.0},
             }
         ]
         prompt = _build_narration_prompt(events, "")

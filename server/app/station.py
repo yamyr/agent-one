@@ -7,7 +7,7 @@ from mistralai import Mistral
 
 from .config import settings
 from .models import StationContext
-from .world import assign_mission, charge_rover
+from .world import assign_mission, charge_agent
 
 logger = logging.getLogger(__name__)
 
@@ -51,25 +51,25 @@ BROADCAST_ALERT_TOOL = {
     },
 }
 
-CHARGE_ROVER_TOOL = {
+CHARGE_AGENT_TOOL = {
     "type": "function",
     "function": {
-        "name": "charge_rover",
-        "description": "Recharge a rover's battery. The rover must be co-located with the station. Adds 20% charge per call (70 fuel units).",
+        "name": "charge_agent",
+        "description": "Recharge an agent's battery. The agent must be co-located with the station. Adds 20% charge per call (70 fuel units).",
         "parameters": {
             "type": "object",
             "properties": {
-                "rover_id": {
+                "agent_id": {
                     "type": "string",
-                    "description": "The rover agent to charge (e.g. 'rover-mistral').",
+                    "description": "The agent to charge (e.g. 'rover-mistral', 'drone-mistral').",
                 },
             },
-            "required": ["rover_id"],
+            "required": ["agent_id"],
         },
     },
 }
 
-STATION_TOOLS = [ASSIGN_MISSION_TOOL, BROADCAST_ALERT_TOOL, CHARGE_ROVER_TOOL]
+STATION_TOOLS = [ASSIGN_MISSION_TOOL, BROADCAST_ALERT_TOOL, CHARGE_AGENT_TOOL]
 
 SYSTEM_PROMPT = (
     "You are the Mars base station. You coordinate the Mars mission.\n"
@@ -127,8 +127,8 @@ def _parse_tool_calls(tool_calls):
             actions.append({"name": "assign_mission", "params": args})
         elif name == "broadcast_alert":
             actions.append({"name": "broadcast_alert", "params": args})
-        elif name == "charge_rover":
-            actions.append({"name": "charge_rover", "params": args})
+        elif name == "charge_agent":
+            actions.append({"name": "charge_agent", "params": args})
     return actions
 
 
@@ -138,8 +138,8 @@ def execute_action(action):
     params = action["params"]
     if name == "assign_mission":
         return assign_mission(params["agent_id"], params["objective"])
-    elif name == "charge_rover":
-        return charge_rover(params["rover_id"])
+    elif name == "charge_agent":
+        return charge_agent(params["agent_id"])
     elif name == "broadcast_alert":
         return {"ok": True, "message": params["message"]}
     return {"ok": False, "error": f"Unknown station action: {name}"}
@@ -161,7 +161,12 @@ class StationAgent:
         return self._client
 
     def _build_context(self, context: StationContext):
-        return SYSTEM_PROMPT + "\n== Current world state ==\n" + _build_world_summary(context)
+        parts = [SYSTEM_PROMPT, "\n== Current world state ==\n" + _build_world_summary(context)]
+        if context.memory:
+            parts.append("\n== Field Reports (memory) ==")
+            for entry in context.memory:
+                parts.append(f"- {entry}")
+        return "\n".join(parts)
 
     def _call_llm(self, user_message, context: StationContext):
         """Single LLM call with tools. Returns {thinking, actions} dict."""

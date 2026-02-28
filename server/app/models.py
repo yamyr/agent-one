@@ -90,3 +90,4 @@ class StationContext(BaseModel):
     grid_h: int
     rovers: list[RoverSummary]
     stones: list[StoneInfo]
+    memory: list[str] = []

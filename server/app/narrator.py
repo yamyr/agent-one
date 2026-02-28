@@ -34,7 +34,7 @@ INTERESTING_EVENTS = {
     # Station events
     "assign_mission": 3,  # mission assigned to rover
     "alert": 3,  # station broadcast alert
-    "charge_rover": 2,  # rover being charged
+    "charge_agent": 2,  # rover being charged
     # Agent internal
     "thinking": 1,  # agent reasoning (narrate sparingly)
     # Mission-level
@@ -158,10 +158,11 @@ def _build_narration_prompt(events: list[dict], world_summary: str) -> str:
             )
         elif name == "alert":
             lines.append(f'- Station alert: "{payload.get("message", "?")}"')
-        elif name == "charge_rover":
+        elif name == "charge_agent":
             bef = payload.get("battery_before", 0)
             aft = payload.get("battery_after", 0)
-            lines.append(f"- Station charged a rover: battery {bef:.0%} → {aft:.0%}")
+            agent_id = payload.get("agent_id", "agent")
+            lines.append(f"- Station charged {agent_id}: battery {bef:.0%} → {aft:.0%}")
         elif name in ("dig", "analyze"):
             stone = payload.get("stone", {})
             pos = payload.get("position", [])
