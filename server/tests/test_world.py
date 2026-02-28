@@ -1,47 +1,255 @@
 import unittest
 
-from app.world import WORLD, move_agent, get_snapshot
+from app.world import WORLD, move_agent, execute_action, get_snapshot, check_ground
+from app.world import BATTERY_COST_MOVE, GRID_W, GRID_H, AGENT_STARTS, assign_mission
 
 
 class TestMoveAgent(unittest.TestCase):
     def setUp(self):
-        # Reset rover position before each test
-        WORLD["agents"]["rover-mock"]["position"] = "Z01"
+        WORLD["agents"]["rover-mock"]["position"] = [2, 10]
         WORLD["agents"]["rover-mock"]["battery"] = 1.0
+        WORLD["agents"]["rover-mock"]["mission"] = {"objective": "Explore the terrain", "plan": []}
+        WORLD["agents"]["rover-mock"]["visited"] = [[2, 10]]
 
     def test_move_success(self):
-        result = move_agent("rover-mock", "Z03")
+        result = move_agent("rover-mock", 3, 10)
         self.assertTrue(result["ok"])
-        self.assertEqual(result["from"], "Z01")
-        self.assertEqual(result["to"], "Z03")
-        self.assertEqual(WORLD["agents"]["rover-mock"]["position"], "Z03")
+        self.assertEqual(result["from"], [2, 10])
+        self.assertEqual(result["to"], [3, 10])
+        self.assertEqual(WORLD["agents"]["rover-mock"]["position"], [3, 10])
 
-    def test_move_unknown_zone(self):
-        result = move_agent("rover-mock", "Z99")
+    def test_move_out_of_bounds_negative(self):
+        WORLD["agents"]["rover-mock"]["position"] = [0, 10]
+        result = move_agent("rover-mock", -1, 10)
         self.assertFalse(result["ok"])
-        self.assertIn("Unknown zone", result["error"])
-        # Position unchanged
-        self.assertEqual(WORLD["agents"]["rover-mock"]["position"], "Z01")
+        self.assertIn("Out of bounds", result["error"])
+
+    def test_move_out_of_bounds_over(self):
+        WORLD["agents"]["rover-mock"]["position"] = [19, 10]
+        result = move_agent("rover-mock", 20, 10)
+        self.assertFalse(result["ok"])
+        self.assertIn("Out of bounds", result["error"])
+
+    def test_move_not_adjacent(self):
+        result = move_agent("rover-mock", 5, 10)
+        self.assertFalse(result["ok"])
+        self.assertIn("Not adjacent", result["error"])
+        self.assertEqual(WORLD["agents"]["rover-mock"]["position"], [2, 10])
+
+    def test_move_diagonal_rejected(self):
+        result = move_agent("rover-mock", 3, 11)
+        self.assertFalse(result["ok"])
+        self.assertIn("Not adjacent", result["error"])
 
     def test_move_already_there(self):
-        result = move_agent("rover-mock", "Z01")
+        result = move_agent("rover-mock", 2, 10)
         self.assertFalse(result["ok"])
         self.assertIn("Already at", result["error"])
 
     def test_move_unknown_agent(self):
-        result = move_agent("rover-99", "Z02")
+        result = move_agent("rover-99", 3, 10)
         self.assertFalse(result["ok"])
         self.assertIn("Unknown agent", result["error"])
 
     def test_move_sequential(self):
-        move_agent("rover-mock", "Z02")
-        result = move_agent("rover-mock", "Z05")
+        move_agent("rover-mock", 3, 10)
+        result = move_agent("rover-mock", 4, 10)
         self.assertTrue(result["ok"])
-        self.assertEqual(result["from"], "Z02")
-        self.assertEqual(result["to"], "Z05")
+        self.assertEqual(result["from"], [3, 10])
+        self.assertEqual(result["to"], [4, 10])
+
+    def test_move_all_four_directions(self):
+        WORLD["agents"]["rover-mock"]["position"] = [10, 10]
+        for tx, ty in [(11, 10), (10, 10), (10, 11), (10, 10)]:
+            result = move_agent("rover-mock", tx, ty)
+            self.assertTrue(result["ok"])
 
     def test_get_snapshot_is_copy(self):
         snap = get_snapshot()
-        snap["agents"]["rover-mock"]["position"] = "Z99"
-        # Original unchanged
-        self.assertEqual(WORLD["agents"]["rover-mock"]["position"], "Z01")
+        snap["agents"]["rover-mock"]["position"] = [99, 99]
+        self.assertEqual(WORLD["agents"]["rover-mock"]["position"], [2, 10])
+
+    def test_snapshot_has_grid(self):
+        snap = get_snapshot()
+        self.assertEqual(snap["grid"]["w"], 20)
+        self.assertEqual(snap["grid"]["h"], 20)
+
+
+class TestExecuteAction(unittest.TestCase):
+    def setUp(self):
+        WORLD["agents"]["rover-mock"]["position"] = [2, 10]
+        WORLD["agents"]["rover-mock"]["battery"] = 1.0
+        WORLD["agents"]["rover-mock"]["mission"] = {"objective": "Explore the terrain", "plan": []}
+        WORLD["agents"]["rover-mock"]["visited"] = [[2, 10]]
+
+    def test_execute_move_east(self):
+        result = execute_action("rover-mock", "move", {"direction": "east"})
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["from"], [2, 10])
+        self.assertEqual(result["to"], [3, 10])
+        self.assertEqual(WORLD["agents"]["rover-mock"]["position"], [3, 10])
+
+    def test_execute_move_drains_battery(self):
+        result = execute_action("rover-mock", "move", {"direction": "east"})
+        self.assertTrue(result["ok"])
+        self.assertAlmostEqual(WORLD["agents"]["rover-mock"]["battery"], 1.0 - BATTERY_COST_MOVE)
+
+    def test_execute_move_failed_no_drain(self):
+        WORLD["agents"]["rover-mock"]["position"] = [0, 10]
+        result = execute_action("rover-mock", "move", {"direction": "west"})
+        self.assertFalse(result["ok"])
+        self.assertEqual(WORLD["agents"]["rover-mock"]["battery"], 1.0)
+
+    def test_execute_move_invalid_direction(self):
+        result = execute_action("rover-mock", "move", {"direction": "up"})
+        self.assertFalse(result["ok"])
+        self.assertIn("Invalid direction", result["error"])
+
+    def test_execute_unknown_action(self):
+        result = execute_action("rover-mock", "drill", {})
+        self.assertFalse(result["ok"])
+        self.assertIn("Unknown action", result["error"])
+
+    def test_execute_unknown_agent(self):
+        result = execute_action("rover-99", "move", {"direction": "east"})
+        self.assertFalse(result["ok"])
+        self.assertIn("Unknown agent", result["error"])
+
+    def test_execute_move_all_directions(self):
+        WORLD["agents"]["rover-mock"]["position"] = [10, 10]
+        for direction, expected in [
+            ("north", [10, 9]),
+            ("south", [10, 11]),
+            ("east", [11, 10]),
+            ("west", [10, 10]),
+        ]:
+            result = execute_action("rover-mock", "move", {"direction": direction})
+            self.assertTrue(result["ok"], f"Failed for direction {direction}")
+
+    def test_mission_in_snapshot(self):
+        snap = get_snapshot()
+        agent = snap["agents"]["rover-mock"]
+        self.assertIn("mission", agent)
+        self.assertEqual(agent["mission"]["objective"], "Explore the terrain")
+        self.assertEqual(agent["mission"]["plan"], [])
+
+
+class TestStones(unittest.TestCase):
+    def test_stones_in_snapshot(self):
+        snap = get_snapshot()
+        self.assertIn("stones", snap)
+        self.assertGreaterEqual(len(snap["stones"]), 5)
+        self.assertLessEqual(len(snap["stones"]), 8)
+
+    def test_stone_shape(self):
+        snap = get_snapshot()
+        for stone in snap["stones"]:
+            self.assertIn("position", stone)
+            self.assertIn("type", stone)
+            self.assertEqual(len(stone["position"]), 2)
+            self.assertIn(stone["type"], ("core", "basalt"))
+
+    def test_stones_in_bounds(self):
+        snap = get_snapshot()
+        for stone in snap["stones"]:
+            x, y = stone["position"]
+            self.assertGreaterEqual(x, 0)
+            self.assertLess(x, GRID_W)
+            self.assertGreaterEqual(y, 0)
+            self.assertLess(y, GRID_H)
+
+    def test_stones_avoid_agent_starts(self):
+        snap = get_snapshot()
+        for stone in snap["stones"]:
+            pos = tuple(stone["position"])
+            self.assertNotIn(pos, AGENT_STARTS)
+
+
+class TestVisited(unittest.TestCase):
+    def setUp(self):
+        WORLD["agents"]["rover-mock"]["position"] = [10, 10]
+        WORLD["agents"]["rover-mock"]["battery"] = 1.0
+        WORLD["agents"]["rover-mock"]["mission"] = {"objective": "Explore the terrain", "plan": []}
+        WORLD["agents"]["rover-mock"]["visited"] = [[10, 10]]
+
+    def test_visited_initial(self):
+        self.assertEqual(WORLD["agents"]["rover-mock"]["visited"], [[10, 10]])
+
+    def test_move_updates_visited(self):
+        execute_action("rover-mock", "move", {"direction": "east"})
+        visited = WORLD["agents"]["rover-mock"]["visited"]
+        self.assertIn([11, 10], visited)
+
+    def test_visited_no_duplicates(self):
+        execute_action("rover-mock", "move", {"direction": "east"})
+        execute_action("rover-mock", "move", {"direction": "west"})
+        visited = WORLD["agents"]["rover-mock"]["visited"]
+        self.assertEqual(visited.count([10, 10]), 1)
+
+
+class TestCheckGround(unittest.TestCase):
+    def setUp(self):
+        WORLD["agents"]["rover-mock"]["position"] = [10, 10]
+        WORLD["agents"]["rover-mock"]["battery"] = 1.0
+        WORLD["agents"]["rover-mock"]["mission"] = {"objective": "Explore the terrain", "plan": []}
+        WORLD["agents"]["rover-mock"]["visited"] = [[10, 10]]
+        self._original_stones = WORLD.get("stones", [])
+
+    def tearDown(self):
+        WORLD["stones"] = self._original_stones
+
+    def test_check_ground_finds_stone(self):
+        WORLD["stones"] = [{"position": [10, 10], "type": "core"}]
+        result = check_ground("rover-mock")
+        self.assertEqual(result["stone"], {"type": "core"})
+
+    def test_check_ground_no_stone(self):
+        WORLD["stones"] = [{"position": [5, 5], "type": "basalt"}]
+        result = check_ground("rover-mock")
+        self.assertIsNone(result["stone"])
+
+    def test_move_result_includes_ground(self):
+        WORLD["stones"] = []
+        result = execute_action("rover-mock", "move", {"direction": "east"})
+        self.assertTrue(result["ok"])
+        self.assertIn("ground", result)
+        self.assertIsNone(result["ground"]["stone"])
+
+
+class TestAssignMission(unittest.TestCase):
+    def setUp(self):
+        self._orig = WORLD["agents"]["rover-mock"]["mission"].copy()
+
+    def tearDown(self):
+        WORLD["agents"]["rover-mock"]["mission"] = self._orig
+
+    def test_assign_mission_success(self):
+        result = assign_mission("rover-mock", "Go to north edge")
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["agent_id"], "rover-mock")
+        self.assertEqual(result["objective"], "Go to north edge")
+        self.assertEqual(WORLD["agents"]["rover-mock"]["mission"]["objective"], "Go to north edge")
+
+    def test_assign_mission_unknown_agent(self):
+        result = assign_mission("rover-99", "Go anywhere")
+        self.assertFalse(result["ok"])
+        self.assertIn("Unknown agent", result["error"])
+
+    def test_assign_mission_preserves_plan(self):
+        WORLD["agents"]["rover-mock"]["mission"]["plan"] = ["step1"]
+        assign_mission("rover-mock", "New objective")
+        self.assertEqual(WORLD["agents"]["rover-mock"]["mission"]["plan"], ["step1"])
+
+
+class TestStationInWorld(unittest.TestCase):
+    def test_station_in_snapshot(self):
+        snap = get_snapshot()
+        self.assertIn("station", snap["agents"])
+        station = snap["agents"]["station"]
+        self.assertEqual(station["type"], "station")
+        self.assertEqual(station["position"], [0, 0])
+        self.assertIn("mission", station)
+        self.assertIn("battery", station)
+
+    def test_station_start_in_agent_starts(self):
+        self.assertIn((0, 0), AGENT_STARTS)
