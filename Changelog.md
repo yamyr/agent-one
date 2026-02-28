@@ -119,7 +119,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 * undo all changes after 77526be ([dde8ff6](https://github.com/mhack-agent-one/agent-one/commit/dde8ff6076b888d662b11fe61b2e6095f2100e82))
 
+
 ## [Unreleased]
+
+### Fixed
+
+- **station:** call `station_startup()` during lifespan init and simulation reset so the station LLM can assign initial missions to rovers ([#88](https://github.com/mhack-agent-one/agent-one/issues/88))
 
 ### Added (UI Polish Round 3 — Phases 3–8)
 

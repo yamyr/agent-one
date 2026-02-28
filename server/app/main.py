@@ -52,6 +52,7 @@ async def lifespan(app):
     init_db()
     _register_agents()
     await host.start()
+    await host.station_startup()
     yield
     host.stop()
     close_db()
@@ -103,6 +104,7 @@ async def reset_simulation():
     narrator.reset()
     _register_agents()
     await host.start()
+    await host.station_startup()
     return {"reset": True}
 
 
