@@ -35,11 +35,15 @@ rut tests/test_health.py::TestHealth::test_health_returns_ok  # single test
 ```
 
 Key modules:
-- `app/main.py` — FastAPI app, lifespan (DB init/close), CORS, health endpoint
+- `app/main.py` — FastAPI app, lifespan (DB init/close), CORS, health endpoint, agent loop
 - `app/config.py` — pydantic-settings (`Settings`), reads `.env`
 - `app/db.py` — SurrealDB connection helpers, `get_db()` generator for request-scoped connections
 - `app/broadcast.py` — `Broadcaster` singleton for WebSocket fan-out
 - `app/views.py` — REST endpoints + `/ws` WebSocket endpoint
+- `app/agent.py` — `RoverAgent` (Mistral LLM) + `MockRoverAgent` (random fallback)
+- `app/narrator.py` — AI narration engine: Mistral LLM text generation + ElevenLabs TTS, streaming via `narration_chunk` WebSocket events
+- `app/station.py` — Station agent logic (charge rovers, mission assignment)
+- `app/world.py` — World model, simulation tick loop, task planning
 
 Tests use `rut` (unittest runner) with in-memory SurrealDB spawned in `conftest.py` (`rut_session_setup`/`rut_session_teardown`). Base class `CaseWithDB` provides per-test DB isolation.
 
@@ -124,7 +128,8 @@ Vite proxies `/api/*` to `http://localhost:4009` and `/ws` to `ws://localhost:40
 |------|--------|
 | Python | 3.12+ |
 | LLM SDK | `mistralai` |
-| API key | `MISTRAL_API_KEY` env var |
+| TTS SDK | `elevenlabs` (optional — voice narration) |
+| API keys | `MISTRAL_API_KEY` (required), `ELEVENLABS_API_KEY` (optional) |
 | SurrealDB | running on port 4002 (dev) |
 | Node | >= 22.12.0 |
 | Base code | Protocol types and BaseAgent adapted from Snowball |

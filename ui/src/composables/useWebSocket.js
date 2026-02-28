@@ -5,6 +5,7 @@ export function useWebSocket({ onConnect } = {}) {
   const connected = ref(false)
   const worldState = ref(null)
   const narration = ref(null)
+  const narrationChunk = ref(null)
   let ws = null
 
   const agentEvents = computed(() => {
@@ -39,6 +40,8 @@ export function useWebSocket({ onConnect } = {}) {
         worldState.value = event.payload
       } else if (event.source === 'narrator' && event.type === 'narration') {
         narration.value = event.payload
+      } else if (event.source === 'narrator' && event.type === 'narration_chunk') {
+        narrationChunk.value = event.payload
       } else {
         events.value.unshift(event)
         if (events.value.length > 200) {
@@ -65,5 +68,5 @@ export function useWebSocket({ onConnect } = {}) {
     if (ws) ws.close()
   })
 
-  return { events, connected, worldState, agentIds, agentEvents, narration }
+  return { events, connected, worldState, agentIds, agentEvents, narration, narrationChunk }
 }

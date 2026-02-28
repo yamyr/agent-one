@@ -36,9 +36,9 @@ class Settings(BaseSettings):
 
     # ElevenLabs narration
     elevenlabs_api_key: str = ""
-    narration_enabled: bool = True
+    narration_enabled: bool = False
     narration_voice_id: str = "JBFqnCBsd6RMkjVDRZzb"  # George - warm narrator voice
-    narration_min_interval_seconds: float = 12.0
+    narration_min_interval_seconds: float = 5.0
 
 
 settings = Settings()

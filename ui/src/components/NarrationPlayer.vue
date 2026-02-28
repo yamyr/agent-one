@@ -1,8 +1,12 @@
 <script setup>
-import { ref, watch } from 'vue'
+import { ref, watch, onUnmounted } from 'vue'
 
 const props = defineProps({
   narration: {
+    type: Object,
+    default: null,
+  },
+  narrationChunk: {
     type: Object,
     default: null,
   },
@@ -17,9 +21,43 @@ const audioQueue = ref([])
 const isProcessing = ref(false)
 
 let currentAudio = null
+let typewriterQueue = []
+let typewriterTimer = null
+
+function startTypewriter() {
+  if (typewriterTimer) return
+  typewriterTimer = setInterval(() => {
+    if (typewriterQueue.length === 0) {
+      clearInterval(typewriterTimer)
+      typewriterTimer = null
+      return
+    }
+    currentText.value += typewriterQueue.shift()
+  }, 30)
+}
+
+function stopTypewriter() {
+  if (typewriterTimer) {
+    clearInterval(typewriterTimer)
+    typewriterTimer = null
+  }
+  typewriterQueue = []
+}
+
+onUnmounted(() => {
+  stopTypewriter()
+})
+
+watch(() => props.narrationChunk, (event) => {
+  if (!event || !event.text) return
+  const chars = event.text.split('')
+  typewriterQueue.push(...chars)
+  startTypewriter()
+})
 
 watch(() => props.narration, (event) => {
   if (!event) return
+  stopTypewriter()
   currentText.value = event.text || ''
 
   if (event.audio && props.narrationEnabled) {
@@ -135,10 +173,10 @@ function skipAudio() {
       <button
         class="toggle-btn"
         :class="{ off: !narrationEnabled }"
-        :title="narrationEnabled ? 'Mute narrator' : 'Unmute narrator'"
+        :title="narrationEnabled ? 'Turn voice off' : 'Turn voice on'"
         @click="emit('toggle-narration')"
       >
-        {{ narrationEnabled ? '🔊' : '🔇' }}
+        {{ narrationEnabled ? 'Voice ON' : 'Voice OFF' }}
       </button>
     </div>
   </div>
@@ -234,11 +272,13 @@ function skipAudio() {
 }
 
 .toggle-btn {
-  font-size: 0.9rem;
-  padding: 0.15rem 0.3rem;
+  font-family: 'Courier New', monospace;
+  font-size: 0.65rem;
+  padding: 0.2rem 0.5rem;
   border-radius: 3px;
-  border: 1px solid transparent;
-  background: none;
+  border: 1px solid #555;
+  background: #1a1a24;
+  color: #88cc88;
   cursor: pointer;
   opacity: 0.7;
   transition: opacity 0.2s;

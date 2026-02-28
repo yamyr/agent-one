@@ -33,7 +33,7 @@ async function resetSimulation() {
   }
 }
 
-const { events, connected, worldState, agentIds, agentEvents, narration } = useWebSocket({ onConnect: onWsConnect })
+const { events, connected, worldState, agentIds, agentEvents, narration, narrationChunk } = useWebSocket({ onConnect: onWsConnect })
 
 async function togglePause() {
   const endpoint = paused.value ? '/api/simulation/resume' : '/api/simulation/pause'
@@ -67,6 +67,7 @@ function agentData(id) {
 
     <NarrationPlayer
       :narration="narration"
+      :narration-chunk="narrationChunk"
       :narration-enabled="narrationEnabled"
       @toggle-narration="toggleNarration"
     />
@@ -74,11 +75,14 @@ function agentData(id) {
     <MissionBar :mission="worldState ? worldState.mission : null" />
 
     <div class="top-row">
-      <WorldMap
-        :world-state="worldState"
-        :agent-ids="agentIds"
-        @select-agent="selectAgent"
-      />
+      <div class="left-col">
+        <WorldMap
+          :world-state="worldState"
+          :agent-ids="agentIds"
+          @select-agent="selectAgent"
+        />
+        <EventLog :events="events" />
+      </div>
       <AgentPanes
         :world-state="worldState"
         :agent-ids="agentIds"
@@ -86,8 +90,6 @@ function agentData(id) {
         @select-agent="selectAgent"
       />
     </div>
-
-    <EventLog :events="events" />
 
     <AgentDetailModal
       v-if="selectedAgent"
@@ -121,6 +123,14 @@ body {
   display: flex;
   gap: 0.5rem;
   margin-bottom: 1rem;
+}
+
+.left-col {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  flex: 3;
+  min-width: 0;
 }
 
 .empty {

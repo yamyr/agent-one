@@ -8,6 +8,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **GitHub → Discord webhook notifications**: New workflow `.github/workflows/discord-git-notify.yml` sends PR and main-branch push events to Discord channels
+  - Separate jobs for PR events (opened/reopened/synchronize/ready_for_review/closed/merged) and pushes to `main`
+  - Channel routing via secrets: `DISCORD_WEBHOOK_URL` (default fallback), `DISCORD_WEBHOOK_URL_PR` (optional PR channel), `DISCORD_WEBHOOK_URL_MAIN` (optional main channel)
+  - Task plan documented in `tasks/discord-git-integration.md`
+
 - **ElevenLabs AI Narration**: Real-time narration of Mars mission events via ElevenLabs TTS
   - `server/app/narrator.py` — narration engine with event filtering (drama weights 1-3), Mistral LLM text generation ("David Attenborough meets space podcaster" persona), ElevenLabs TTS audio conversion, async event batching, and rate limiting
   - `ui/src/components/NarrationPlayer.vue` — audio player with base64 MP3 playback queue, skip/mute controls, pulsing mic icon, responsive layout
@@ -21,10 +26,25 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- **Always-on text narration**: Mistral `magistral-medium-latest` generates narrative text regardless of ElevenLabs voice toggle — voice is now opt-in only
+- **Streaming narration**: text streams to UI via `narration_chunk` WebSocket events using Mistral `chat.stream()`, with typewriter effect in NarrationPlayer
+- Audio emotion tags (`[laughs]`, `[sighs]`, etc.) stripped from display text via `_strip_audio_tags()` — kept only for TTS synthesis
+- NarrationPlayer toggle relabeled to "Voice ON" / "Voice OFF" to clarify it controls audio only
+- Narration model upgraded from `mistral-small-latest` to `magistral-medium-latest`
 
 ### Changed
 
-- Removed `check_ground` from rover actions — ground is now auto-scanned after every move
+- **EventLog moved below map**: EventLog now renders below the map in the right column instead of below the sidebar, improving layout readability
+
+### Fixed
+
+- Fixed broken `WorldMap.vue` — undefined variable reference that prevented the map from rendering (`fix/worldmap-broken-ref`)
+
+### Changed
+
+- **Rover visibility radius**: per-rover colored dashed circle on the map shows each rover's visibility radius
+- **Rovers start at station**: rovers now spawn at station coordinates `(0,0)` and explore outward from there
+- Removed `check_ground` from rover actions
 - Removed `charge` from rover actions — charging is now station-only via `charge_rover()`
 - Mission success now requires delivering target stones to the station, not just collecting them
 - Station agent can charge rovers (new `charge_rover` tool) and auto-charges them on arrival

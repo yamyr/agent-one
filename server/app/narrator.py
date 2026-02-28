@@ -9,6 +9,7 @@ from __future__ import annotations
 import asyncio
 import base64
 import logging
+import re
 import time
 
 from elevenlabs import ElevenLabs
@@ -182,6 +183,22 @@ def _build_narration_prompt(events: list[dict], world_summary: str) -> str:
     return "\n".join(lines)
 
 
+# ── Text helpers ────────────────────────────────────────────────────────────
+
+_AUDIO_TAG_RE = re.compile(
+    r"\[(laughs|sighs|whispers|gasps|clears throat)\]",
+    re.IGNORECASE,
+)
+
+
+def _strip_audio_tags(text: str) -> str:
+    """Remove ElevenLabs emotion tags for text-only display."""
+    cleaned = _AUDIO_TAG_RE.sub("", text)
+    # Collapse any resulting double-spaces
+    cleaned = re.sub(r"  +", " ", cleaned)
+    return cleaned.strip()
+
+
 # ── ElevenLabs TTS ──────────────────────────────────────────────────────────
 
 
@@ -240,20 +257,21 @@ class Narrator:
             self._mistral = Mistral(api_key=settings.mistral_api_key)
         return self._mistral
 
-    def _get_elevenlabs(self) -> ElevenLabs:
+    def _get_elevenlabs(self) -> ElevenLabs | None:
         if self._elevenlabs is None:
             if not settings.elevenlabs_api_key:
-                raise RuntimeError("ELEVENLABS_API_KEY not set")
+                logger.warning("ELEVENLABS_API_KEY not set — narration audio disabled")
+                return None
             self._elevenlabs = ElevenLabs(api_key=settings.elevenlabs_api_key)
         return self._elevenlabs
 
     async def feed(self, event: dict):
-        """Feed an event to the narrator. Non-blocking."""
-        if not self._enabled:
-            return
-        if not settings.elevenlabs_api_key:
-            return
+        """Feed an event to the narrator. Non-blocking.
 
+        Text narration is always generated regardless of the enabled flag.
+        The ``_enabled`` flag only controls whether ElevenLabs voice audio
+        is produced.
+        """
         weight = _is_interesting(event)
         if weight == 0:
             return
@@ -295,7 +313,7 @@ class Narrator:
         while self._running:
             try:
                 await asyncio.sleep(settings.narration_min_interval_seconds)
-                if self._event_buffer and self._enabled:
+                if self._event_buffer:
                     await self._process_batch()
             except asyncio.CancelledError:
                 break
@@ -348,9 +366,13 @@ class Narrator:
                     )
             world_summary = "\n".join(summary_parts)
 
-            # Generate narration text via Mistral
+            # Generate narration text via Mistral (streaming to UI)
             prompt = _build_narration_prompt(events, world_summary)
-            narration_text = await asyncio.to_thread(self._generate_text, prompt)
+
+            # Try streaming first; fall back to non-streaming on failure
+            narration_text = await self._generate_text_streaming(prompt)
+            if narration_text is None:
+                narration_text = await asyncio.to_thread(self._generate_text, prompt)
 
             if not narration_text:
                 logger.warning("Narrator: empty text from LLM")
@@ -358,38 +380,40 @@ class Narrator:
 
             logger.info("Narration: %s", narration_text)
 
-            # Convert to audio via ElevenLabs
-            audio_bytes = await asyncio.to_thread(
-                _generate_audio, narration_text, self._get_elevenlabs()
-            )
+            # Voice synthesis — only when narration is enabled
+            if self._enabled:
+                elevenlabs = self._get_elevenlabs()
+                audio_bytes = None
+                if elevenlabs:
+                    audio_bytes = await asyncio.to_thread(
+                        _generate_audio, narration_text, elevenlabs
+                    )
 
-            if not audio_bytes:
-                # Fallback: send text-only narration
-                await self._broadcast(
-                    {
-                        "source": "narrator",
-                        "type": "narration",
-                        "name": "narration",
-                        "payload": {
-                            "text": narration_text,
-                            "audio": None,
-                        },
-                    }
-                )
-                return
+                if audio_bytes:
+                    audio_b64 = base64.b64encode(audio_bytes).decode("ascii")
+                    await self._broadcast(
+                        {
+                            "source": "narrator",
+                            "type": "narration",
+                            "name": "narration",
+                            "payload": {
+                                "text": _strip_audio_tags(narration_text),
+                                "audio": audio_b64,
+                                "format": "mp3",
+                            },
+                        }
+                    )
+                    return
 
-            # Encode audio as base64 for WebSocket transport
-            audio_b64 = base64.b64encode(audio_bytes).decode("ascii")
-
+            # Text-only narration (no audio) — always sent
             await self._broadcast(
                 {
                     "source": "narrator",
                     "type": "narration",
                     "name": "narration",
                     "payload": {
-                        "text": narration_text,
-                        "audio": audio_b64,
-                        "format": "mp3",
+                        "text": _strip_audio_tags(narration_text),
+                        "audio": None,
                     },
                 }
             )
@@ -398,11 +422,14 @@ class Narrator:
             logger.exception("Narrator batch processing failed")
 
     def _generate_text(self, prompt: str) -> str | None:
-        """Call Mistral to generate narration text (runs in thread)."""
+        """Call Mistral to generate narration text (runs in thread).
+
+        Kept as a non-streaming fallback.
+        """
         try:
             client = self._get_mistral()
             response = client.chat.complete(
-                model="mistral-small-latest",
+                model="magistral-medium-latest",
                 messages=[
                     {"role": "system", "content": NARRATOR_SYSTEM_PROMPT},
                     {"role": "user", "content": prompt},
@@ -414,4 +441,46 @@ class Narrator:
             return text.strip() if text else None
         except Exception:
             logger.exception("Narrator LLM call failed")
+            return None
+
+    async def _generate_text_streaming(self, prompt: str) -> str | None:
+        """Stream narration text from Mistral, broadcasting chunks as they arrive.
+
+        Each chunk is sent to the UI as a ``narration_chunk`` event so the text
+        appears progressively.  Returns the full accumulated text when done.
+        """
+        try:
+            client = self._get_mistral()
+
+            stream = client.chat.stream(
+                model="magistral-medium-latest",
+                messages=[
+                    {"role": "system", "content": NARRATOR_SYSTEM_PROMPT},
+                    {"role": "user", "content": prompt},
+                ],
+                max_tokens=200,
+                temperature=0.9,
+            )
+
+            full_text = ""
+            for event in stream:
+                chunk = event.data.choices[0].delta.content
+                if chunk:
+                    full_text += chunk
+                    # Broadcast each chunk for progressive display (stripped
+                    # of audio tags since these are for TTS only)
+                    await self._broadcast(
+                        {
+                            "source": "narrator",
+                            "type": "narration",
+                            "name": "narration_chunk",
+                            "payload": {
+                                "text": _strip_audio_tags(chunk),
+                            },
+                        }
+                    )
+
+            return full_text.strip() if full_text else None
+        except Exception:
+            logger.exception("Narrator streaming LLM call failed")
             return None
