@@ -1,13 +1,16 @@
 import asyncio
 import logging
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from rich.logging import RichHandler
 
 from .agent import MockRoverAgent, RoverAgent
 from .broadcast import broadcaster
+from .config import settings
 from .db import init_db, close_db
 from .views import router as views_router
 from .world import execute_action, get_snapshot
@@ -91,7 +94,7 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:4089"],
+    allow_origins=[o.strip() for o in settings.cors_origins.split(",")],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -103,3 +106,9 @@ app.include_router(views_router)
 @app.get("/health")
 def health():
     return {"status": "ok"}
+
+
+# Serve Vue static files (must be after all API routes)
+_ui_dir = Path(__file__).resolve().parent.parent / "ui_dist"
+if _ui_dir.is_dir():
+    app.mount("/", StaticFiles(directory=_ui_dir, html=True), name="ui")

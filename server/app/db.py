@@ -24,12 +24,26 @@ def _create_connection() -> Surreal:
 
 
 def init_db():
-    """Verify DB connection on startup."""
+    """Verify DB connection on startup, with retries for Railway cold starts."""
+    import time as _time
+
     print(f"Connecting to SurrealDB: {settings.surreal_url}")
     print(f"Namespace: {settings.surreal_ns}, Database: {settings.surreal_db}")
-    client = _create_connection()
-    client.close()
-    print("SurrealDB connection verified")
+
+    max_attempts = 10
+    for attempt in range(1, max_attempts + 1):
+        try:
+            client = _create_connection()
+            client.close()
+            print("SurrealDB connection verified")
+            return
+        except Exception as exc:
+            if attempt == max_attempts:
+                raise RuntimeError(
+                    f"Failed to connect to SurrealDB after {max_attempts} attempts"
+                ) from exc
+            print(f"SurrealDB not ready (attempt {attempt}/{max_attempts}): {exc}")
+            _time.sleep(2)
 
 
 def close_db():

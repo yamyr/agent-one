@@ -80,7 +80,8 @@ const tiles = computed(() => {
 })
 
 function connect() {
-  ws = new WebSocket(`ws://${window.location.host}/ws`)
+  const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
+  ws = new WebSocket(`${proto}//${window.location.host}/ws`)
 
   ws.onopen = () => {
     connected.value = true
