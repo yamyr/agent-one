@@ -35,6 +35,10 @@ function batteryPct() {
           <div class="modal-label">Mission</div>
           <div class="modal-value">{{ agent.mission.objective }}</div>
         </div>
+        <div class="modal-section" v-if="agent.tasks && agent.tasks.length">
+          <div class="modal-label">Current Task</div>
+          <div class="modal-value task-value">{{ agent.tasks[0] }}</div>
+        </div>
         <div class="modal-section">
           <div class="modal-label">Position</div>
           <div class="modal-value">{{ position() }}</div>
@@ -149,6 +153,10 @@ function batteryPct() {
 .modal-value {
   font-size: 0.8rem;
   color: #c8c8d0;
+}
+
+.task-value {
+  color: #e0a040;
 }
 
 .modal-tools {

@@ -32,7 +32,10 @@ function inventoryCount(id) {
 function missionObjective(id) {
   if (!props.worldState) return ''
   const a = props.worldState.agents[id]
-  return a && a.mission ? a.mission.objective : ''
+  if (!a) return ''
+  // Show current task (dynamic) if available, otherwise static mission objective
+  if (a.tasks && a.tasks.length > 0) return a.tasks[0]
+  return a.mission ? a.mission.objective : ''
 }
 
 function agentMemory(id) {
