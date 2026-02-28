@@ -17,9 +17,8 @@ logger = logging.getLogger(__name__)
 #   inventory capacity. It NEVER computes strategy or tells agents what to do.
 # - Agents (LLM / mock fallback): observe raw state (battery %, position, station
 #   position, fuel costs) and reason about actions. Return-to-base is the agent's call.
-# - update_tasks(): generates observational hints (what's at current tile, nearby veins)
-#   but NEVER injects strategic directives like "return to base" or pre-computed costs.
-#   Providing pre-computed answers is cheating — agents must reason from raw observations.
+# - Tasks are LLM-owned: agents set their own task via ---TASK--- separator in their
+#   text response. No Python code computes tasks or injects strategic directives.
 
 if settings.world_seed:
     random.seed(settings.world_seed)
@@ -560,9 +559,6 @@ def execute_action(agent_id, action_name, params):
         if mission_event:
             result["mission"] = mission_event
 
-    new_task = update_tasks(agent_id)
-    if new_task is not None:
-        result["task_update"] = new_task
     return result
 
 
@@ -925,149 +921,6 @@ def direction_hint(dx, dy):
     elif dx < 0:
         parts.append("west")
     return ", ".join(parts) if parts else "here"
-
-
-def update_tasks(agent_id):
-    """Recompute short-term tasks for an agent based on current world state.
-
-    Returns the new primary task string if it changed, else None.
-    """
-    agent = WORLD["agents"].get(agent_id)
-    if agent is None:
-        return None
-    old_task = agent["tasks"][0] if agent.get("tasks") else None
-    old_key = old_task.split(" — ")[0] if old_task else None
-    # Mission aborted — only task is return to station
-    if WORLD["mission"]["status"] == "aborted":
-        station = WORLD["agents"].get("station")
-        sp = station["position"] if station else [0, 0]
-        x, y = agent["position"]
-        if [x, y] == sp:
-            agent["tasks"] = ["At station — mission aborted, standing by"]
-        else:
-            dist = abs(sp[0] - x) + abs(sp[1] - y)
-            hint = direction_hint(sp[0] - x, sp[1] - y)
-            agent["tasks"] = [
-                f"MISSION ABORTED — return to station at ({sp[0]},{sp[1]}) — {hint}, {dist} tiles"
-            ]
-        return
-    if agent.get("type") == "drone":
-        _update_drone_tasks(agent_id, agent)
-    else:
-        _update_rover_tasks(agent_id, agent)
-
-    new_task = agent["tasks"][0] if agent.get("tasks") else None
-    new_key = new_task.split(" — ")[0] if new_task else None
-    if new_key != old_key:
-        return new_task
-    return None
-
-
-def _update_drone_tasks(agent_id, agent):
-    """Recompute tasks for a drone — scan unscanned areas, explore the map."""
-    x, y = agent["position"]
-    _ = {tuple(c) for c in agent.get("visited", [])}  # reserved for future use
-    tasks = []
-
-    # Check if current area has been scanned already
-    scanned_positions = {tuple(s["position"]) for s in WORLD.get("drone_scans", [])}
-    if (x, y) not in scanned_positions:
-        tasks.append(f"Scan area at current position ({x},{y})")
-
-    # Find nearest unscanned region within a search radius around the drone
-    search_radius = 30
-    best_target = None
-    best_dist = float("inf")
-    for gx in range(x - search_radius, x + search_radius + 1):
-        for gy in range(y - search_radius, y + search_radius + 1):
-            if (gx, gy) in scanned_positions:
-                continue
-            min_scan_dist = min(
-                (abs(gx - sp[0]) + abs(gy - sp[1]) for sp in scanned_positions),
-                default=search_radius * 2,
-            )
-            if min_scan_dist < DRONE_REVEAL_RADIUS:
-                continue
-            d = abs(gx - x) + abs(gy - y)
-            if d < best_dist:
-                best_dist = d
-                best_target = (gx, gy)
-
-    if best_target and best_dist > 0:
-        hint = direction_hint(best_target[0] - x, best_target[1] - y)
-        tasks.append(
-            f"Fly to unscanned area at ({best_target[0]},{best_target[1]}) — {hint}, {best_dist} tiles"
-        )
-
-    if not tasks:
-        tasks.append("All areas scanned — patrol for new readings")
-
-    agent["tasks"] = tasks
-
-
-def _update_rover_tasks(agent_id, agent):
-    """Recompute short-term tasks for a rover based on current world state."""
-    x, y = agent["position"]
-    inventory = agent.get("inventory", [])
-    revealed_set = {tuple(c) for c in agent.get("revealed", [])}
-    tasks = []
-
-    inv_count = len(inventory)
-
-    # Vein at current tile → analyze or dig (priority order)
-    stone_here = _find_stone_at(x, y)
-    if stone_here:
-        if not stone_here.get("analyzed"):
-            tasks.append(f"Analyze unknown vein at current tile ({x},{y})")
-        elif inv_count < MAX_INVENTORY_ROVER:
-            tasks.append(
-                f"Dig {stone_here['grade']} vein (qty={stone_here['quantity']}) at current tile ({x},{y})"
-            )
-
-    # Known veins on revealed tiles → navigate to best one
-    # Prefer: unknown veins (might be high-grade) first, then by grade (higher = better), then distance
-    known_stones = []
-    for stone in WORLD.get("stones", []):
-        sp = tuple(stone["position"])
-        if sp in revealed_set:
-            dist = abs(sp[0] - x) + abs(sp[1] - y)
-            if stone["type"] == "unknown":
-                # Unknown veins get top priority (might be high-grade)
-                priority = 0
-            else:
-                # Analyzed veins: prioritize higher grades (lower priority number = better)
-                grade = stone.get("grade", "low")
-                grade_idx = VEIN_GRADES.index(grade) if grade in VEIN_GRADES else 0
-                # Invert: pristine(4) → priority 1, low(0) → priority 5
-                priority = len(VEIN_GRADES) - grade_idx
-            known_stones.append((priority, dist, stone))
-    known_stones.sort(key=lambda t: (t[0], t[1]))
-
-    if known_stones:
-        _priority, dist, stone = known_stones[0]
-        sx, sy = stone["position"]
-        hint = direction_hint(sx - x, sy - y)
-        if stone["type"] == "unknown":
-            label = "unknown vein"
-        else:
-            label = f"{stone.get('grade', '?')} vein (qty={stone.get('quantity', 0)})"
-        tasks.append(f"Navigate to {label} at ({sx},{sy}) — {hint}, {dist} tiles")
-
-    # Check drone scan hotspots — navigate toward high-concentration areas
-    if not tasks:
-        best_hotspot = _best_drone_hotspot(x, y, revealed_set)
-        if best_hotspot:
-            hx, hy, conc = best_hotspot
-            hint = direction_hint(hx - x, hy - y)
-            dist = abs(hx - x) + abs(hy - y)
-            tasks.append(
-                f"Navigate to drone-scanned hotspot at ({hx},{hy}) — {hint}, {dist} tiles, concentration={conc:.2f}"
-            )
-
-    if not tasks:
-        tasks.append("Explore unvisited tiles to find veins")
-
-    agent["tasks"] = tasks
 
 
 def _best_drone_hotspot(rx, ry, revealed_set):

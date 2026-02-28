@@ -1,7 +1,8 @@
 import unittest
 
-from app.world import world
+from app.world import world, execute_action
 from app.agent import MistralRoverReasoner, ROVER_TOOLS, DRONE_TOOLS
+from app.agent import parse_task_separator
 
 
 class TestRoverFallback(unittest.TestCase):
@@ -68,3 +69,67 @@ class TestToolLists(unittest.TestCase):
         names = self._tool_names(DRONE_TOOLS)
         self.assertIn("notify", names)
         self.assertNotIn("notify_base", names)
+
+
+class TestTaskSeparatorParsing(unittest.TestCase):
+    def test_no_separator(self):
+        thinking, task = parse_task_separator("I should move north.")
+        self.assertEqual(thinking, "I should move north.")
+        self.assertIsNone(task)
+
+    def test_with_separator(self):
+        text = "I need to head north toward the vein.\n---TASK---\nNavigate to basalt vein at (3,5)"
+        thinking, task = parse_task_separator(text)
+        self.assertEqual(thinking, "I need to head north toward the vein.")
+        self.assertEqual(task, "Navigate to basalt vein at (3,5)")
+
+    def test_none_input(self):
+        thinking, task = parse_task_separator(None)
+        self.assertIsNone(thinking)
+        self.assertIsNone(task)
+
+    def test_empty_input(self):
+        thinking, task = parse_task_separator("")
+        self.assertIsNone(thinking)
+        self.assertIsNone(task)
+
+    def test_separator_only(self):
+        thinking, task = parse_task_separator("---TASK---")
+        self.assertIsNone(thinking)
+        self.assertIsNone(task)
+
+    def test_separator_with_only_task(self):
+        thinking, task = parse_task_separator("---TASK---\nExplore north quadrant")
+        self.assertIsNone(thinking)
+        self.assertEqual(task, "Explore north quadrant")
+
+    def test_separator_with_only_thinking(self):
+        thinking, task = parse_task_separator("Moving east now.\n---TASK---\n")
+        self.assertEqual(thinking, "Moving east now.")
+        self.assertIsNone(task)
+
+    def test_fallback_includes_task_key(self):
+        agent = MistralRoverReasoner()
+        world.state["agents"]["rover-mistral"]["position"] = [10, 10]
+        world.state["agents"]["rover-mistral"]["battery"] = 1.0
+        world.state["agents"]["rover-mistral"]["mission"] = {"objective": "Explore", "plan": []}
+        world.state["agents"]["rover-mistral"]["visited"] = [[10, 10]]
+        turn = agent._fallback_turn("test")
+        self.assertNotIn("task", turn)
+
+
+class TestExecuteActionNoTaskUpdate(unittest.TestCase):
+    def setUp(self):
+        self._orig_pos = world.state["agents"]["rover-mistral"]["position"][:]
+        self._orig_bat = world.state["agents"]["rover-mistral"]["battery"]
+        world.state["agents"]["rover-mistral"]["position"] = [5, 5]
+        world.state["agents"]["rover-mistral"]["battery"] = 1.0
+
+    def tearDown(self):
+        world.state["agents"]["rover-mistral"]["position"] = self._orig_pos
+        world.state["agents"]["rover-mistral"]["battery"] = self._orig_bat
+
+    def test_move_result_has_no_task_update(self):
+        result = execute_action("rover-mistral", "move", {"direction": "north"})
+        self.assertTrue(result["ok"])
+        self.assertNotIn("task_update", result)

@@ -27,6 +27,24 @@ from .world import execute_action, get_snapshot, charge_agent, next_tick
 
 logger = logging.getLogger(__name__)
 
+TASK_SEPARATOR = "---TASK---"
+
+
+def parse_task_separator(text):
+    """Split LLM text on ---TASK--- separator.
+
+    Returns (thinking, task) where task is None if no separator found.
+    """
+    if not text:
+        return (None, None)
+    if TASK_SEPARATOR in text:
+        parts = text.split(TASK_SEPARATOR, 1)
+        thinking = parts[0].strip() or None
+        task = parts[1].strip() or None
+        return (thinking, task)
+    return (text.strip() or None, None)
+
+
 MOVE_TOOL = {
     "type": "function",
     "function": {
@@ -209,8 +227,7 @@ class MistralRoverReasoner:
             "- Once you have collected enough basalt, RETURN TO STATION to deliver and complete the mission.\n"
             "- CRITICAL: Once you have collected the target quantity of basalt, STOP exploring and RETURN TO STATION IMMEDIATELY.\n"
             "- Prefer unvisited tiles when exploring. Don't backtrack aimlessly.\n"
-            "- Ground is auto-scanned after every move. No need to check manually.\n"
-            "- Follow your current tasks list. It tells you exactly what to do next.".format(
+            "- Ground is auto-scanned after every move. No need to check manually.".format(
                 sx=station_pos[0], sy=station_pos[1]
             )
         )
@@ -227,13 +244,9 @@ class MistralRoverReasoner:
             )
         )
 
-        tasks = agent.get("tasks", [])
-        if tasks:
-            parts.append("\n== Current Tasks ==")
-            for i, task in enumerate(tasks, 1):
-                parts.append(f"{i}. {task}")
-        else:
-            parts.append("\n== Current Tasks ==\n1. Explore unvisited tiles to find veins")
+        current_task = agent.get("tasks", [None])[0] if agent.get("tasks") else None
+        if current_task:
+            parts.append(f"\n== Current Task ==\n{current_task}")
 
         safety_margin = dist_to_station + 5
         battery_critical = moves_on_battery <= safety_margin
@@ -346,12 +359,8 @@ class MistralRoverReasoner:
                 tools=ROVER_TOOLS,
             )
             choice = response.choices[0]
-
             thinking = choice.message.content or None
             action = None
-
-            if thinking:
-                logger.info("Rover thinking: %s", thinking)
 
             if choice.message.tool_calls:
                 tc = choice.message.tool_calls[0]
@@ -374,15 +383,15 @@ class MistralRoverReasoner:
                     logger.warning("%s called unknown tool %r, ignoring", self.agent_id, name)
 
             if action is None:
-                logger.warning(
-                    "%s returned no valid tool action (thinking=%r), using fallback",
-                    self.agent_id,
-                    thinking,
+                raise RuntimeError(
+                    f"{self.agent_id} returned no valid tool action (thinking={thinking!r})"
                 )
-                return self._fallback_turn("No valid tool action from model")
+
+            if thinking:
+                logger.info("Rover thinking: %s", thinking)
 
             return {"thinking": thinking, "action": action}
-        except (SDKError, ConnectionError, TimeoutError, RuntimeError) as exc:
+        except (SDKError, ConnectionError, TimeoutError) as exc:
             logger.exception("Rover LLM turn failed for %s, using fallback", self.agent_id)
             return self._fallback_turn(f"LLM unavailable ({type(exc).__name__})")
 
@@ -514,18 +523,16 @@ class DroneAgent:
             "- Prioritize scanning unexplored areas far from previous scan positions.\n"
             "\n"
             "RADIO (notify tool):\n"
-            f"- Costs 2 fuel units (~{BATTERY_COST_NOTIFY:.2%} battery). Use it — your scan findings are critical.\n"
-            "- Notify station after every scan that finds a hotspot (peak > 0.5).\n"
+            f"- Costs 2 fuel units (~{BATTERY_COST_NOTIFY:.2%} battery).\n"
+            "- MANDATORY: After any scan with peak >= 0.5, you MUST call notify BEFORE moving.\n"
             "  Include the position and peak reading so station can dispatch rovers.\n"
-            "- Notify station when you have completed a sweep of a region.\n"
-            "- Notify station if your battery is low and you cannot cover remaining areas.\n"
+            "- Also notify station when your battery is low or you have completed a sweep.\n"
             "- You are the eyes of the mission. Rovers are blind without your reports.\n"
             "\n"
             "RULES:\n"
             f"- Battery: move costs 1 fuel unit/tile (~{BATTERY_COST_MOVE_DRONE:.2%}), scan costs 2 fuel units (~{BATTERY_COST_SCAN:.2%}), notify costs 2 fuel units (~{BATTERY_COST_NOTIFY:.2%}). You can fly up to {MAX_MOVE_DISTANCE_DRONE} tiles per move.\n"
             "- Station is at ({sx},{sy}). Return when battery is low for recharge.\n"
-            "- ALWAYS keep enough battery to return to station.\n"
-            "- Follow your current tasks list.".format(sx=station_pos[0], sy=station_pos[1])
+            "- ALWAYS keep enough battery to return to station.".format(sx=station_pos[0], sy=station_pos[1])
         )
 
         parts.append(
@@ -534,15 +541,9 @@ class DroneAgent:
             f"Scan coverage: {coverage:.0f}% of map"
         )
 
-        tasks = agent.get("tasks", [])
-        if tasks:
-            parts.append("\n== Current Tasks ==")
-            for i, task in enumerate(tasks, 1):
-                parts.append(f"{i}. {task}")
-        else:
-            parts.append(
-                "\n== Current Tasks ==\n1. Scan current area, then fly to unscanned regions"
-            )
+        current_task = agent.get("tasks", [None])[0] if agent.get("tasks") else None
+        if current_task:
+            parts.append(f"\n== Current Task ==\n{current_task}")
 
         parts.append(
             f"\n== State ==\n"
@@ -600,12 +601,8 @@ class DroneAgent:
                 tools=DRONE_TOOLS,
             )
             choice = response.choices[0]
-
             thinking = choice.message.content or None
             action = None
-
-            if thinking:
-                logger.info("Drone thinking: %s", thinking)
 
             if choice.message.tool_calls:
                 tc = choice.message.tool_calls[0]
@@ -621,14 +618,15 @@ class DroneAgent:
                     logger.warning("%s called unknown tool %r, ignoring", self.agent_id, name)
 
             if action is None:
-                logger.warning(
-                    "%s returned no valid tool action, using fallback",
-                    self.agent_id,
+                raise RuntimeError(
+                    f"{self.agent_id} returned no valid tool action (thinking={thinking!r})"
                 )
-                return self._fallback_turn("No valid tool action from model")
+
+            if thinking:
+                logger.info("Drone thinking: %s", thinking)
 
             return {"thinking": thinking, "action": action}
-        except (SDKError, ConnectionError, TimeoutError, RuntimeError) as exc:
+        except (SDKError, ConnectionError, TimeoutError) as exc:
             logger.exception("Drone LLM turn failed for %s, using fallback", self.agent_id)
             return self._fallback_turn(f"LLM unavailable ({type(exc).__name__})")
 
@@ -667,6 +665,7 @@ class MockDroneAgent:
                     thinking = f"Recall received but already at station ({x}, {y})."
                     return {
                         "thinking": thinking,
+                        
                         "action": {"name": "move", "params": {"direction": "north", "distance": 1}},
                     }
                 if abs(dx) >= abs(dy):
@@ -679,6 +678,7 @@ class MockDroneAgent:
                 thinking = f"RECALL received: {reason}. Heading to station at ({sp[0]},{sp[1]})."
                 return {
                     "thinking": thinking,
+                    
                     "action": {
                         "name": "move",
                         "params": {"direction": direction, "distance": distance},
@@ -706,6 +706,7 @@ class MockDroneAgent:
             )
             return {
                 "thinking": thinking,
+                
                 "action": {
                     "name": "move",
                     "params": {"direction": direction, "distance": distance},
@@ -751,6 +752,7 @@ class MockDroneAgent:
             )
             return {
                 "thinking": thinking,
+                
                 "action": {
                     "name": "move",
                     "params": {"direction": direction, "distance": distance},
@@ -763,6 +765,7 @@ class MockDroneAgent:
         thinking = f"I'm at ({x}, {y}). All nearby areas covered, exploring outward."
         return {
             "thinking": thinking,
+            
             "action": {
                 "name": "move",
                 "params": {"direction": direction, "distance": MAX_MOVE_DISTANCE_DRONE},
@@ -862,15 +865,20 @@ class RoverLoop(BaseAgent):
                         )
                         messages.append(mission_msg)
 
-                task_text = result.get("task_update")
-                if task_text:
-                    task_msg = make_message(
-                        source=self.agent_id,
-                        type="event",
-                        name="task_update",
-                        payload={"task": task_text},
-                    )
-                    messages.append(task_msg)
+        # LLM-owned task: update agent tasks from LLM output
+        llm_task = turn.get("task")
+        if llm_task is not None:
+            agent_state = self._world.get_agent(self.agent_id)
+            old_task = agent_state.get("tasks", [None])[0]
+            if llm_task != old_task:
+                agent_state["tasks"] = [llm_task]
+                task_msg = make_message(
+                    source=self.agent_id,
+                    type="event",
+                    name="task_update",
+                    payload={"task": llm_task},
+                )
+                messages.append(task_msg)
 
         for msg in messages:
             await host.broadcast(msg.to_dict())
@@ -969,15 +977,20 @@ class DroneLoop(BaseAgent):
                     )
                     messages.append(notify_msg)
 
-                task_text = result.get("task_update")
-                if task_text:
-                    task_msg = make_message(
-                        source=self.agent_id,
-                        type="event",
-                        name="task_update",
-                        payload={"task": task_text},
-                    )
-                    messages.append(task_msg)
+        # LLM-owned task: update agent tasks from LLM output
+        llm_task = turn.get("task")
+        if llm_task is not None:
+            agent_state = self._world.get_agent(self.agent_id)
+            old_task = agent_state.get("tasks", [None])[0]
+            if llm_task != old_task:
+                agent_state["tasks"] = [llm_task]
+                task_msg = make_message(
+                    source=self.agent_id,
+                    type="event",
+                    name="task_update",
+                    payload={"task": llm_task},
+                )
+                messages.append(task_msg)
 
         for msg in messages:
             await host.broadcast(msg.to_dict())

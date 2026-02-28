@@ -10,7 +10,7 @@ from app.world import CHARGE_RATE, REVEAL_RADIUS, ROVER_REVEAL_RADIUS, DRONE_REV
 from app.world import AGENT_STARTS
 from app.world import abort_mission, all_agents_at_station
 from app.world import assign_mission, _cells_in_radius, record_memory, MEMORY_MAX
-from app.world import update_tasks, direction_hint
+from app.world import direction_hint
 from app.world import set_agent_model, set_agent_last_context, set_pending_commands
 from app.world import observe_rover, observe_station
 from app.world import VEIN_GRADES, VEIN_WEIGHTS, VEIN_QUANTITY_RANGES, TARGET_QUANTITY
@@ -952,66 +952,6 @@ class TestDirectionHint(unittest.TestCase):
         self.assertEqual(direction_hint(0, 0), "here")
 
 
-class TestUpdateTasks(unittest.TestCase):
-    def setUp(self):
-        self._orig_pos = world.state["agents"]["rover-mistral"]["position"][:]
-        self._orig_inv = world.state["agents"]["rover-mistral"].get("inventory", [])[:]
-        self._orig_stones = world.state.get("stones", [])[:]
-        self._orig_tasks = world.state["agents"]["rover-mistral"].get("tasks", [])[:]
-        self._orig_mission = world.state["mission"].copy()
-        world.state["agents"]["rover-mistral"]["position"] = [5, 5]
-        world.state["agents"]["rover-mistral"]["inventory"] = []
-        world.state["agents"]["rover-mistral"]["tasks"] = []
-        world.state["mission"]["status"] = "running"
-        world.state["mission"]["collected_quantity"] = 0
-
-    def tearDown(self):
-        world.state["agents"]["rover-mistral"]["position"] = self._orig_pos
-        world.state["agents"]["rover-mistral"]["inventory"] = self._orig_inv
-        world.state["stones"] = self._orig_stones
-        world.state["agents"]["rover-mistral"]["tasks"] = self._orig_tasks
-        world.state["mission"] = self._orig_mission
-
-    def test_explore_when_no_stones(self):
-        world.state["stones"] = []
-        update_tasks("rover-mistral")
-        tasks = world.state["agents"]["rover-mistral"]["tasks"]
-        self.assertEqual(len(tasks), 1)
-        self.assertIn("Explore", tasks[0])
-
-    def test_analyze_when_stone_unanalyzed(self):
-        world.state["stones"] = [_make_vein([5, 5])]
-        update_tasks("rover-mistral")
-        tasks = world.state["agents"]["rover-mistral"]["tasks"]
-        self.assertTrue(any("Analyze" in t for t in tasks))
-
-    def test_dig_when_stone_analyzed(self):
-        world.state["stones"] = [_make_vein([5, 5], grade="high", quantity=200, analyzed=True)]
-        update_tasks("rover-mistral")
-        tasks = world.state["agents"]["rover-mistral"]["tasks"]
-        self.assertTrue(any("Dig" in t for t in tasks))
-
-    def test_navigate_to_known_stone(self):
-        world.state["stones"] = [_make_vein([8, 5])]
-        agent = world.state["agents"]["rover-mistral"]
-        if [8, 5] not in agent.get("revealed", []):
-            agent.setdefault("revealed", []).append([8, 5])
-        update_tasks("rover-mistral")
-        tasks = world.state["agents"]["rover-mistral"]["tasks"]
-        self.assertEqual(len(tasks), 1)
-        self.assertIn("Navigate", tasks[0])
-        self.assertIn("east", tasks[0])
-
-    def test_goal_present_when_carrying_basalt(self):
-        """Tasks should show an actionable goal even when inventory has items."""
-        world.state["agents"]["rover-mistral"]["inventory"] = [
-            {"type": "basalt_vein", "grade": "high", "quantity": 200}
-        ]
-        update_tasks("rover-mistral")
-        tasks = world.state["agents"]["rover-mistral"]["tasks"]
-        self.assertTrue(len(tasks) >= 1)
-        self.assertFalse(any("Inventory" in t for t in tasks))
-
 
 class TestObserveRover(unittest.TestCase):
     def setUp(self):
@@ -1201,32 +1141,6 @@ class TestDrone(unittest.TestCase):
         result = execute_action("drone-mistral", "dig", {})
         self.assertFalse(result["ok"])
 
-    def test_drone_tasks_scan_first(self):
-        update_tasks("drone-mistral")
-        tasks = self.drone["tasks"]
-        self.assertTrue(any("Scan" in t or "scan" in t.lower() for t in tasks))
-
-    def test_rover_tasks_use_drone_scans(self):
-        """Rover should suggest navigating to drone-scanned hotspot."""
-        world.state["stones"] = []
-        world.state["agents"]["rover-mistral"]["position"] = [0, 0]
-        world.state["agents"]["rover-mistral"]["visited"] = [[0, 0]]
-        world.state["agents"]["rover-mistral"]["revealed"] = [
-            [x, y] for x, y in sorted(_cells_in_radius(0, 0, ROVER_REVEAL_RADIUS))
-        ]
-        world.state["agents"]["rover-mistral"]["inventory"] = []
-        # Add a high-concentration drone scan far from rover
-        world.state["drone_scans"] = [
-            {
-                "position": [15, 15],
-                "readings": {"15,15": 0.9, "14,15": 0.7},
-                "peak": 0.9,
-                "scanner": "drone-mistral",
-            }
-        ]
-        update_tasks("rover-mistral")
-        tasks = world.state["agents"]["rover-mistral"]["tasks"]
-        self.assertTrue(any("hotspot" in t for t in tasks))
 
 
 class TestChunkSystem(unittest.TestCase):
@@ -1384,25 +1298,6 @@ class TestAbortMission(unittest.TestCase):
         abort_mission("test")
         self.assertIn("ABORTED", world.state["agents"]["rover-mistral"]["mission"]["objective"])
 
-    def test_abort_tasks_override(self):
-        """During abort, update_tasks should set 'return to station' task."""
-        world.state["mission"]["status"] = "aborted"
-        world.state["agents"]["rover-mistral"]["position"] = [5, 5]
-        update_tasks("rover-mistral")
-        tasks = world.state["agents"]["rover-mistral"]["tasks"]
-        self.assertEqual(len(tasks), 1)
-        self.assertIn("MISSION ABORTED", tasks[0])
-        self.assertIn("return to station", tasks[0])
-
-    def test_abort_tasks_at_station(self):
-        """During abort, agent at station gets standing-by task."""
-        world.state["mission"]["status"] = "aborted"
-        station_pos = world.state["agents"]["station"]["position"]
-        world.state["agents"]["rover-mistral"]["position"] = list(station_pos)
-        update_tasks("rover-mistral")
-        tasks = world.state["agents"]["rover-mistral"]["tasks"]
-        self.assertIn("standing by", tasks[0])
-
     def test_all_agents_at_station_true(self):
         station_pos = world.state["agents"]["station"]["position"]
         for aid, agent in world.state["agents"].items():
@@ -1513,6 +1408,7 @@ class TestNotify(unittest.TestCase):
         result = execute_action("rover-mistral", "notify", {"message": "help"})
         self.assertFalse(result["ok"])
         self.assertIn("Not enough battery", result["error"])
+
 
 
 class TestInTransitQuantity(unittest.TestCase):
