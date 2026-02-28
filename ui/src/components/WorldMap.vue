@@ -347,6 +347,24 @@ function panelTooltip(p) {
   return `Solar Panel ${p.depleted ? '(depleted)' : '(active)'}\nPosition: ${pos}`
 }
 
+function roverInventory(id) {
+  if (!props.worldState) return []
+  const a = props.worldState.agents[id]
+  if (!a || a.type !== 'rover') return []
+  return a.inventory || []
+}
+
+function carriedOreMarkers(id) {
+  const inv = roverInventory(id)
+  if (!inv.length) return []
+  return inv.slice(0, 3).map((stone, i) => ({
+    key: `${id}-ore-${i}`,
+    x: 8 + i * 3.8,
+    y: -7 + i * 1.8,
+    color: VEIN_COLORS[stone.grade || 'unknown'] || VEIN_COLORS.unknown,
+  }))
+}
+
 // Fog-of-war: compute screen positions for each mobile agent's clear zone
 const fogAgents = computed(() => {
   if (!props.worldState) return []
@@ -387,6 +405,8 @@ defineExpose({ camX, camY, panCamera })
       <button
         class="zoom-btn"
         title="Zoom out"
+        type="button"
+        aria-label="Zoom out map"
         @click="zoomOut"
       >
         −
@@ -395,6 +415,8 @@ defineExpose({ camX, camY, panCamera })
       <button
         class="zoom-btn"
         title="Zoom in"
+        type="button"
+        aria-label="Zoom in map"
         @click="zoomIn"
       >
         +
@@ -402,6 +424,8 @@ defineExpose({ camX, camY, panCamera })
       <button
         class="zoom-btn reset"
         title="Reset zoom"
+        type="button"
+        aria-label="Reset map zoom"
         @click="resetZoom"
       >
         Reset
@@ -411,6 +435,8 @@ defineExpose({ camX, camY, panCamera })
       v-if="worldState"
       :viewBox="mapViewBox"
       class="map-svg"
+      role="img"
+      aria-label="Interactive world map. Drag or use keyboard arrows/WASD to pan, mouse wheel to zoom."
       @mousedown.prevent="onMouseDown"
       @mousemove="onMouseMove"
       @mouseup="onMouseUp"
@@ -497,7 +523,7 @@ defineExpose({ camX, camY, panCamera })
           :y="stoneScreenY(s)"
           :width="veinSize(s)"
           :height="veinSize(s)"
-          :fill="VEIN_COLORS[veinGrade(s)] || '#666'"
+          :fill="VEIN_COLORS[veinGrade(s)] || 'var(--text-tertiary)'"
           :opacity="veinHasGlow(s) ? 0.95 : 0.85"
           :transform="stoneRotateCenter(s)"
           :filter="veinHasGlow(s) ? 'url(#vein-glow)' : undefined"
@@ -527,7 +553,7 @@ defineExpose({ camX, camY, panCamera })
             :y1="panelScreenY(p)"
             :x2="panelScreenX(p) + (TILE_SIZE - 4) / 2"
             :y2="panelScreenY(p) + TILE_SIZE - 4"
-            :stroke="p.depleted ? '#333' : '#aa8020'"
+            :stroke="p.depleted ? 'var(--text-dim)' : 'var(--accent-panel-stroke)'"
             stroke-width="0.5"
           />
           <line
@@ -535,7 +561,7 @@ defineExpose({ camX, camY, panCamera })
             :y1="panelScreenY(p) + (TILE_SIZE - 4) / 2"
             :x2="panelScreenX(p) + TILE_SIZE - 4"
             :y2="panelScreenY(p) + (TILE_SIZE - 4) / 2"
-            :stroke="p.depleted ? '#333' : '#aa8020'"
+            :stroke="p.depleted ? 'var(--text-dim)' : 'var(--accent-panel-stroke)'"
             stroke-width="0.5"
           />
         </g>
@@ -547,7 +573,7 @@ defineExpose({ camX, camY, panCamera })
         y="0"
         :width="MAP_W"
         :height="MAP_H"
-        fill="#020208"
+        fill="var(--bg-primary)"
         opacity="0.6"
         mask="url(#fog-mask)"
         class="fog-overlay"
@@ -666,6 +692,19 @@ defineExpose({ camX, camY, panCamera })
             repeatCount="indefinite"
           />
         </circle>
+        <rect
+          v-for="m in carriedOreMarkers(id)"
+          :key="m.key"
+          :x="m.x"
+          :y="m.y"
+          width="3"
+          height="3"
+          :fill="m.color"
+          stroke="var(--bg-primary)"
+          stroke-width="0.4"
+          transform="rotate(45)"
+          class="ore-marker"
+        />
         <circle
           r="12"
           fill="none"
@@ -800,6 +839,10 @@ defineExpose({ camX, camY, panCamera })
 .rover-label {
   font-family: var(--font-mono);
   font-size: 6px;
+}
+
+.ore-marker {
+  opacity: 0.95;
 }
 
 .cam-hint {

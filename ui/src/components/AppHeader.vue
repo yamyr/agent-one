@@ -13,6 +13,8 @@ const emit = defineEmits(['toggle-pause', 'reset'])
     <div class="header-controls">
       <button
         class="reset-btn"
+        type="button"
+        aria-label="Reset simulation"
         @click="emit('reset')"
       >
         RESET
@@ -20,6 +22,8 @@ const emit = defineEmits(['toggle-pause', 'reset'])
       <button
         class="pause-btn"
         :class="{ paused }"
+        type="button"
+        :aria-label="paused ? 'Resume simulation' : 'Pause simulation'"
         @click="emit('toggle-pause')"
       >
         {{ paused ? 'RESUME' : 'PAUSE' }}
