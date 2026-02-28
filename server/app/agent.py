@@ -8,6 +8,7 @@ import asyncio
 import json
 import logging
 import random
+import re
 
 from mistralai import Mistral, SDKError
 
@@ -26,6 +27,32 @@ from .world import set_agent_model
 from .world import execute_action, get_snapshot, charge_agent, next_tick
 
 logger = logging.getLogger(__name__)
+
+STRUCTURED_REASONING_PROMPT = (
+    "\n\nRESPONSE FORMAT — before choosing an action, output a reasoning block:\n"
+    "SITUATION: <one-line summary of current state>\n"
+    "OPTIONS: <comma-separated list of 2-4 candidate actions>\n"
+    "DECISION: <chosen action and why>\n"
+    "RISK: low | medium | high\n"
+)
+
+
+def _parse_structured_thinking(raw_thinking: str) -> dict:
+    """Extract structured reasoning fields from LLM output."""
+    result = {"situation": "", "options": [], "decision": "", "risk": "low"}
+    if not raw_thinking:
+        return result
+    for field in ("situation", "decision", "risk"):
+        m = re.search(rf"(?i)^{field}:\s*(.+)$", raw_thinking, re.MULTILINE)
+        if m:
+            result[field] = m.group(1).strip()
+    m = re.search(r"(?i)^OPTIONS:\s*(.+)$", raw_thinking, re.MULTILINE)
+    if m:
+        result["options"] = [o.strip() for o in m.group(1).split(",") if o.strip()]
+    if result["risk"] not in ("low", "medium", "high"):
+        result["risk"] = "low"
+    return result
+
 
 MOVE_TOOL = {
     "type": "function",
@@ -325,6 +352,8 @@ class MistralRoverReasoner:
                 else:
                     parts.append(f"{cmd['name'].upper()}: {cmd.get('payload', {})}")
 
+        parts.append(STRUCTURED_REASONING_PROMPT)
+
         return "\n".join(parts)
 
     def run_turn(self):
@@ -576,6 +605,8 @@ class DroneAgent:
             for entry in recent:
                 parts.append(f"- {entry}")
 
+        parts.append(STRUCTURED_REASONING_PROMPT)
+
         return "\n".join(parts)
 
     def run_turn(self):
@@ -811,7 +842,7 @@ class RoverLoop(BaseAgent):
                 source=self.agent_id,
                 type="event",
                 name="thinking",
-                payload={"text": turn["thinking"]},
+                payload={"text": turn["thinking"], "structured": _parse_structured_thinking(turn["thinking"])},
             )
             messages.append(msg)
 
@@ -940,7 +971,7 @@ class DroneLoop(BaseAgent):
                 source=self.agent_id,
                 type="event",
                 name="thinking",
-                payload={"text": turn["thinking"]},
+                payload={"text": turn["thinking"], "structured": _parse_structured_thinking(turn["thinking"])},
             )
             messages.append(msg)
 

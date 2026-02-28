@@ -1,7 +1,7 @@
 import unittest
 
 from app.world import world
-from app.agent import MistralRoverReasoner, ROVER_TOOLS, DRONE_TOOLS
+from app.agent import MistralRoverReasoner, ROVER_TOOLS, DRONE_TOOLS, _parse_structured_thinking
 
 
 class TestRoverFallback(unittest.TestCase):
@@ -68,3 +68,44 @@ class TestToolLists(unittest.TestCase):
         names = self._tool_names(DRONE_TOOLS)
         self.assertIn("notify", names)
         self.assertNotIn("notify_base", names)
+
+
+class TestParseStructuredThinking(unittest.TestCase):
+    def test_full_block(self):
+        raw = (
+            "SITUATION: Low battery at zone B3\n"
+            "OPTIONS: return to base, dig here, move east\n"
+            "DECISION: return to base to recharge\n"
+            "RISK: medium"
+        )
+        result = _parse_structured_thinking(raw)
+        self.assertEqual(result["situation"], "Low battery at zone B3")
+        self.assertEqual(result["options"], ["return to base", "dig here", "move east"])
+        self.assertEqual(result["decision"], "return to base to recharge")
+        self.assertEqual(result["risk"], "medium")
+
+    def test_missing_fields(self):
+        raw = "Just some freeform LLM text with no structure."
+        result = _parse_structured_thinking(raw)
+        self.assertEqual(result["situation"], "")
+        self.assertEqual(result["options"], [])
+        self.assertEqual(result["decision"], "")
+        self.assertEqual(result["risk"], "low")
+
+    def test_empty_input(self):
+        result = _parse_structured_thinking("")
+        self.assertEqual(result["situation"], "")
+        self.assertEqual(result["risk"], "low")
+
+    def test_partial_block(self):
+        raw = "SITUATION: Storm approaching\nDECISION: take shelter"
+        result = _parse_structured_thinking(raw)
+        self.assertEqual(result["situation"], "Storm approaching")
+        self.assertEqual(result["decision"], "take shelter")
+        self.assertEqual(result["options"], [])
+        self.assertEqual(result["risk"], "low")
+
+    def test_invalid_risk_defaults_to_low(self):
+        raw = "RISK: catastrophic"
+        result = _parse_structured_thinking(raw)
+        self.assertEqual(result["risk"], "low")

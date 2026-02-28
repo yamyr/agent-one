@@ -1,6 +1,7 @@
 <script setup>
 import { computed } from 'vue'
 import BatteryBar from './BatteryBar.vue'
+import ReasoningCard from './ReasoningCard.vue'
 
 const props = defineProps({
   agentId: {
@@ -52,7 +53,7 @@ const mergedEvents = computed(() => {
     if (e.name === 'thinking') {
       const next = raw[i + 1]
       if (next && next.name !== 'thinking') {
-        result.push({ ...next, reason: e.payload?.text || '' })
+        result.push({ ...next, reason: e.payload?.text || '', structured: e.payload?.structured || null })
         i++
       }
       // Drop orphan thinking events (no following action)
@@ -127,16 +128,22 @@ function eventText(e) {
         >
           <span class="ae-type action">{{ e.name }}</span>
           <span class="ae-text action-text">{{ eventText(e) }}</span>
-          <span
-            v-if="e.reason"
-            class="ae-reason"
-          >{{ e.reason }}</span>
-          <div
-            v-if="e.reason"
-            class="ae-tooltip"
-          >
-            {{ e.reason }}
-          </div>
+          <ReasoningCard
+            v-if="e.structured && e.structured.situation"
+            :structured="e.structured"
+          />
+          <template v-else>
+            <span
+              v-if="e.reason"
+              class="ae-reason"
+            >{{ e.reason }}</span>
+            <div
+              v-if="e.reason"
+              class="ae-tooltip"
+            >
+              {{ e.reason }}
+            </div>
+          </template>
         </div>
       </template>
     </div>
@@ -210,6 +217,7 @@ function eventText(e) {
   display: flex;
   gap: 0.4rem;
   align-items: baseline;
+  flex-wrap: wrap;
   position: relative;
 }
 

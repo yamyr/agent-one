@@ -121,6 +121,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added (Feature C — Agent Reasoning Transparency Panel)
+
+- **Structured reasoning prompt**: Appended SITUATION/OPTIONS/DECISION/RISK format instruction to rover and drone LLM context builders
+- **Server-side parsing**: `_parse_structured_thinking()` extracts structured fields from LLM output via regex, with graceful fallback
+- **ReasoningCard.vue**: New component renders structured reasoning with risk-based color coding (green/amber/red border) and fade-in animation
+- **AgentPane integration**: Thinking events with structured data render as ReasoningCard instead of raw text; mergedEvents preserves structured payload
+
 ### Added (UI Polish Round 3 — Phases 3–8)
 
 - **Persisted zoom preference**: Zoom level saved to `localStorage` via `usePreferences` composable; survives page refresh
