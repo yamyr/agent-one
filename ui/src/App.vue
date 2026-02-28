@@ -7,13 +7,22 @@ import AgentPanes from './components/AgentPanes.vue'
 import MissionBar from './components/MissionBar.vue'
 import EventLog from './components/EventLog.vue'
 import AgentDetailModal from './components/AgentDetailModal.vue'
+import NarrationPlayer from './components/NarrationPlayer.vue'
 
 const selectedAgent = ref(null)
 const paused = ref(false)
+const narrationEnabled = ref(true)
+
 
 function onWsConnect() {
   paused.value = false
   fetch('/api/simulation/reset', { method: 'POST' })
+}
+
+async function toggleNarration() {
+  const res = await fetch('/api/narration/toggle', { method: 'POST' })
+  const data = await res.json()
+  narrationEnabled.value = data.enabled
 }
 
 async function resetSimulation() {
@@ -24,7 +33,7 @@ async function resetSimulation() {
   }
 }
 
-const { events, connected, worldState, agentIds, agentEvents } = useWebSocket({ onConnect: onWsConnect })
+const { events, connected, worldState, agentIds, agentEvents, narration } = useWebSocket({ onConnect: onWsConnect })
 
 async function togglePause() {
   const endpoint = paused.value ? '/api/simulation/resume' : '/api/simulation/pause'
@@ -50,6 +59,8 @@ function agentData(id) {
 <template>
   <div class="app">
     <AppHeader :connected="connected" :paused="paused" @toggle-pause="togglePause" @reset="resetSimulation" />
+
+    <NarrationPlayer :narration="narration" :narrationEnabled="narrationEnabled" @toggle-narration="toggleNarration" />
 
     <MissionBar :mission="worldState ? worldState.mission : null" />
 

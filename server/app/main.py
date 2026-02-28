@@ -15,6 +15,7 @@ from .db import init_db, close_db
 from .station import StationAgent
 from .views import router as views_router
 from .world import execute_action, get_snapshot, reset_world, WORLD, charge_rover, next_tick
+from .narrator import Narrator
 
 logging.basicConfig(
     level=logging.INFO,
@@ -29,6 +30,7 @@ logger = logging.getLogger(__name__)
 station = StationAgent()
 simulation_paused = False
 _agent_tasks = []
+narrator = Narrator(broadcast_fn=broadcaster.send)
 
 
 async def _trigger_station(event):
@@ -120,6 +122,7 @@ async def agent_loop(agent, interval):
 
             for event in events:
                 await broadcaster.send(event)
+                await narrator.feed(event)
             await broadcaster.send(
                 {
                     "source": "world",
@@ -140,14 +143,14 @@ async def agent_loop(agent, interval):
             ):
                 charge_result = charge_rover(agent.agent_id)
                 if charge_result["ok"]:
-                    await broadcaster.send(
-                        {
-                            "source": "station",
-                            "type": "action",
-                            "name": "charge_rover",
-                            "payload": charge_result,
-                        }
-                    )
+                    charge_event = {
+                        "source": "station",
+                        "type": "action",
+                        "name": "charge_rover",
+                        "payload": charge_result,
+                    }
+                    await broadcaster.send(charge_event)
+                    await narrator.feed(charge_event)
 
             # Trigger station on stone-found events
             # NOTE: station-rover communication disabled for now
@@ -167,6 +170,7 @@ async def _station_startup():
         for event in station_events:
             event["tick"] = WORLD["tick"]
             await broadcaster.send(event)
+            await narrator.feed(event)
         await broadcaster.send(
             {
                 "source": "world",
@@ -184,6 +188,8 @@ async def _start_simulation():
     global simulation_paused
     simulation_paused = False
 
+    narrator.reset()
+    narrator.start()
     # NOTE: station-rover communication disabled for now — rovers explore autonomously
     # _agent_tasks.append(asyncio.create_task(_station_startup()))
 
@@ -207,7 +213,8 @@ async def _start_simulation():
 
 
 def _stop_simulation():
-    """Cancel all running agent loops."""
+    """Cancel all running agent loops and narrator."""
+    narrator.stop()
     for task in _agent_tasks:
         task.cancel()
     _agent_tasks.clear()
@@ -267,8 +274,20 @@ def simulation_status():
 async def reset_simulation():
     _stop_simulation()
     reset_world()
+    narrator.reset()
     await _start_simulation()
     return {"reset": True}
+
+
+@app.post("/narration/toggle")
+def toggle_narration():
+    narrator.enabled = not narrator.enabled
+    return {"enabled": narrator.enabled}
+
+
+@app.get("/narration/status")
+def narration_status():
+    return {"enabled": narrator.enabled}
 
 
 # Serve Vue static files (must be after all API routes)

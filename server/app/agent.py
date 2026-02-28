@@ -7,7 +7,16 @@ import random
 from mistralai import Mistral, SDKError
 
 from .config import settings
-from .world import WORLD, GRID_W, GRID_H, DIRECTIONS, MAX_MOVE_DISTANCE, check_ground, _direction_hint, _find_stone_at
+from .world import (
+    WORLD,
+    GRID_W,
+    GRID_H,
+    DIRECTIONS,
+    MAX_MOVE_DISTANCE,
+    check_ground,
+    _direction_hint,
+    _find_stone_at,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -202,7 +211,9 @@ class RoverAgent:
                 dist = abs(sp[0] - x) + abs(sp[1] - y)
                 status = "extracted" if stone.get("extracted") else "buried"
                 hint = _direction_hint(sp[0] - x, sp[1] - y)
-                visible_stones.append(f"{stone['type']} ({status}) at ({sp[0]},{sp[1]}) — {hint}, {dist} tiles")
+                visible_stones.append(
+                    f"{stone['type']} ({status}) at ({sp[0]},{sp[1]}) — {hint}, {dist} tiles"
+                )
 
         # Environment
         parts.append(
@@ -275,7 +286,8 @@ class RoverAgent:
             if action is None:
                 logger.warning(
                     "%s returned no valid tool action (thinking=%r), using fallback",
-                    self.agent_id, thinking,
+                    self.agent_id,
+                    thinking,
                 )
                 return self._fallback_turn("No valid tool action from model")
 
@@ -307,7 +319,7 @@ class MockRoverAgent:
         context = (
             f"Mock rover at ({x},{y}), battery={agent['battery']:.0%}, "
             f"visited={len(agent.get('visited', []))}, "
-            f"mission=\"{agent['mission']['objective']}\""
+            f'mission="{agent["mission"]["objective"]}"'
         )
         agent["last_context"] = context
 
@@ -341,7 +353,13 @@ class MockRoverAgent:
                 direction = "north"
                 distance = 1
             thinking = f"I'm at ({x}, {y}). Carrying target stone, heading to station at ({sp[0]},{sp[1]})."
-            return {"thinking": thinking, "action": {"name": "move", "params": {"direction": direction, "distance": distance}}}
+            return {
+                "thinking": thinking,
+                "action": {
+                    "name": "move",
+                    "params": {"direction": direction, "distance": distance},
+                },
+            }
 
         # Default: explore unvisited tiles
         visited_set = {tuple(p) for p in agent.get("visited", [])}

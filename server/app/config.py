@@ -34,5 +34,11 @@ class Settings(BaseSettings):
     # Active agents (comma-separated: "rover-mock,rover-mistral")
     active_agents: str = "rover-mistral"
 
+    # ElevenLabs narration
+    elevenlabs_api_key: str = ""
+    narration_enabled: bool = True
+    narration_voice_id: str = "JBFqnCBsd6RMkjVDRZzb"  # George - warm narrator voice
+    narration_min_interval_seconds: float = 12.0
+
 
 settings = Settings()
