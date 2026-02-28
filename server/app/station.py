@@ -200,8 +200,7 @@ class StationAgent:
             )
         return self._call_llm(
             "The mission is starting. Review the world state and assign initial "
-            "missions to ALL agents (rovers and drones). Consider the grid layout."
-            + drone_hint,
+            "missions to ALL agents (rovers and drones). Consider the grid layout." + drone_hint,
             context,
         )
 

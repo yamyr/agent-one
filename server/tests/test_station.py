@@ -119,8 +119,20 @@ class TestDefineMissionDroneHint(unittest.TestCase):
             grid_w=20,
             grid_h=20,
             rovers=[
-                RoverSummary(id="drone-1", agent_type="drone", position=[0, 0], battery=1.0, mission=AgentMission(objective="", plan=[])),
-                RoverSummary(id="drone-2", agent_type="drone", position=[0, 0], battery=1.0, mission=AgentMission(objective="", plan=[])),
+                RoverSummary(
+                    id="drone-1",
+                    agent_type="drone",
+                    position=[0, 0],
+                    battery=1.0,
+                    mission=AgentMission(objective="", plan=[]),
+                ),
+                RoverSummary(
+                    id="drone-2",
+                    agent_type="drone",
+                    position=[0, 0],
+                    battery=1.0,
+                    mission=AgentMission(objective="", plan=[]),
+                ),
             ],
             stones=[],
         )
