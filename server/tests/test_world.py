@@ -1075,6 +1075,12 @@ class TestObserveStation(unittest.TestCase):
         self.assertEqual(ctx.stones[0].position, [1, 1])
         self.assertEqual(ctx.stones[0].type, "unknown")
 
+    def test_memory_included(self):
+        world.state["agents"]["station"]["memory"] = ["Radio from drone at (3,3): peak=0.9"]
+        ctx = observe_station()
+        self.assertEqual(len(ctx.memory), 1)
+        self.assertIn("peak=0.9", ctx.memory[0])
+
 
 class TestDrone(unittest.TestCase):
     """Tests for drone agent: creation, scan action, movement, reveal radius."""

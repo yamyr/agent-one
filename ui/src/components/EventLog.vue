@@ -146,7 +146,7 @@ function formatPayload(event) {
       return ''
     case 'scan':
       return `peak ${p.peak} at (${p.position[0]},${p.position[1]})`
-    case 'charge_rover':
+    case 'charge_agent':
       return `${p.agent_id || 'agent'} charged ${Math.round((p.battery_before ?? 0) * 100)}% \u2192 ${Math.round((p.battery_after ?? p.battery ?? 0) * 100)}%`
     case 'alert':
       return p.message || ''

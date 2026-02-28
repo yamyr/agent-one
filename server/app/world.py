@@ -311,6 +311,7 @@ def _build_initial_world():
                 "battery": 1.0,
                 "mission": {"objective": "Coordinate Mars mission", "plan": []},
                 "visited": [[0, 0]],
+                "memory": [],
             },
             "rover-mistral": _make_rover(0, 0),
             "drone-mistral": _make_drone(0, 0),
@@ -1068,11 +1069,13 @@ def observe_station():
             )
         )
 
+    station_agent = WORLD["agents"].get("station", {})
     return StationContext(
         grid_w=GRID_W,
         grid_h=GRID_H,
         rovers=rovers,
         stones=stones,
+        memory=station_agent.get("memory", []),
     )
 
 
