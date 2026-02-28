@@ -34,3 +34,4 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Ruff formatting applied to `server/app/agent.py` and `server/app/world.py`
 - Removed unused `props` variable assignment in `MissionBar.vue` to fix ESLint `no-unused-vars` error
 - Added Release Please annotation to FastAPI app version in `server/app/main.py` to prevent version drift across releases
+- Updated rover task planning in `server/app/world.py` to keep revealed-tile filtering lint-clean in CI
