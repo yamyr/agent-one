@@ -255,16 +255,21 @@ def _update_bounds(x, y):
 
 def _tools_for_ui(tool_schemas):
     """Extract {name, description} from Mistral tool schemas for the UI."""
-    return [{"name": t["function"]["name"], "description": t["function"]["description"]} for t in tool_schemas]
+    return [
+        {"name": t["function"]["name"], "description": t["function"]["description"]}
+        for t in tool_schemas
+    ]
 
 
 def _rover_tools_for_ui():
     from .agent import ROVER_TOOLS
+
     return _tools_for_ui(ROVER_TOOLS)
 
 
 def _drone_tools_for_ui():
     from .agent import DRONE_TOOLS
+
     return _tools_for_ui(DRONE_TOOLS)
 
 
@@ -712,7 +717,12 @@ def _execute_charge(agent_id, agent):
     logger.info(
         "Agent %s charged %.0f%% -> %.0f%%", agent_id, old_battery * 100, agent["battery"] * 100
     )
-    return {"ok": True, "agent_id": agent_id, "battery_before": old_battery, "battery_after": agent["battery"]}
+    return {
+        "ok": True,
+        "agent_id": agent_id,
+        "battery_before": old_battery,
+        "battery_after": agent["battery"],
+    }
 
 
 def charge_agent(agent_id):
