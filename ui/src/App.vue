@@ -11,12 +11,21 @@ import NarrationPlayer from './components/NarrationPlayer.vue'
 
 const selectedAgent = ref(null)
 const paused = ref(false)
-const narrationEnabled = ref(true)
+const narrationEnabled = ref(false)
 
 
-function onWsConnect() {
+async function onWsConnect() {
   paused.value = false
   fetch('/api/simulation/reset', { method: 'POST' })
+  try {
+    const res = await fetch('/api/narration/status')
+    if (res.ok) {
+      const data = await res.json()
+      narrationEnabled.value = data.enabled
+    }
+  } catch {
+    // Server may not be ready yet — keep default
+  }
 }
 
 async function toggleNarration() {
