@@ -29,7 +29,14 @@ line-length = 100
 dev = [
     "ruff>=0.8.0",
     "rut",
+    "import-deps>=0.5.1",
 ]
 
 [tool.uv.sources]
-rut = { path = "/home/eduardo/work/rut", editable = true }
+rut = { git = "https://github.com/schettino72/rut", branch = "main" }
+import-deps = { git = "https://github.com/schettino72/import-deps", branch = "master" }
+
+[[tool.uv.dependency-metadata]]
+name = "rut"
+version = "0.4.0.dev0"
+requires-dist = ["coverage", "import-deps>=0.5.1", "rich>=14.0.0"]

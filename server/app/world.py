@@ -86,7 +86,10 @@ WORLD = {
             "inventory": [],
             "type": "rover",
             "tools": [
-                {"name": "move", "description": "Move one tile in a cardinal direction (north/south/east/west)."},
+                {
+                    "name": "move",
+                    "description": "Move one tile in a cardinal direction (north/south/east/west).",
+                },
                 {"name": "check_ground", "description": "Scan current tile for rocks or minerals."},
                 {"name": "dig", "description": "Dig at current tile to extract a stone (costs 3x move battery)."},
                 {"name": "pickup", "description": "Pick up an extracted stone at current tile into inventory."},
@@ -102,7 +105,10 @@ WORLD = {
             "inventory": [],
             "type": "rover",
             "tools": [
-                {"name": "move", "description": "Move one tile in a cardinal direction (north/south/east/west)."},
+                {
+                    "name": "move",
+                    "description": "Move one tile in a cardinal direction (north/south/east/west).",
+                },
                 {"name": "check_ground", "description": "Scan current tile for rocks or minerals."},
                 {"name": "dig", "description": "Dig at current tile to extract a stone (costs 3x move battery)."},
                 {"name": "pickup", "description": "Pick up an extracted stone at current tile into inventory."},

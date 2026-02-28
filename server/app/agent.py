@@ -103,7 +103,11 @@ class RoverAgent:
         if choice.message.tool_calls:
             tc = choice.message.tool_calls[0]
             if tc.function.name == "move":
-                args = json.loads(tc.function.arguments) if isinstance(tc.function.arguments, str) else tc.function.arguments
+                args = (
+                    json.loads(tc.function.arguments)
+                    if isinstance(tc.function.arguments, str)
+                    else tc.function.arguments
+                )
                 action = {"name": "move", "params": args}
 
         return {"thinking": thinking, "action": action}

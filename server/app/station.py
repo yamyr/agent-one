@@ -70,7 +70,7 @@ def _build_world_summary():
         x, y = agent["position"]
         lines.append(
             f"  {aid}: pos=({x},{y}) battery={agent['battery']:.0%} "
-            f"mission=\"{agent['mission']['objective']}\" visited={len(agent.get('visited', []))}"
+            f'mission="{agent["mission"]["objective"]}" visited={len(agent.get("visited", []))}'
         )
     stones = WORLD.get("stones", [])
     lines.append(f"Stones on map: {len(stones)}")
@@ -84,23 +84,31 @@ def _execute_tool_calls(tool_calls):
     events = []
     for tc in tool_calls:
         name = tc.function.name
-        args = json.loads(tc.function.arguments) if isinstance(tc.function.arguments, str) else tc.function.arguments
+        args = (
+            json.loads(tc.function.arguments)
+            if isinstance(tc.function.arguments, str)
+            else tc.function.arguments
+        )
 
         if name == "assign_mission":
             result = assign_mission(args["agent_id"], args["objective"])
-            events.append({
-                "source": "station",
-                "type": "command",
-                "name": "assign_mission",
-                "payload": result,
-            })
+            events.append(
+                {
+                    "source": "station",
+                    "type": "command",
+                    "name": "assign_mission",
+                    "payload": result,
+                }
+            )
         elif name == "broadcast_alert":
-            events.append({
-                "source": "station",
-                "type": "event",
-                "name": "alert",
-                "payload": {"message": args["message"]},
-            })
+            events.append(
+                {
+                    "source": "station",
+                    "type": "event",
+                    "name": "alert",
+                    "payload": {"message": args["message"]},
+                }
+            )
     return events
 
 
@@ -141,12 +149,14 @@ class StationAgent:
 
         if thinking:
             logger.info("Station thinking: %s", thinking)
-            events.append({
-                "source": self.agent_id,
-                "type": "event",
-                "name": "thinking",
-                "payload": {"text": thinking},
-            })
+            events.append(
+                {
+                    "source": self.agent_id,
+                    "type": "event",
+                    "name": "thinking",
+                    "payload": {"text": thinking},
+                }
+            )
 
         if choice.message.tool_calls:
             events.extend(_execute_tool_calls(choice.message.tool_calls))

@@ -8,7 +8,6 @@ from app.world import assign_mission, _cells_in_radius
 
 
 class TestMoveAgent(unittest.TestCase):
-
     def setUp(self):
         WORLD["agents"]["rover-mock"]["position"] = [2, 10]
         WORLD["agents"]["rover-mock"]["battery"] = 1.0
@@ -80,7 +79,6 @@ class TestMoveAgent(unittest.TestCase):
 
 
 class TestExecuteAction(unittest.TestCase):
-
     def setUp(self):
         WORLD["agents"]["rover-mock"]["position"] = [2, 10]
         WORLD["agents"]["rover-mock"]["battery"] = 1.0
@@ -122,8 +120,12 @@ class TestExecuteAction(unittest.TestCase):
 
     def test_execute_move_all_directions(self):
         WORLD["agents"]["rover-mock"]["position"] = [10, 10]
-        for direction, expected in [("north", [10, 9]), ("south", [10, 11]),
-                                     ("east", [11, 10]), ("west", [10, 10])]:
+        for direction, expected in [
+            ("north", [10, 9]),
+            ("south", [10, 11]),
+            ("east", [11, 10]),
+            ("west", [10, 10]),
+        ]:
             result = execute_action("rover-mock", "move", {"direction": direction})
             self.assertTrue(result["ok"], f"Failed for direction {direction}")
 
@@ -170,7 +172,6 @@ class TestStones(unittest.TestCase):
 
 
 class TestVisited(unittest.TestCase):
-
     def setUp(self):
         WORLD["agents"]["rover-mock"]["position"] = [10, 10]
         WORLD["agents"]["rover-mock"]["battery"] = 1.0
@@ -193,7 +194,6 @@ class TestVisited(unittest.TestCase):
 
 
 class TestCheckGround(unittest.TestCase):
-
     def setUp(self):
         WORLD["agents"]["rover-mock"]["position"] = [10, 10]
         WORLD["agents"]["rover-mock"]["battery"] = 1.0
@@ -223,7 +223,6 @@ class TestCheckGround(unittest.TestCase):
 
 
 class TestAssignMission(unittest.TestCase):
-
     def setUp(self):
         self._orig = WORLD["agents"]["rover-mock"]["mission"].copy()
 
@@ -249,7 +248,6 @@ class TestAssignMission(unittest.TestCase):
 
 
 class TestStationInWorld(unittest.TestCase):
-
     def test_station_in_snapshot(self):
         snap = get_snapshot()
         self.assertIn("station", snap["agents"])
