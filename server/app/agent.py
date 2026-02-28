@@ -517,7 +517,9 @@ class DroneAgent:
             "- Station is at ({sx},{sy}). Return when battery is low for recharge.\n"
             "- ALWAYS keep enough battery to return to station.\n"
             "- Follow your current tasks list.\n"
-            "- Real-time world state always takes precedence over knowledge base content. If retrieved knowledge contradicts what you observe, trust your current observations.".format(sx=station_pos[0], sy=station_pos[1])
+            "- Real-time world state always takes precedence over knowledge base content. If retrieved knowledge contradicts what you observe, trust your current observations.".format(
+                sx=station_pos[0], sy=station_pos[1]
+            )
         )
 
         parts.append(
@@ -819,8 +821,12 @@ class RoverLoop(BaseAgent):
                 rag_ctx = WORLD["agents"][self.agent_id].get("rag_context", {})
                 if rag_ctx.get("knowledge_chunks") or rag_ctx.get("memory_entries"):
                     payload["rag_context"] = {
-                        "knowledge_used": [c["content"][:100] for c in rag_ctx.get("knowledge_chunks", [])],
-                        "memories_used": [m["content"][:100] for m in rag_ctx.get("memory_entries", [])],
+                        "knowledge_used": [
+                            c["content"][:100] for c in rag_ctx.get("knowledge_chunks", [])
+                        ],
+                        "memories_used": [
+                            m["content"][:100] for m in rag_ctx.get("memory_entries", [])
+                        ],
                     }
             msg = make_message(
                 source=self.agent_id,
@@ -942,8 +948,12 @@ class DroneLoop(BaseAgent):
                 rag_ctx = WORLD["agents"][self.agent_id].get("rag_context", {})
                 if rag_ctx.get("knowledge_chunks") or rag_ctx.get("memory_entries"):
                     payload["rag_context"] = {
-                        "knowledge_used": [c["content"][:100] for c in rag_ctx.get("knowledge_chunks", [])],
-                        "memories_used": [m["content"][:100] for m in rag_ctx.get("memory_entries", [])],
+                        "knowledge_used": [
+                            c["content"][:100] for c in rag_ctx.get("knowledge_chunks", [])
+                        ],
+                        "memories_used": [
+                            m["content"][:100] for m in rag_ctx.get("memory_entries", [])
+                        ],
                     }
             msg = make_message(
                 source=self.agent_id,
