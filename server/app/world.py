@@ -100,8 +100,14 @@ def _expand_revealed(agent, cx, cy):
 
 
 ROVER_TOOL_DEFS = [
-    {"name": "move", "description": "Move 1-3 tiles in a cardinal direction (north/south/east/west). Costs 2% battery per tile. Ground is auto-scanned after each move."},
-    {"name": "dig", "description": "Dig at current tile to extract a stone (costs 3x move battery)."},
+    {
+        "name": "move",
+        "description": "Move 1-3 tiles in a cardinal direction (north/south/east/west). Costs 2% battery per tile. Ground is auto-scanned after each move.",
+    },
+    {
+        "name": "dig",
+        "description": "Dig at current tile to extract a stone (costs 3x move battery).",
+    },
     {"name": "pickup", "description": "Pick up an extracted stone at current tile into inventory."},
 ]
 
