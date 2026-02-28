@@ -65,6 +65,22 @@ Vite proxies `/api/*` to `http://localhost:4009` and `/ws` to `ws://localhost:40
 - If you need to look up the latest documentation for an external tool, e.g., Vercel, Supabase, etc., please include 'use context7' in your prompt
 - For each new task, please first create a plan in a markdown file in this repo such that we can always trace back at which stage of the implementation for this particular task we currenlty are by comparing the code and then what's in the plan. Also, divide each plan into smaller tasks and sub-tasks that **shall** be marked as completed in this markdown file if done so. -->
 
+## Semantic PR Logs (MANDATORY)
+
+Every PR description **must** follow the template in `.github/PULL_REQUEST_TEMPLATE.md`. When creating a PR with `gh pr create`, auto-populate the semantic diff by running `git diff main...HEAD --stat` and `git diff main...HEAD --numstat` to compute file counts and line changes.
+
+### How to Generate PR Body
+
+1. **Compute stats** from `git diff main...HEAD`:
+   - `--stat` for file list
+   - `--numstat` for added/removed lines per file
+   - `--diff-filter=A` for added files, `--diff-filter=M` for modified, `--diff-filter=D` for deleted
+2. **Classify each file** into Added / Changed / Removed sections
+3. **Core files** = any file under `server/app/`, `ui/src/`, or root config (`CLAUDE.md`, `SPEC.md`, `pyproject.toml`, `package.json`)
+4. **Test files** = any file under `*/tests/` or matching `*.test.*` / `*.spec.*`
+5. **Fill the File Impact table** with actual counts
+6. **Copy Changelog.md entry** into the Changelog section
+
 ## Workflow Orchestration
 
 ### 1. Plan Mode Default
