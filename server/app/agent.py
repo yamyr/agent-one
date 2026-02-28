@@ -20,8 +20,8 @@ from .world import FUEL_CAPACITY_ROVER, FUEL_CAPACITY_DRONE, DRONE_REVEAL_RADIUS
 from .world import BATTERY_COST_MOVE, BATTERY_COST_MOVE_DRONE, BATTERY_COST_DIG
 from .world import BATTERY_COST_ANALYZE, BATTERY_COST_SCAN, BATTERY_COST_NOTIFY
 from .world import MAX_INVENTORY_ROVER
-from .world import check_ground, _direction_hint, _find_stone_at
-from .world import execute_action, get_snapshot, charge_agent, next_tick, all_agents_at_station
+from .world import check_ground, _direction_hint
+from .world import execute_action, get_snapshot, charge_agent, next_tick
 
 logger = logging.getLogger(__name__)
 

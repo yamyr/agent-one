@@ -566,7 +566,6 @@ def _execute_analyze(agent_id, agent):
     }
 
 
-
 def _execute_scan(agent_id, agent):
     """Drone aerial scan: sample concentration map around current position."""
     if agent["battery"] < BATTERY_COST_SCAN:
@@ -940,8 +939,6 @@ def _update_drone_tasks(agent_id, agent):
 def _update_rover_tasks(agent_id, agent):
     """Recompute short-term tasks for a rover based on current world state."""
     x, y = agent["position"]
-    mission = WORLD["mission"]
-    target_type = mission["target_type"]
     inventory = agent.get("inventory", [])
     revealed_set = {tuple(c) for c in agent.get("revealed", [])}
     tasks = []
@@ -1053,7 +1050,9 @@ def observe_rover(agent_id):
         if stone_info["type"] == "unknown":
             stone_line = "unknown vein (needs analyze to reveal grade and quantity)"
         else:
-            stone_line = f"{stone_info['grade']} vein, qty={stone_info['quantity']} (analyzed — needs dig)"
+            stone_line = (
+                f"{stone_info['grade']} vein, qty={stone_info['quantity']} (analyzed — needs dig)"
+            )
     else:
         stone_line = "none"
 
