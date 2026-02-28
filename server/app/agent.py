@@ -742,7 +742,6 @@ class RoverLoop(BaseAgent):
     """Generic rover tick: inject commands → reason → execute → broadcast."""
 
     _reasoner: MistralRoverReasoner
-    _world: World
 
     async def tick(self, host) -> None:
         mission_status = self._world.get_mission()["status"]
@@ -846,8 +845,7 @@ class RoverMistralLoop(RoverLoop):
     """Rover loop wired to MistralRoverReasoner."""
 
     def __init__(self, interval: float = 3.0, world: World | None = None):
-        super().__init__(agent_id="rover-mistral", interval=interval)
-        self._world = world or default_world
+        super().__init__(agent_id="rover-mistral", interval=interval, world=world)
         self._reasoner = MistralRoverReasoner(agent_id=self.agent_id, world=self._world)
         set_agent_model(self.agent_id, self._reasoner.model)
 
@@ -856,7 +854,6 @@ class DroneLoop(BaseAgent):
     """Generic drone tick: reason → execute → broadcast."""
 
     _reasoner: DroneAgent | MockDroneAgent
-    _world: World
 
     async def tick(self, host) -> None:
         mission_status = self._world.get_mission()["status"]
@@ -935,7 +932,6 @@ class DroneMistralLoop(DroneLoop):
     """Drone loop wired to DroneAgent (Mistral)."""
 
     def __init__(self, interval: float = 2.0, world: World | None = None):
-        super().__init__(agent_id="drone-mistral", interval=interval)
-        self._world = world or default_world
+        super().__init__(agent_id="drone-mistral", interval=interval, world=world)
         self._reasoner = DroneAgent(agent_id=self.agent_id, world=self._world)
         set_agent_model(self.agent_id, self._reasoner.model)

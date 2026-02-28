@@ -197,10 +197,10 @@ class TestExecuteAction(unittest.TestCase):
         self.assertEqual(result["message"], "Storm incoming!")
 
     def test_charge_rover_at_station(self):
-        from app.world import WORLD
+        from app.world import world
 
-        WORLD["agents"]["rover-mistral"]["position"] = [0, 0]
-        WORLD["agents"]["rover-mistral"]["battery"] = 0.5
+        world.state["agents"]["rover-mistral"]["position"] = [0, 0]
+        world.state["agents"]["rover-mistral"]["battery"] = 0.5
         result = execute_action(
             {
                 "name": "charge_rover",

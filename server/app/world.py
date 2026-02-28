@@ -369,6 +369,12 @@ class World:
         if state is None:
             _init_world_chunks()
 
+    @property
+    def state(self) -> dict:
+        """Raw world state dict. Prefer typed accessors; use this for
+        test setup or bulk reads that don't have a dedicated method yet."""
+        return self._state
+
     # --- Reads ---
     def get_agent(self, agent_id: str) -> dict:
         return self._state["agents"][agent_id]
@@ -387,6 +393,9 @@ class World:
 
     def get_drone_scans(self) -> list:
         return self._state.get("drone_scans", [])
+
+    def get_tick(self) -> int:
+        return self._state["tick"]
 
     # --- Setters ---
     def set_agent_model(self, agent_id: str, model: str):

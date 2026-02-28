@@ -1,18 +1,18 @@
 import unittest
 
-from app.world import WORLD
+from app.world import world
 from app.agent import MistralRoverReasoner
 
 
 class TestRoverFallback(unittest.TestCase):
     def setUp(self):
-        WORLD["agents"]["rover-mistral"]["position"] = [10, 10]
-        WORLD["agents"]["rover-mistral"]["battery"] = 1.0
-        WORLD["agents"]["rover-mistral"]["mission"] = {
+        world.state["agents"]["rover-mistral"]["position"] = [10, 10]
+        world.state["agents"]["rover-mistral"]["battery"] = 1.0
+        world.state["agents"]["rover-mistral"]["mission"] = {
             "objective": "Explore the terrain",
             "plan": [],
         }
-        WORLD["agents"]["rover-mistral"]["visited"] = [[10, 10]]
+        world.state["agents"]["rover-mistral"]["visited"] = [[10, 10]]
 
     def test_fallback_returns_dict(self):
         agent = MistralRoverReasoner()
@@ -38,13 +38,13 @@ class TestRoverFallback(unittest.TestCase):
 
     def test_fallback_does_not_mutate_world(self):
         agent = MistralRoverReasoner()
-        pos_before = list(WORLD["agents"]["rover-mistral"]["position"])
+        pos_before = list(world.state["agents"]["rover-mistral"]["position"])
         agent._fallback_turn("test reason")
-        self.assertEqual(WORLD["agents"]["rover-mistral"]["position"], pos_before)
+        self.assertEqual(world.state["agents"]["rover-mistral"]["position"], pos_before)
 
     def test_fallback_prefers_unvisited(self):
-        WORLD["agents"]["rover-mistral"]["position"] = [10, 10]
-        WORLD["agents"]["rover-mistral"]["visited"] = [
+        world.state["agents"]["rover-mistral"]["position"] = [10, 10]
+        world.state["agents"]["rover-mistral"]["visited"] = [
             [10, 10],
             [11, 10],
             [10, 9],

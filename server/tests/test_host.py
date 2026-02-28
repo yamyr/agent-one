@@ -130,19 +130,19 @@ class TestHostStationRouting(unittest.TestCase):
 
 class TestHostAbortMission(unittest.TestCase):
     def setUp(self):
-        from app.world import WORLD
+        from app.world import world
 
-        self._original_status = WORLD["mission"]["status"]
+        self._original_status = world.get_mission()["status"]
 
     def tearDown(self):
-        from app.world import WORLD
+        from app.world import world
 
-        WORLD["mission"]["status"] = self._original_status
+        world.get_mission()["status"] = self._original_status
 
     def test_abort_broadcasts_event(self):
-        from app.world import WORLD
+        from app.world import world
 
-        WORLD["mission"]["status"] = "running"
+        world.get_mission()["status"] = "running"
         host = _make_host()
 
         with patch("app.host.broadcaster") as mock_bc:
@@ -155,9 +155,9 @@ class TestHostAbortMission(unittest.TestCase):
         host._narrator.feed.assert_called_once()
 
     def test_abort_already_ended(self):
-        from app.world import WORLD
+        from app.world import world
 
-        WORLD["mission"]["status"] = "success"
+        world.get_mission()["status"] = "success"
         host = _make_host()
 
         result = asyncio.run(host.abort_mission("too late"))

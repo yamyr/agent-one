@@ -1,7 +1,7 @@
 import unittest
 
 from app.protocol import Message, make_message
-from app.world import WORLD
+from app.world import world
 
 
 class TestMessage(unittest.TestCase):
@@ -77,7 +77,7 @@ class TestMakeMessage(unittest.TestCase):
         self.assertEqual(response.correlation_id, trigger.id)
 
     def test_make_message_uses_current_tick(self):
-        original_tick = WORLD["tick"]
+        original_tick = world.get_tick()
         msg = make_message("world", "event", "state", {})
         self.assertEqual(msg.tick, original_tick)
 

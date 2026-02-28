@@ -4,7 +4,7 @@ import time
 import uuid
 from dataclasses import dataclass, field, asdict
 
-from .world import WORLD
+from .world import world as default_world
 
 
 @dataclass
@@ -21,7 +21,7 @@ class Message:
     payload: dict
     id: str = field(default_factory=lambda: str(uuid.uuid4()))
     ts: float = field(default_factory=time.time)
-    tick: int = field(default_factory=lambda: WORLD["tick"])
+    tick: int = field(default_factory=lambda: default_world.get_tick())
     correlation_id: str | None = None
 
     def to_dict(self):

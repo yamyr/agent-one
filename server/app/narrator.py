@@ -419,10 +419,10 @@ class Narrator:
 
         try:
             # Build world summary for context
-            from .world import WORLD
+            from .world import world as _world
 
-            agents = WORLD.get("agents", {})
-            mission = WORLD.get("mission", {})
+            agents = _world.get_agents()
+            mission = _world.get_mission()
             summary_parts = [
                 f"Mission status: {mission.get('status', 'unknown')}",
                 f"Target: {mission.get('target_quantity', '?')} units of basalt "
