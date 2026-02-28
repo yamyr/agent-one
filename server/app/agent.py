@@ -16,7 +16,7 @@ from .broadcast import broadcaster
 from .config import settings
 from .protocol import make_message
 from .world import World, world as default_world
-from .world import GRID_W, GRID_H, DIRECTIONS, MAX_MOVE_DISTANCE, MAX_MOVE_DISTANCE_DRONE
+from .world import CHUNK_SIZE, DIRECTIONS, MAX_MOVE_DISTANCE, MAX_MOVE_DISTANCE_DRONE
 from .world import FUEL_CAPACITY_ROVER, FUEL_CAPACITY_DRONE, DRONE_REVEAL_RADIUS
 from .world import BATTERY_COST_MOVE, BATTERY_COST_MOVE_DRONE, BATTERY_COST_DIG
 from .world import BATTERY_COST_ANALYZE, BATTERY_COST_SCAN, BATTERY_COST_NOTIFY
@@ -140,7 +140,9 @@ ROVER_TOOLS = [
 class MistralRoverReasoner:
     """Rover reasoner that decides via Mistral LLM. Returns action dict, does not execute."""
 
-    def __init__(self, agent_id="rover-mistral", model="mistral-small-latest", world: World | None = None):
+    def __init__(
+        self, agent_id="rover-mistral", model="mistral-small-latest", world: World | None = None
+    ):
         self.agent_id = agent_id
         self.model = model
         self._client = None
@@ -172,7 +174,7 @@ class MistralRoverReasoner:
         unvisited_dirs = []
         for name, (dx, dy) in DIRECTIONS.items():
             nx, ny = x + dx, y + dy
-            if 0 <= nx < GRID_W and 0 <= ny < GRID_H and (nx, ny) not in visited_set:
+            if (nx, ny) not in visited_set:
                 unvisited_dirs.append(name)
 
         # Vein at current tile
@@ -237,11 +239,7 @@ class MistralRoverReasoner:
             f"Objective: {mission['objective']}\n"
             f"Target: collect {target_quantity} units of basalt and deliver to station.\n"
             f"Your inventory: {len(inventory)}/{MAX_INVENTORY_ROVER} veins"
-            + (
-                "\n🏁 INVENTORY FULL — RETURN TO STATION NOW TO DELIVER!"
-                if inventory_full
-                else ""
-            )
+            + ("\n🏁 INVENTORY FULL — RETURN TO STATION NOW TO DELIVER!" if inventory_full else "")
         )
 
         current_task = agent.get("tasks", [None])[0] if agent.get("tasks") else None
@@ -265,11 +263,7 @@ class MistralRoverReasoner:
                 else ""
             )
             + f"\nSolar panels remaining: {agent.get('solar_panels_remaining', 0)}"
-            + (
-                "\n⚠️ BATTERY CRITICAL — return to station now!"
-                if battery_critical
-                else ""
-            )
+            + ("\n⚠️ BATTERY CRITICAL — return to station now!" if battery_critical else "")
         )
 
         # Nearby solar panels
@@ -308,7 +302,7 @@ class MistralRoverReasoner:
 
         parts.append(
             f"\n== Environment ==\n"
-            f"Grid: {GRID_W}x{GRID_H}\n"
+            f"Grid: infinite (chunk-based, {CHUNK_SIZE}x{CHUNK_SIZE} per chunk)\n"
             f"Tiles visited: {len(agent.get('visited', []))}\n"
             f"Unvisited neighbors: {', '.join(unvisited_dirs) if unvisited_dirs else 'none'}\n"
             f"Vein here: {stone_line}"
@@ -465,7 +459,9 @@ DRONE_TOOLS = [DRONE_MOVE_TOOL, SCAN_TOOL, NOTIFY_TOOL]
 class DroneAgent:
     """Drone scout agent powered by Mistral LLM. Moves fast, scans for basalt vein deposits."""
 
-    def __init__(self, agent_id="drone-mistral", model="mistral-small-latest", world: World | None = None):
+    def __init__(
+        self, agent_id="drone-mistral", model="mistral-small-latest", world: World | None = None
+    ):
         self.agent_id = agent_id
         self.model = model
         self._client = None
@@ -496,12 +492,12 @@ class DroneAgent:
         unvisited_dirs = []
         for name, (dx, dy) in DIRECTIONS.items():
             nx, ny = x + dx, y + dy
-            if 0 <= nx < GRID_W and 0 <= ny < GRID_H and (nx, ny) not in visited_set:
+            if (nx, ny) not in visited_set:
                 unvisited_dirs.append(name)
 
         scanned_positions = {tuple(s["position"]) for s in self._world.get_drone_scans()}
-        total_tiles = GRID_W * GRID_H
-        coverage = len(scanned_positions) / total_tiles * 100
+        generated_tiles = self._world.get_generated_tile_count()
+        coverage = (len(scanned_positions) / generated_tiles * 100) if generated_tiles > 0 else 0.0
 
         parts = []
 
@@ -532,7 +528,9 @@ class DroneAgent:
             "RULES:\n"
             f"- Battery: move costs 1 fuel unit/tile (~{BATTERY_COST_MOVE_DRONE:.2%}), scan costs 2 fuel units (~{BATTERY_COST_SCAN:.2%}), notify costs 2 fuel units (~{BATTERY_COST_NOTIFY:.2%}). You can fly up to {MAX_MOVE_DISTANCE_DRONE} tiles per move.\n"
             "- Station is at ({sx},{sy}). Return when battery is low for recharge.\n"
-            "- ALWAYS keep enough battery to return to station.".format(sx=station_pos[0], sy=station_pos[1])
+            "- ALWAYS keep enough battery to return to station.".format(
+                sx=station_pos[0], sy=station_pos[1]
+            )
         )
 
         parts.append(
@@ -556,7 +554,7 @@ class DroneAgent:
 
         parts.append(
             f"\n== Environment ==\n"
-            f"Grid: {GRID_W}x{GRID_H}\n"
+            f"Grid: infinite (chunk-based, {CHUNK_SIZE}x{CHUNK_SIZE} per chunk)\n"
             f"Unvisited neighbors: {', '.join(unvisited_dirs) if unvisited_dirs else 'none'}\n"
             f"Already scanned here: {'yes' if (x, y) in scanned_positions else 'no'}"
         )
@@ -665,7 +663,6 @@ class MockDroneAgent:
                     thinking = f"Recall received but already at station ({x}, {y})."
                     return {
                         "thinking": thinking,
-                        
                         "action": {"name": "move", "params": {"direction": "north", "distance": 1}},
                     }
                 if abs(dx) >= abs(dy):
@@ -678,7 +675,6 @@ class MockDroneAgent:
                 thinking = f"RECALL received: {reason}. Heading to station at ({sp[0]},{sp[1]})."
                 return {
                     "thinking": thinking,
-                    
                     "action": {
                         "name": "move",
                         "params": {"direction": direction, "distance": distance},
@@ -706,7 +702,6 @@ class MockDroneAgent:
             )
             return {
                 "thinking": thinking,
-                
                 "action": {
                     "name": "move",
                     "params": {"direction": direction, "distance": distance},
@@ -752,7 +747,6 @@ class MockDroneAgent:
             )
             return {
                 "thinking": thinking,
-                
                 "action": {
                     "name": "move",
                     "params": {"direction": direction, "distance": distance},
@@ -765,7 +759,6 @@ class MockDroneAgent:
         thinking = f"I'm at ({x}, {y}). All nearby areas covered, exploring outward."
         return {
             "thinking": thinking,
-            
             "action": {
                 "name": "move",
                 "params": {"direction": direction, "distance": MAX_MOVE_DISTANCE_DRONE},
@@ -935,9 +928,10 @@ class DroneLoop(BaseAgent):
 
         # During abort, force recall so drone heads to station
         if mission_status == "aborted":
-            self._world.set_pending_commands(self.agent_id, [
-                {"name": "recall", "payload": {"reason": "Mission aborted — return to station"}}
-            ])
+            self._world.set_pending_commands(
+                self.agent_id,
+                [{"name": "recall", "payload": {"reason": "Mission aborted — return to station"}}],
+            )
 
         turn = await asyncio.to_thread(self._reasoner.run_turn)
         next_tick()

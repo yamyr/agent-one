@@ -255,16 +255,21 @@ def _update_bounds(x, y):
 
 def _tools_for_ui(tool_schemas):
     """Extract {name, description} from Mistral tool schemas for the UI."""
-    return [{"name": t["function"]["name"], "description": t["function"]["description"]} for t in tool_schemas]
+    return [
+        {"name": t["function"]["name"], "description": t["function"]["description"]}
+        for t in tool_schemas
+    ]
 
 
 def _rover_tools_for_ui():
     from .agent import ROVER_TOOLS
+
     return _tools_for_ui(ROVER_TOOLS)
 
 
 def _drone_tools_for_ui():
     from .agent import DRONE_TOOLS
+
     return _tools_for_ui(DRONE_TOOLS)
 
 
@@ -379,6 +384,11 @@ class World:
 
     def get_drone_scans(self) -> list:
         return self._state.get("drone_scans", [])
+
+    def get_generated_tile_count(self) -> int:
+        """Total tiles in all generated chunks (for coverage denominator)."""
+        chunks = self._state.get("chunks", {})
+        return len(chunks) * CHUNK_SIZE * CHUNK_SIZE
 
     def get_tick(self) -> int:
         return self._state["tick"]
@@ -962,7 +972,7 @@ def observe_rover(agent_id):
     unvisited_dirs = []
     for name, (dx, dy) in DIRECTIONS.items():
         nx, ny = x + dx, y + dy
-        if 0 <= nx < GRID_W and 0 <= ny < GRID_H and (nx, ny) not in visited_set:
+        if (nx, ny) not in visited_set:
             unvisited_dirs.append(name)
 
     # Vein at current tile
