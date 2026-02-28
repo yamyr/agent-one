@@ -7,7 +7,7 @@ import random
 from mistralai import Mistral
 
 from .config import settings
-from .world import WORLD, GRID_W, GRID_H, DIRECTIONS, check_ground, _find_stone_at
+from .world import WORLD, GRID_W, GRID_H, DIRECTIONS, MAX_MOVE_DISTANCE, check_ground
 
 logger = logging.getLogger(__name__)
 
@@ -15,7 +15,7 @@ MOVE_TOOL = {
     "type": "function",
     "function": {
         "name": "move",
-        "description": "Move the rover one tile in a cardinal direction.",
+        "description": f"Move the rover 1-{MAX_MOVE_DISTANCE} tiles in a cardinal direction. Costs 2% battery per tile.",
         "parameters": {
             "type": "object",
             "properties": {
@@ -23,6 +23,12 @@ MOVE_TOOL = {
                     "type": "string",
                     "enum": ["north", "south", "east", "west"],
                     "description": "Direction to move: north, south, east, or west.",
+                },
+                "distance": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": MAX_MOVE_DISTANCE,
+                    "description": f"Number of tiles to move (1-{MAX_MOVE_DISTANCE}). Default 1.",
                 },
             },
             "required": ["direction"],
@@ -144,6 +150,16 @@ class RoverAgent:
             + (f" ({', '.join(s['type'] for s in inventory)})" if inventory else "")
         )
 
+        # Visible stones (on revealed tiles)
+        revealed_set = {tuple(c) for c in agent.get("revealed", [])}
+        visible_stones = []
+        for stone in WORLD.get("stones", []):
+            sp = tuple(stone["position"])
+            if sp in revealed_set and list(sp) != [x, y]:
+                dist = abs(sp[0] - x) + abs(sp[1] - y)
+                status = "extracted" if stone.get("extracted") else "buried"
+                visible_stones.append(f"{stone['type']} ({status}) at ({sp[0]},{sp[1]}) dist={dist}")
+
         # Environment
         parts.append(
             f"\n== Environment ==\n"
@@ -152,6 +168,10 @@ class RoverAgent:
             f"Unvisited neighbors: {', '.join(unvisited_dirs) if unvisited_dirs else 'none'}\n"
             f"Stone here: {stone_line}"
         )
+        if visible_stones:
+            parts.append("Visible stones nearby:")
+            for vs in visible_stones:
+                parts.append(f"  - {vs}")
 
         # Short-term memory
         if memory:

@@ -3,7 +3,7 @@ import unittest
 from app.world import WORLD, move_agent, execute_action, get_snapshot, check_ground
 from app.world import check_mission_status
 from app.world import BATTERY_COST_MOVE, BATTERY_COST_DIG, BATTERY_COST_PICKUP
-from app.world import CHARGE_RATE, REVEAL_RADIUS, GRID_W, GRID_H, AGENT_STARTS
+from app.world import CHARGE_RATE, REVEAL_RADIUS, GRID_W, GRID_H, AGENT_STARTS, MAX_MOVE_DISTANCE
 from app.world import assign_mission, _cells_in_radius, record_memory, MEMORY_MAX
 
 
@@ -33,16 +33,27 @@ class TestMoveAgent(unittest.TestCase):
         self.assertFalse(result["ok"])
         self.assertIn("Out of bounds", result["error"])
 
-    def test_move_not_adjacent(self):
-        result = move_agent("rover-mock", 5, 10)
+    def test_move_too_far(self):
+        result = move_agent("rover-mock", 6, 10)
         self.assertFalse(result["ok"])
-        self.assertIn("Not adjacent", result["error"])
+        self.assertIn("Too far", result["error"])
         self.assertEqual(WORLD["agents"]["rover-mock"]["position"], [2, 10])
 
     def test_move_diagonal_rejected(self):
         result = move_agent("rover-mock", 3, 11)
         self.assertFalse(result["ok"])
-        self.assertIn("Not adjacent", result["error"])
+        self.assertIn("Not a straight line", result["error"])
+
+    def test_move_multi_tile(self):
+        result = move_agent("rover-mock", 5, 10)
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["distance"], 3)
+        self.assertEqual(WORLD["agents"]["rover-mock"]["position"], [5, 10])
+
+    def test_move_2_tiles(self):
+        result = move_agent("rover-mock", 4, 10)
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["distance"], 2)
 
     def test_move_already_there(self):
         result = move_agent("rover-mock", 2, 10)
@@ -129,6 +140,21 @@ class TestExecuteAction(unittest.TestCase):
             result = execute_action("rover-mock", "move", {"direction": direction})
             self.assertTrue(result["ok"], f"Failed for direction {direction}")
 
+    def test_execute_move_multi_tile(self):
+        WORLD["agents"]["rover-mock"]["position"] = [10, 10]
+        result = execute_action("rover-mock", "move", {"direction": "east", "distance": 3})
+        self.assertTrue(result["ok"])
+        self.assertEqual(WORLD["agents"]["rover-mock"]["position"], [13, 10])
+        self.assertAlmostEqual(WORLD["agents"]["rover-mock"]["battery"], 1.0 - BATTERY_COST_MOVE * 3)
+
+    def test_execute_move_multi_visits_intermediate(self):
+        WORLD["agents"]["rover-mock"]["position"] = [10, 10]
+        execute_action("rover-mock", "move", {"direction": "east", "distance": 3})
+        visited = WORLD["agents"]["rover-mock"]["visited"]
+        self.assertIn([11, 10], visited)
+        self.assertIn([12, 10], visited)
+        self.assertIn([13, 10], visited)
+
     def test_mission_in_snapshot(self):
         snap = get_snapshot()
         agent = snap["agents"]["rover-mock"]
@@ -143,6 +169,10 @@ class TestStones(unittest.TestCase):
         stones = WORLD["stones"]
         self.assertGreaterEqual(len(stones), 5)
         self.assertLessEqual(len(stones), 8)
+
+    def test_guaranteed_core_stones(self):
+        core_count = sum(1 for s in WORLD["stones"] if s["type"] == "core")
+        self.assertGreaterEqual(core_count, 2)
 
     def test_stones_in_snapshot(self):
         snap = get_snapshot()
@@ -496,8 +526,8 @@ class TestFogOfWar(unittest.TestCase):
         self.assertEqual(snap["stones"][0]["position"], [10, 10])
 
     def test_move_reveals_stone(self):
-        # Stone 3 tiles east — not visible at start, visible after moving east
-        WORLD["stones"] = [{"position": [13, 10], "type": "basalt"}]
+        # Stone beyond reveal radius — not visible at start, visible after moving east
+        WORLD["stones"] = [{"position": [16, 10], "type": "basalt"}]
         snap_before = get_snapshot()
         self.assertEqual(len(snap_before["stones"]), 0)
         execute_action("rover-mock", "move", {"direction": "east"})

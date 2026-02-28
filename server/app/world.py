@@ -19,25 +19,38 @@ BATTERY_COST_MOVE = 0.02
 BATTERY_COST_DIG = 0.06
 BATTERY_COST_PICKUP = 0.02
 CHARGE_RATE = 0.20
+MAX_MOVE_DISTANCE = 3
 
 AGENT_STARTS = {(0, 0), (2, 10), (2, 12)}
 STONE_TYPES = ["core", "basalt"]
-REVEAL_RADIUS = 2
+REVEAL_RADIUS = 5
 TARGET_STONE_TYPE = "core"
 TARGET_STONE_COUNT = 2
 MEMORY_MAX = 8
 
 
+def _random_free_pos(occupied):
+    """Pick a random grid position not in `occupied`."""
+    while True:
+        x = random.randint(0, GRID_W - 1)
+        y = random.randint(0, GRID_H - 1)
+        if (x, y) not in occupied:
+            return x, y
+
+
 def _generate_stones():
-    """Place 5-8 stones at random grid positions, avoiding agent starts."""
+    """Place 5-8 stones, guaranteeing at least TARGET_STONE_COUNT core stones."""
     count = random.randint(5, 8)
     stones = []
     occupied = set(AGENT_STARTS)
+    # Guarantee minimum core stones
+    for _ in range(TARGET_STONE_COUNT):
+        x, y = _random_free_pos(occupied)
+        occupied.add((x, y))
+        stones.append({"position": [x, y], "type": "core"})
+    # Fill the rest randomly
     while len(stones) < count:
-        x = random.randint(0, GRID_W - 1)
-        y = random.randint(0, GRID_H - 1)
-        if (x, y) in occupied:
-            continue
+        x, y = _random_free_pos(occupied)
         occupied.add((x, y))
         stones.append({"position": [x, y], "type": random.choice(STONE_TYPES)})
     return stones
@@ -90,7 +103,7 @@ WORLD = {
             "tools": [
                 {
                     "name": "move",
-                    "description": "Move one tile in a cardinal direction (north/south/east/west).",
+                    "description": "Move 1-3 tiles in a cardinal direction (north/south/east/west). Costs 2% battery per tile.",
                 },
                 {"name": "check_ground", "description": "Scan current tile for rocks or minerals."},
                 {"name": "dig", "description": "Dig at current tile to extract a stone (costs 3x move battery)."},
@@ -110,7 +123,7 @@ WORLD = {
             "tools": [
                 {
                     "name": "move",
-                    "description": "Move one tile in a cardinal direction (north/south/east/west).",
+                    "description": "Move 1-3 tiles in a cardinal direction (north/south/east/west). Costs 2% battery per tile.",
                 },
                 {"name": "check_ground", "description": "Scan current tile for rocks or minerals."},
                 {"name": "dig", "description": "Dig at current tile to extract a stone (costs 3x move battery)."},
@@ -142,7 +155,7 @@ def check_ground(agent_id):
 
 
 def move_agent(agent_id, x, y):
-    """Move an agent to target (x, y). Low-level position update only."""
+    """Move an agent to target (x, y). Must be a straight cardinal line, up to MAX_MOVE_DISTANCE tiles."""
     agent = WORLD["agents"].get(agent_id)
     if agent is None:
         return {"ok": False, "error": f"Unknown agent: {agent_id}"}
@@ -151,15 +164,18 @@ def move_agent(agent_id, x, y):
         return {"ok": False, "error": f"Out of bounds: ({x}, {y})"}
 
     ox, oy = agent["position"]
-    dist = abs(x - ox) + abs(y - oy)
+    dx, dy = x - ox, y - oy
+    dist = abs(dx) + abs(dy)
     if dist == 0:
         return {"ok": False, "error": f"Already at ({x}, {y})"}
-    if dist != 1:
-        return {"ok": False, "error": f"Not adjacent: ({ox}, {oy}) -> ({x}, {y})"}
+    if dist > MAX_MOVE_DISTANCE:
+        return {"ok": False, "error": f"Too far: {dist} tiles (max {MAX_MOVE_DISTANCE})"}
+    if dx != 0 and dy != 0:
+        return {"ok": False, "error": f"Not a straight line: ({ox}, {oy}) -> ({x}, {y})"}
 
     agent["position"] = [x, y]
     logger.info("Agent %s moved (%d,%d) -> (%d,%d)", agent_id, ox, oy, x, y)
-    return {"ok": True, "from": [ox, oy], "to": [x, y]}
+    return {"ok": True, "from": [ox, oy], "to": [x, y], "distance": dist}
 
 
 def execute_action(agent_id, action_name, params):
@@ -173,21 +189,25 @@ def execute_action(agent_id, action_name, params):
         delta = DIRECTIONS.get(direction)
         if delta is None:
             return {"ok": False, "error": f"Invalid direction: {direction}"}
+        distance = max(1, min(MAX_MOVE_DISTANCE, int(params.get("distance", 1))))
 
         ox, oy = agent["position"]
-        tx, ty = ox + delta[0], oy + delta[1]
+        tx, ty = ox + delta[0] * distance, oy + delta[1] * distance
         result = move_agent(agent_id, tx, ty)
         if result["ok"]:
-            agent["battery"] = max(0.0, agent["battery"] - BATTERY_COST_MOVE)
-            if [tx, ty] not in agent["visited"]:
-                agent["visited"].append([tx, ty])
-            _expand_revealed(agent, tx, ty)
+            agent["battery"] = max(0.0, agent["battery"] - BATTERY_COST_MOVE * distance)
+            # Mark all intermediate + destination tiles as visited/revealed
+            for step in range(1, distance + 1):
+                sx, sy = ox + delta[0] * step, oy + delta[1] * step
+                if [sx, sy] not in agent["visited"]:
+                    agent["visited"].append([sx, sy])
+                _expand_revealed(agent, sx, sy)
             result["ground"] = check_ground(agent_id)
             ground = result["ground"]
             if ground["stone"]:
-                record_memory(agent_id, f"Moved {direction} to ({tx},{ty}), found {ground['stone']['type']} stone")
+                record_memory(agent_id, f"Moved {direction} {distance} to ({tx},{ty}), found {ground['stone']['type']} stone")
             else:
-                record_memory(agent_id, f"Moved {direction} to ({tx},{ty}), empty ground")
+                record_memory(agent_id, f"Moved {direction} {distance} to ({tx},{ty}), empty ground")
     elif action_name == "dig":
         result = _execute_dig(agent_id, agent)
         if result["ok"]:
