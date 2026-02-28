@@ -104,12 +104,10 @@ WORLD = {
             "tools": [
                 {
                     "name": "move",
-                    "description": "Move 1-3 tiles in a cardinal direction (north/south/east/west). Costs 2% battery per tile.",
+                    "description": "Move 1-3 tiles in a cardinal direction (north/south/east/west). Costs 2% battery per tile. Ground is auto-scanned after each move.",
                 },
-                {"name": "check_ground", "description": "Scan current tile for rocks or minerals."},
                 {"name": "dig", "description": "Dig at current tile to extract a stone (costs 3x move battery)."},
                 {"name": "pickup", "description": "Pick up an extracted stone at current tile into inventory."},
-                {"name": "charge", "description": "Recharge battery at the station (must be co-located)."},
             ],
         },
         "rover-mistral": {
@@ -125,12 +123,10 @@ WORLD = {
             "tools": [
                 {
                     "name": "move",
-                    "description": "Move 1-3 tiles in a cardinal direction (north/south/east/west). Costs 2% battery per tile.",
+                    "description": "Move 1-3 tiles in a cardinal direction (north/south/east/west). Costs 2% battery per tile. Ground is auto-scanned after each move.",
                 },
-                {"name": "check_ground", "description": "Scan current tile for rocks or minerals."},
                 {"name": "dig", "description": "Dig at current tile to extract a stone (costs 3x move battery)."},
                 {"name": "pickup", "description": "Pick up an extracted stone at current tile into inventory."},
-                {"name": "charge", "description": "Recharge battery at the station (must be co-located)."},
             ],
         },
     },
@@ -218,10 +214,6 @@ def execute_action(agent_id, action_name, params):
         result = _execute_pickup(agent_id, agent)
         if result["ok"]:
             record_memory(agent_id, f"Picked up {result['stone']['type']} stone at ({result['position'][0]},{result['position'][1]}), inventory={result['inventory_count']}")
-    elif action_name == "charge":
-        result = _execute_charge(agent_id, agent)
-        if result["ok"]:
-            record_memory(agent_id, f"Charged battery {result['battery_before']:.0%} -> {result['battery_after']:.0%}")
     else:
         return {"ok": False, "error": f"Unknown action: {action_name}"}
 
@@ -305,6 +297,19 @@ def _execute_charge(agent_id, agent):
     return {"ok": True, "battery_before": old_battery, "battery_after": agent["battery"]}
 
 
+def charge_rover(rover_id):
+    """Station-initiated charge: recharge a rover that is co-located with the station."""
+    agent = WORLD["agents"].get(rover_id)
+    if agent is None:
+        return {"ok": False, "error": f"Unknown agent: {rover_id}"}
+    if agent.get("type") != "rover":
+        return {"ok": False, "error": f"{rover_id} is not a rover"}
+    result = _execute_charge(rover_id, agent)
+    if result["ok"]:
+        record_memory(rover_id, f"Station charged battery {result['battery_before']:.0%} -> {result['battery_after']:.0%}")
+    return result
+
+
 def check_mission_status():
     """Update mission collected_count and detect success/failure.
 
@@ -315,23 +320,28 @@ def check_mission_status():
         return None
 
     # Count target stones across all rover inventories
+    station = WORLD["agents"].get("station")
+    station_pos = station["position"] if station else [0, 0]
     collected = 0
+    delivered = 0
     for agent in WORLD["agents"].values():
+        if agent.get("type") != "rover":
+            continue
         for stone in agent.get("inventory", []):
             if stone["type"] == mission["target_type"]:
                 collected += 1
+                if agent["position"] == station_pos:
+                    delivered += 1
     mission["collected_count"] = collected
 
-    # Success: collected enough target stones
-    if collected >= mission["target_count"]:
+    # Success: enough target stones delivered to station
+    if delivered >= mission["target_count"]:
         mission["status"] = "success"
-        logger.info("Mission SUCCESS: collected %d/%d %s stones",
-                     collected, mission["target_count"], mission["target_type"])
-        return {"status": "success", "collected": collected}
+        logger.info("Mission SUCCESS: delivered %d/%d %s stones to station",
+                     delivered, mission["target_count"], mission["target_type"])
+        return {"status": "success", "collected": collected, "delivered": delivered}
 
     # Failure: all rovers have zero battery and none are at the station
-    station = WORLD["agents"].get("station")
-    station_pos = station["position"] if station else None
     all_dead = True
     for agent in WORLD["agents"].values():
         if agent.get("type") != "rover":
