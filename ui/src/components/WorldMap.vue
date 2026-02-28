@@ -133,18 +133,42 @@ function isRevealed(x, y) {
 // Grade weights for concentration radius (mirrors server logic)
 const GRADE_ORDER = ['low', 'medium', 'high', 'rich', 'pristine']
 
-function tileConcentration(x, y) {
-  if (!props.worldState) return 0
-  const stones = props.worldState.stones || []
-  let max = 0
-  for (const s of stones) {
+// Pre-computed stone lookup: spatial hash for O(1) per-tile concentration
+const SPATIAL_CELL = 20  // bucket size ≥ max influence radius (18)
+const stoneIndex = computed(() => {
+  const idx = new Map()  // key: 'cx,cy' → stone[]
+  if (!props.worldState) return idx
+  for (const s of (props.worldState.stones || [])) {
     const [sx, sy] = s.position
-    const d = Math.abs(x - sx) + Math.abs(y - sy)
-    if (d === 0) return 1
-    const gi = GRADE_ORDER.indexOf(s.grade !== 'unknown' ? s.grade : 'low')
-    const radius = 10 + (gi >= 0 ? gi : 0) * 2
-    const c = Math.max(0, 1 - d / radius)
-    if (c > max) max = c
+    const ck = `${Math.floor(sx / SPATIAL_CELL)},${Math.floor(sy / SPATIAL_CELL)}`
+    let bucket = idx.get(ck)
+    if (!bucket) { bucket = []; idx.set(ck, bucket) }
+    bucket.push(s)
+  }
+  return idx
+})
+
+function tileConcentration(x, y) {
+  const idx = stoneIndex.value
+  if (idx.size === 0) return 0
+  const cx = Math.floor(x / SPATIAL_CELL)
+  const cy = Math.floor(y / SPATIAL_CELL)
+  let max = 0
+  // Check the 3×3 neighbourhood of spatial cells
+  for (let dcx = -1; dcx <= 1; dcx++) {
+    for (let dcy = -1; dcy <= 1; dcy++) {
+      const bucket = idx.get(`${cx + dcx},${cy + dcy}`)
+      if (!bucket) continue
+      for (const s of bucket) {
+        const [sx, sy] = s.position
+        const d = Math.abs(x - sx) + Math.abs(y - sy)
+        if (d === 0) return 1
+        const gi = GRADE_ORDER.indexOf(s.grade !== 'unknown' ? s.grade : 'low')
+        const radius = 10 + (gi >= 0 ? gi : 0) * 2
+        const c = Math.max(0, 1 - d / radius)
+        if (c > max) max = c
+      }
+    }
   }
   return max
 }
