@@ -6,6 +6,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added (Dual Narrators)
+
+- **Dual-narrator dialogue system**: Two narrators — Commander Rex (male, dry humor) and Dr. Nova (female, science enthusiast) — banter about mission events in real time
+  - `server/app/narrator.py` fully rewritten: new `NARRATOR_SYSTEM_PROMPT` defining both characters, `_parse_dialogue()` regex parser for `COMMANDER REX: ...` / `DR. NOVA: ...` output, `_generate_dialogue_audio()` using ElevenLabs Text-to-Dialogue API (`text_to_dialogue.convert()` with `DialogueInput` pairs), single-voice fallback via `_generate_audio_single()`
+  - WebSocket narration payload now includes `dialogue: [{speaker, text}, ...]` alongside flat `text` for backward compatibility
+  - `NarrationPlayer.vue` updated: speaker-labeled dialogue lines (REX in amber `#cc8844`, NOVA in teal `#44ccaa`), label changed from "NARRATOR" to "MISSION COMMS"
+  - Config: `narration_voice_id_male` (George), `narration_voice_id_female` (Rachel), `narration_model` (`mistral-medium-latest`)
+  - 14 new unit tests: `TestParseDialogue` (8 tests) and `TestStripAudioTags` (6 tests) covering dialogue parsing, speaker normalization, audio tag stripping
+
+### Changed (Dual Narrators)
+
+- Narration model switched from `magistral-medium-latest` to `mistral-medium-latest` (user-specified)
+- Narration max tokens increased from 200 to 350 to accommodate dialogue format
+- Config field `narration_voice_id` replaced with `narration_voice_id_male` and `narration_voice_id_female`
+
 ### Added
 
 - **GitHub → Discord webhook notifications**: New workflow `.github/workflows/discord-git-notify.yml` sends PR and main-branch push events to Discord channels
