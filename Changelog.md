@@ -21,3 +21,4 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - `rut` test runner dependency changed from broken local path to git source (`server/pyproject.toml`)
 - SurrealDB readiness check in test conftest hardened with retry loop instead of fragile `time.sleep(1)` (`server/tests/conftest.py`)
 - Ruff formatting applied to `server/app/agent.py` and `server/app/world.py`
+- Removed unused `props` variable assignment in `MissionBar.vue` to fix ESLint `no-unused-vars` error
