@@ -180,14 +180,14 @@ useKeyboard({
             v-for="id in mobileAgents"
             :key="id"
             :class="['follow-btn', { active: followAgent === id }]"
-            :style="{ borderColor: agentColor(id), color: followAgent === id ? '#0a0a0f' : agentColor(id), backgroundColor: followAgent === id ? agentColor(id) : 'transparent' }"
+            :style="{ borderColor: agentColor(id), color: followAgent === id ? 'var(--bg-primary)' : agentColor(id), backgroundColor: followAgent === id ? agentColor(id) : 'transparent' }"
             @click="setFollowAgent(id)"
           >
             {{ id }}
           </button>
           <button
             :class="['follow-btn', { active: !followAgent }]"
-            :style="{ borderColor: '#555', color: !followAgent ? '#0a0a0f' : '#555', backgroundColor: !followAgent ? '#555' : 'transparent' }"
+            :style="{ borderColor: 'var(--accent-free)', color: !followAgent ? 'var(--bg-primary)' : 'var(--accent-free)', backgroundColor: !followAgent ? 'var(--accent-free)' : 'transparent' }"
             @click="followAgent = null"
           >
             Free
@@ -274,6 +274,11 @@ useKeyboard({
   --accent-task: #e0a040;
   --accent-memory: #7a9a7a;
   --accent-mission: #8a8a6a;
+  --accent-think: #668;
+  --accent-unknown: #4a4a6a;
+  --accent-unknown-border: #2a2a3a;
+  --accent-free: #555;
+  --accent-panel-stroke: #aa8020;
 
   /* Status backgrounds */
   --bg-status-ok: #113311;
@@ -281,6 +286,8 @@ useKeyboard({
   --bg-status-info: #1a1a30;
   --bg-status-warn: #2a1a0a;
   --bg-status-narration: #2a1a30;
+  --bg-minimap: #060609;
+  --bg-minimap-revealed: #1a1a28;
 
   /* Typography */
   --font-mono: 'JetBrains Mono', monospace;

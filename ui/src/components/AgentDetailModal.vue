@@ -292,8 +292,8 @@ function batteryPct() {
 }
 
 .inv-stone.unknown {
-  color: #4a4a6a;
-  border-color: #2a2a3a;
+  color: var(--accent-unknown);
+  border-color: var(--accent-unknown-border);
 }
 
 .modal-context {
