@@ -1,115 +1,48 @@
-# Feature Specification: [FEATURE NAME]
+# Feature Specification: Update ROADMAP.md Checkboxes
 
-**Feature Branch**: `[###-feature-name]`  
-**Created**: [DATE]  
-**Status**: Draft  
-**Input**: User description: "$ARGUMENTS"
+**Feature Branch**: `074-update-roadmap`  
+**Created**: 2026-03-01  
+**Status**: Complete  
+**Input**: GitHub Issue #74 — ROADMAP.md milestone checkboxes are severely outdated
 
 ## User Scenarios & Testing *(mandatory)*
 
-<!--
-  IMPORTANT: User stories should be PRIORITIZED as user journeys ordered by importance.
-  Each user story/journey must be INDEPENDENTLY TESTABLE - meaning if you implement just ONE of them,
-  you should still have a viable MVP (Minimum Viable Product) that delivers value.
-  
-  Assign priorities (P1, P2, P3, etc.) to each story, where P1 is the most critical.
-  Think of each story as a standalone slice of functionality that can be:
-  - Developed independently
-  - Tested independently
-  - Deployed independently
-  - Demonstrated to users independently
--->
+### User Story 1 - Accurate Milestone Tracking (Priority: P1)
 
-### User Story 1 - [Brief Title] (Priority: P1)
+As a developer reading the roadmap, I want the checkboxes to accurately reflect what has been implemented, so I can quickly see project progress and remaining work.
 
-[Describe this user journey in plain language]
+**Why this priority**: Inaccurate roadmap creates confusion about project status and wastes time investigating what's actually done.
 
-**Why this priority**: [Explain the value and why it has this priority level]
-
-**Independent Test**: [Describe how this can be tested independently - e.g., "Can be fully tested by [specific action] and delivers [specific value]"]
+**Independent Test**: Compare each checkbox against actual codebase files. All checked items must have corresponding implementations.
 
 **Acceptance Scenarios**:
 
-1. **Given** [initial state], **When** [action], **Then** [expected outcome]
-2. **Given** [initial state], **When** [action], **Then** [expected outcome]
-
----
-
-### User Story 2 - [Brief Title] (Priority: P2)
-
-[Describe this user journey in plain language]
-
-**Why this priority**: [Explain the value and why it has this priority level]
-
-**Independent Test**: [Describe how this can be tested independently]
-
-**Acceptance Scenarios**:
-
-1. **Given** [initial state], **When** [action], **Then** [expected outcome]
-
----
-
-### User Story 3 - [Brief Title] (Priority: P3)
-
-[Describe this user journey in plain language]
-
-**Why this priority**: [Explain the value and why it has this priority level]
-
-**Independent Test**: [Describe how this can be tested independently]
-
-**Acceptance Scenarios**:
-
-1. **Given** [initial state], **When** [action], **Then** [expected outcome]
-
----
-
-[Add more user stories as needed, each with an assigned priority]
+1. **Given** `protocol.py` and `base_agent.py` exist, **When** viewing M0, **Then** both items show `[x]`
+2. **Given** `DroneAgent` class exists with scan/move tools, **When** viewing M3, **Then** all drone items show `[x]`
+3. **Given** `_best_drone_hotspot()` pipes scan data to rover, **When** viewing M3 action piping, **Then** items 48-50 show `[x]`
+4. **Given** `narrator.py` with ElevenLabs TTS exists, **When** viewing Voice stretch, **Then** TTS item shows `[x]`
+5. **Given** Python 3.14+ and `uv sync` are used, **When** viewing Dependencies, **Then** table reflects current tooling
 
 ### Edge Cases
 
-<!--
-  ACTION REQUIRED: The content in this section represents placeholders.
-  Fill them out with the right edge cases.
--->
-
-- What happens when [boundary condition]?
-- How does system handle [error scenario]?
+- Only mark items that are verifiably implemented in the codebase
+- Drone tool names must match actual implementation (`scan`, `move`), not spec placeholders (`scan_area`, `map_route`)
+- Dependencies table uses Markdown table format — edit in-place, preserve alignment
 
 ## Requirements *(mandatory)*
 
-<!--
-  ACTION REQUIRED: The content in this section represents placeholders.
-  Fill them out with the right functional requirements.
--->
-
 ### Functional Requirements
 
-- **FR-001**: System MUST [specific capability, e.g., "allow users to create accounts"]
-- **FR-002**: System MUST [specific capability, e.g., "validate email addresses"]  
-- **FR-003**: Users MUST be able to [key interaction, e.g., "reset their password"]
-- **FR-004**: System MUST [data requirement, e.g., "persist user preferences"]
-- **FR-005**: System MUST [behavior, e.g., "log all security events"]
-
-*Example of marking unclear requirements:*
-
-- **FR-006**: System MUST authenticate users via [NEEDS CLARIFICATION: auth method not specified - email/password, SSO, OAuth?]
-- **FR-007**: System MUST retain user data for [NEEDS CLARIFICATION: retention period not specified]
-
-### Key Entities *(include if feature involves data)*
-
-- **[Entity 1]**: [What it represents, key attributes without implementation]
-- **[Entity 2]**: [What it represents, relationships to other entities]
+- **FR-001**: M0 protocol types and BaseAgent checkbox items MUST be checked
+- **FR-002**: M3 drone agent, drone tools (corrected names), action piping, and all-agents-active items MUST be checked
+- **FR-003**: Voice stretch TTS item MUST be checked
+- **FR-004**: Dependencies table MUST show `Python 3.14+ | uv sync` and `mistralai SDK | uv sync`
+- **FR-005**: Drone tool names MUST be corrected from `scan_area(zones)`, `map_route(from, to)` to `scan` (concentration map), `move` (tile navigation)
 
 ## Success Criteria *(mandatory)*
 
-<!--
-  ACTION REQUIRED: Define measurable success criteria.
-  These must be technology-agnostic and measurable.
--->
-
 ### Measurable Outcomes
 
-- **SC-001**: [Measurable metric, e.g., "Users can complete account creation in under 2 minutes"]
-- **SC-002**: [Measurable metric, e.g., "System handles 1000 concurrent users without degradation"]
-- **SC-003**: [User satisfaction metric, e.g., "90% of users successfully complete primary task on first attempt"]
-- **SC-004**: [Business metric, e.g., "Reduce support tickets related to [X] by 50%"]
+- **SC-001**: All 11 checkbox/text changes applied to ROADMAP.md and verified against codebase
+- **SC-002**: Changelog.md updated with documentation entry under [Unreleased]
+- **SC-003**: PR passes review with no inaccurate checkbox states

@@ -44,10 +44,10 @@ Mars Mission — Multi-Agent LLM Simulation (Mistral Hackathon)
 **Goal:** two field agents running concurrently, communicating through the coordinator.
 
 - [x] Drone agent: system prompt, scan tools
-- [x] Drone tools: `scan_area(zones)`, `map_route(from, to)`
-- [ ] Drone emits Action with probabilistic rock map
-- [ ] Coordinator: route Actions from drone -> rover
-- [ ] Rover receives drone findings, uses them in reasoning
+- [x] Drone tools: `scan` (concentration map), `move` (tile navigation)
+- [x] Drone emits Action with probabilistic rock map
+- [x] Coordinator: route Actions from drone → rover
+- [x] Rover receives drone findings, uses them in reasoning
 - [x] All agents active simultaneously
 
 **Done when:** drone scans, rover uses scan data to pick a rock, all streamed live.
