@@ -6,6 +6,31 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added (Co-Authoring Guidelines)
+
+- **Co-authoring standard**: All commits and PRs now use `Co-Authored-By: agent-one team <agent-one@yanok.ai>` — added to CLAUDE.md as mandatory rule and to PR template footer
+- Replaces per-model attribution (e.g., `Claude Opus`) with unified team identity
+
+### Added (Semantic PR Logs)
+
+- **PR template** (`.github/PULL_REQUEST_TEMPLATE.md`): standardized semantic PR format with change type checkboxes, semantic diff (Added/Changed/Removed), file impact table (files added/modified/deleted, lines +/-), core files listing, and test coverage section
+- **CLAUDE.md instructions** for auto-generating PR bodies: computes git diff stats, classifies files by filter (A/M/D), identifies core vs test files, and fills the template programmatically
+
+### Added (Dual Narrators)
+
+- **Dual-narrator dialogue system**: Two narrators — Commander Rex (male, dry humor) and Dr. Nova (female, science enthusiast) — banter about mission events in real time
+  - `server/app/narrator.py` fully rewritten: new `NARRATOR_SYSTEM_PROMPT` defining both characters, `_parse_dialogue()` regex parser for `COMMANDER REX: ...` / `DR. NOVA: ...` output, `_generate_dialogue_audio()` using ElevenLabs Text-to-Dialogue API (`text_to_dialogue.convert()` with `DialogueInput` pairs), single-voice fallback via `_generate_audio_single()`
+  - WebSocket narration payload now includes `dialogue: [{speaker, text}, ...]` alongside flat `text` for backward compatibility
+  - `NarrationPlayer.vue` updated: speaker-labeled dialogue lines (REX in amber `#cc8844`, NOVA in teal `#44ccaa`), label changed from "NARRATOR" to "MISSION COMMS"
+  - Config: `narration_voice_id_male` (George), `narration_voice_id_female` (Rachel), `narration_model` (`mistral-medium-latest`)
+  - 14 new unit tests: `TestParseDialogue` (8 tests) and `TestStripAudioTags` (6 tests) covering dialogue parsing, speaker normalization, audio tag stripping
+
+### Changed (Dual Narrators)
+
+- Narration model switched from `magistral-medium-latest` to `mistral-medium-latest` (user-specified)
+- Narration max tokens increased from 200 to 350 to accommodate dialogue format
+- Config field `narration_voice_id` replaced with `narration_voice_id_male` and `narration_voice_id_female`
+
 ### Added
 
 - **Infinite Grid with Viewport & Minimap**: World is no longer a fixed 20×20 grid
@@ -45,18 +70,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   - Purple triangle marker on UI map with larger dashed visibility circle
   - 12 new drone unit tests (142 total pass)
 
-### Changed
-
-- Grid system replaced: fixed `GRID_W`/`GRID_H` boundaries removed; world is now unbounded
-- `_cells_in_radius` no longer clamps to grid bounds (returns full diamond)
-- `move_agent` no longer rejects out-of-bounds moves
-- `_update_drone_tasks` searches within 30-tile radius around agent instead of full grid
-- `get_snapshot()` includes `bounds` field and strips internal chunk data
-- Rover visibility radius reduced from 5 to 3 tiles (balanced by drone's 6-tile radius)
-- `update_tasks()` split into `_update_rover_tasks()` and `_update_drone_tasks()`
-- Rovers now check `drone_scans` for hotspots when no visible stones are found
-- WorldMap camera control changed from auto-follow to parent-driven `followAgent` prop
-- MockRoverAgent and MockDroneAgent exploration now works with infinite grid (removed boundary clamping)
+- **GitHub → Discord webhook notifications**: New workflow `.github/workflows/discord-git-notify.yml` sends PR and main-branch push events to Discord channels
+  - Separate jobs for PR events (opened/reopened/synchronize/ready_for_review/closed/merged) and pushes to `main`
+  - Channel routing via secrets: `DISCORD_WEBHOOK_URL` (default fallback), `DISCORD_WEBHOOK_URL_PR` (optional PR channel), `DISCORD_WEBHOOK_URL_MAIN` (optional main channel)
+  - Task plan documented in `tasks/discord-git-integration.md`
 
 - **ElevenLabs AI Narration**: Real-time narration of Mars mission events via ElevenLabs TTS
   - `server/app/narrator.py` — narration engine with event filtering (drama weights 1-3), Mistral LLM text generation ("David Attenborough meets space podcaster" persona), ElevenLabs TTS audio conversion, async event batching, and rate limiting
@@ -69,12 +86,32 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **Upgraded TTS model to ElevenLabs v3**: replaced `eleven_flash_v2_5` with `eleven_v3` for premium voice quality with emotional expression
 - Updated narrator system prompt to leverage v3 audio tags (`[whispers]`, `[gasps]`, `[laughs]`, `[sighs]`, `[clears throat]`) for dramatic vocal inflection during mission narration
 
+### Fixed
+
+- **Narration text not appearing in UI**: WebSocket event handler matched narrator events on `event.type` instead of `event.name` — both full narration and streaming chunks share `type: "narration"` but differ on `name` (`"narration"` vs `"narration_chunk"`). Fixed in `useWebSocket.js`
+- **Voice toggle out of sync with server**: UI initialized `narrationEnabled` to `true` but server defaults to `false`. Fixed to `false` and added `/api/narration/status` fetch on WebSocket connect to sync toggle state
+
 ### Changed
 
+- **Always-on text narration**: Mistral `magistral-medium-latest` generates narrative text regardless of ElevenLabs voice toggle — voice is now opt-in only
+- **Streaming narration**: text streams to UI via `narration_chunk` WebSocket events using Mistral `chat.stream()`, with typewriter effect in NarrationPlayer
+- Audio emotion tags (`[laughs]`, `[sighs]`, etc.) stripped from display text via `_strip_audio_tags()` — kept only for TTS synthesis
+- NarrationPlayer toggle relabeled to "Voice ON" / "Voice OFF" to clarify it controls audio only
+- Narration model upgraded from `mistral-small-latest` to `magistral-medium-latest`
 
 ### Changed
 
-- Removed `check_ground` from rover actions — ground is now auto-scanned after every move
+- **EventLog moved below map**: EventLog now renders below the map in the right column instead of below the sidebar, improving layout readability
+
+### Fixed
+
+- Fixed broken `WorldMap.vue` — undefined variable reference that prevented the map from rendering (`fix/worldmap-broken-ref`)
+
+### Changed
+
+- **Rover visibility radius**: per-rover colored dashed circle on the map shows each rover's visibility radius
+- **Rovers start at station**: rovers now spawn at station coordinates `(0,0)` and explore outward from there
+- Removed `check_ground` from rover actions
 - Removed `charge` from rover actions — charging is now station-only via `charge_rover()`
 - Mission success now requires delivering target stones to the station, not just collecting them
 - Station agent can charge rovers (new `charge_rover` tool) and auto-charges them on arrival

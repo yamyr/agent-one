@@ -1,8 +1,12 @@
 <script setup>
-import { ref, watch } from 'vue'
+import { ref, watch, onUnmounted } from 'vue'
 
 const props = defineProps({
   narration: {
+    type: Object,
+    default: null,
+  },
+  narrationChunk: {
     type: Object,
     default: null,
   },
@@ -13,14 +17,61 @@ const emit = defineEmits(['toggle-narration'])
 
 const isPlaying = ref(false)
 const currentText = ref('')
+const dialogueLines = ref([])
 const audioQueue = ref([])
 const isProcessing = ref(false)
 
 let currentAudio = null
+let typewriterQueue = []
+let typewriterTimer = null
+
+function startTypewriter() {
+  if (typewriterTimer) return
+  typewriterTimer = setInterval(() => {
+    if (typewriterQueue.length === 0) {
+      clearInterval(typewriterTimer)
+      typewriterTimer = null
+      return
+    }
+    currentText.value += typewriterQueue.shift()
+  }, 30)
+}
+
+function stopTypewriter() {
+  if (typewriterTimer) {
+    clearInterval(typewriterTimer)
+    typewriterTimer = null
+  }
+  typewriterQueue = []
+}
+
+onUnmounted(() => {
+  stopTypewriter()
+})
+
+watch(() => props.narrationChunk, (event) => {
+  if (!event || !event.text) return
+  const chars = event.text.split('')
+  typewriterQueue.push(...chars)
+  startTypewriter()
+})
 
 watch(() => props.narration, (event) => {
   if (!event) return
+  stopTypewriter()
   currentText.value = event.text || ''
+
+  // Parse structured dialogue if available
+  if (event.dialogue && Array.isArray(event.dialogue) && event.dialogue.length > 0) {
+    dialogueLines.value = event.dialogue.map(d => ({
+      speaker: d.speaker,
+      text: d.text,
+      label: d.speaker === 'COMMANDER REX' ? 'REX' : 'NOVA',
+      color: d.speaker === 'COMMANDER REX' ? '#cc8844' : '#44ccaa',
+    }))
+  } else {
+    dialogueLines.value = []
+  }
 
   if (event.audio && props.narrationEnabled) {
     audioQueue.value.push(event.audio)
@@ -107,11 +158,28 @@ function skipAudio() {
         class="narrator-icon"
         :class="{ active: isPlaying }"
       >🎙</span>
-      <span class="narrator-label">NARRATOR</span>
+      <span class="narrator-label">MISSION COMMS</span>
     </div>
 
     <div
-      v-if="currentText"
+      v-if="dialogueLines.length > 0"
+      class="narration-text dialogue-block"
+    >
+      <div
+        v-for="(line, idx) in dialogueLines"
+        :key="idx"
+        class="dialogue-line"
+      >
+        <span
+          class="speaker-label"
+          :style="{ color: line.color }"
+        >{{ line.label }}:</span>
+        <span class="speaker-text">{{ line.text }}</span>
+      </div>
+    </div>
+
+    <div
+      v-else-if="currentText"
       class="narration-text"
     >
       {{ currentText }}
@@ -135,10 +203,10 @@ function skipAudio() {
       <button
         class="toggle-btn"
         :class="{ off: !narrationEnabled }"
-        :title="narrationEnabled ? 'Mute narrator' : 'Unmute narrator'"
+        :title="narrationEnabled ? 'Turn voice off' : 'Turn voice on'"
         @click="emit('toggle-narration')"
       >
-        {{ narrationEnabled ? '🔊' : '🔇' }}
+        {{ narrationEnabled ? 'Voice ON' : 'Voice OFF' }}
       </button>
     </div>
   </div>
@@ -199,6 +267,9 @@ function skipAudio() {
   line-height: 1.4;
   min-width: 0;
   overflow: hidden;
+}
+
+.narration-text:not(.dialogue-block) {
   text-overflow: ellipsis;
   display: -webkit-box;
   -webkit-line-clamp: 2;
@@ -208,6 +279,34 @@ function skipAudio() {
 .narration-text.idle {
   color: #333;
   font-style: normal;
+}
+
+.dialogue-block {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  font-style: normal;
+}
+
+.dialogue-line {
+  display: flex;
+  align-items: baseline;
+  gap: 0.4rem;
+  line-height: 1.4;
+}
+
+.speaker-label {
+  font-weight: 700;
+  font-size: 0.7rem;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+.speaker-text {
+  color: #c8c8d0;
+  font-style: italic;
 }
 
 .narration-controls {
@@ -234,11 +333,13 @@ function skipAudio() {
 }
 
 .toggle-btn {
-  font-size: 0.9rem;
-  padding: 0.15rem 0.3rem;
+  font-family: 'Courier New', monospace;
+  font-size: 0.65rem;
+  padding: 0.2rem 0.5rem;
   border-radius: 3px;
-  border: 1px solid transparent;
-  background: none;
+  border: 1px solid #555;
+  background: #1a1a24;
+  color: #88cc88;
   cursor: pointer;
   opacity: 0.7;
   transition: opacity 0.2s;
@@ -260,7 +361,14 @@ function skipAudio() {
   .narration-text {
     order: 3;
     width: 100%;
+    flex-basis: 100%;
+  }
+  .narration-text:not(.dialogue-block) {
     -webkit-line-clamp: 3;
+  }
+  .dialogue-line {
+    flex-direction: column;
+    gap: 0.15rem;
   }
 }
 </style>

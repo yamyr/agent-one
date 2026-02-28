@@ -37,7 +37,9 @@ class Settings(BaseSettings):
     # ElevenLabs narration
     elevenlabs_api_key: str = ""
     narration_enabled: bool = False
-    narration_voice_id: str = "JBFqnCBsd6RMkjVDRZzb"  # George - warm narrator voice
+    narration_voice_id_male: str = "JBFqnCBsd6RMkjVDRZzb"  # George - Commander Rex
+    narration_voice_id_female: str = "21m00Tcm4TlvDq8ikWAM"  # Rachel - Dr. Nova
+    narration_model: str = "mistral-medium-latest"
     narration_min_interval_seconds: float = 5.0
 
 

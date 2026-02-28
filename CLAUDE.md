@@ -35,11 +35,15 @@ rut tests/test_health.py::TestHealth::test_health_returns_ok  # single test
 ```
 
 Key modules:
-- `app/main.py` — FastAPI app, lifespan (DB init/close), CORS, health endpoint
+- `app/main.py` — FastAPI app, lifespan (DB init/close), CORS, health endpoint, agent loop
 - `app/config.py` — pydantic-settings (`Settings`), reads `.env`
 - `app/db.py` — SurrealDB connection helpers, `get_db()` generator for request-scoped connections
 - `app/broadcast.py` — `Broadcaster` singleton for WebSocket fan-out
 - `app/views.py` — REST endpoints + `/ws` WebSocket endpoint
+- `app/agent.py` — `RoverAgent` (Mistral LLM) + `MockRoverAgent` (random fallback)
+- `app/narrator.py` — AI narration engine: Mistral LLM text generation + ElevenLabs TTS, streaming via `narration_chunk` WebSocket events
+- `app/station.py` — Station agent logic (charge rovers, mission assignment)
+- `app/world.py` — World model, simulation tick loop, task planning
 
 Tests use `rut` (unittest runner) with in-memory SurrealDB spawned in `conftest.py` (`rut_session_setup`/`rut_session_teardown`). Base class `CaseWithDB` provides per-test DB isolation.
 
@@ -60,6 +64,34 @@ Vite proxies `/api/*` to `http://localhost:4009` and `/ws` to `ws://localhost:40
 - Ensure that the website is optimized for computers/laptops, tablets and mobile phones using a responsive design.
 - If you need to look up the latest documentation for an external tool, e.g., Vercel, Supabase, etc., please include 'use context7' in your prompt
 - For each new task, please first create a plan in a markdown file in this repo such that we can always trace back at which stage of the implementation for this particular task we currenlty are by comparing the code and then what's in the plan. Also, divide each plan into smaller tasks and sub-tasks that **shall** be marked as completed in this markdown file if done so. -->
+
+## Co-Authoring (MANDATORY)
+
+All commits and PRs in this repo **must** use the agent-one team attribution:
+
+```
+Co-Authored-By: agent-one team <agent-one@yanok.ai>
+```
+
+- **Commits**: Append the `Co-Authored-By` trailer as the last line of every commit message
+- **PRs**: The PR template already includes the trailer at the bottom — do not remove it
+- **Do NOT** use personal or model-specific co-author lines (e.g., `Claude Opus`, `noreply@anthropic.com`)
+
+## Semantic PR Logs (MANDATORY)
+
+Every PR description **must** follow the template in `.github/PULL_REQUEST_TEMPLATE.md`. When creating a PR with `gh pr create`, auto-populate the semantic diff by running `git diff main...HEAD --stat` and `git diff main...HEAD --numstat` to compute file counts and line changes.
+
+### How to Generate PR Body
+
+1. **Compute stats** from `git diff main...HEAD`:
+   - `--stat` for file list
+   - `--numstat` for added/removed lines per file
+   - `--diff-filter=A` for added files, `--diff-filter=M` for modified, `--diff-filter=D` for deleted
+2. **Classify each file** into Added / Changed / Removed sections
+3. **Core files** = any file under `server/app/`, `ui/src/`, or root config (`CLAUDE.md`, `SPEC.md`, `pyproject.toml`, `package.json`)
+4. **Test files** = any file under `*/tests/` or matching `*.test.*` / `*.spec.*`
+5. **Fill the File Impact table** with actual counts
+6. **Copy Changelog.md entry** into the Changelog section
 
 ## Workflow Orchestration
 
@@ -124,7 +156,8 @@ Vite proxies `/api/*` to `http://localhost:4009` and `/ws` to `ws://localhost:40
 |------|--------|
 | Python | 3.12+ |
 | LLM SDK | `mistralai` |
-| API key | `MISTRAL_API_KEY` env var |
+| TTS SDK | `elevenlabs` (optional — voice narration) |
+| API keys | `MISTRAL_API_KEY` (required), `ELEVENLABS_API_KEY` (optional) |
 | SurrealDB | running on port 4002 (dev) |
 | Node | >= 22.12.0 |
 | Base code | Protocol types and BaseAgent adapted from Snowball |
@@ -135,3 +168,10 @@ Vite proxies `/api/*` to `http://localhost:4009` and `/ws` to `ws://localhost:40
 - `IDEA.md` — high-level concept and vision
 - `ROADMAP.md` — milestone plan (M0–M5 + stretch goals)
 - `_private/PROTOCOL_REF.md` — protocol reference from Snowball
+
+## Active Technologies
+- Python 3.12+ (server), JavaScript/Vue 3 (UI) + FastAPI, Vue 3, Vite, Mistral AI SDK, ElevenLabs SDK (001-fix-narration-ui)
+- N/A (in-memory state only) (001-fix-narration-ui)
+
+## Recent Changes
+- 001-fix-narration-ui: Added Python 3.12+ (server), JavaScript/Vue 3 (UI) + FastAPI, Vue 3, Vite, Mistral AI SDK, ElevenLabs SDK

@@ -1,4 +1,4 @@
-"""Tests for app.narrator — event filtering, prompt building, narrator lifecycle."""
+"""Tests for app.narrator — event filtering, prompt building, dialogue parsing, narrator lifecycle."""
 
 import unittest
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -8,6 +8,8 @@ from app.narrator import (
     Narrator,
     _build_narration_prompt,
     _is_interesting,
+    _parse_dialogue,
+    _strip_audio_tags,
 )
 
 
@@ -220,18 +222,17 @@ class TestNarrator(unittest.IsolatedAsyncioTestCase):
         self.narrator.enabled = True
         self.assertTrue(self.narrator.enabled)
 
-    async def test_feed_skips_when_disabled(self):
+    async def test_feed_buffers_when_voice_disabled(self):
+        """Text narration always runs — disabling only skips voice."""
         self.narrator.enabled = False
         await self.narrator.feed({"name": "dig", "payload": {}})
-        self.assertEqual(len(self.narrator._event_buffer), 0)
+        self.assertEqual(len(self.narrator._event_buffer), 1)
 
-    @patch("app.narrator.settings")
-    async def test_feed_skips_without_api_key(self, mock_settings):
-        mock_settings.elevenlabs_api_key = ""
-        mock_settings.narration_enabled = True
+    async def test_feed_buffers_without_api_key(self):
+        """Text narration works even without ElevenLabs key."""
         narrator = Narrator(broadcast_fn=self.broadcast)
         await narrator.feed({"name": "dig", "payload": {}})
-        self.assertEqual(len(narrator._event_buffer), 0)
+        self.assertEqual(len(narrator._event_buffer), 1)
 
     async def test_feed_skips_uninteresting_event(self):
         self.narrator._enabled = True
@@ -281,3 +282,87 @@ class TestNarrator(unittest.IsolatedAsyncioTestCase):
         self.narrator.start()
         task2 = self.narrator._task
         self.assertIs(task1, task2)
+
+
+class TestParseDialogue(unittest.TestCase):
+    """Test dialogue parsing from LLM output."""
+
+    def test_basic_dialogue(self):
+        text = (
+            "COMMANDER REX: Well, our rover just hit a new zone.\n"
+            "DR. NOVA: Exciting! Let's see what we find."
+        )
+        result = _parse_dialogue(text)
+        self.assertEqual(len(result), 2)
+        self.assertEqual(result[0], ("COMMANDER REX", "Well, our rover just hit a new zone."))
+        self.assertEqual(result[1], ("DR. NOVA", "Exciting! Let's see what we find."))
+
+    def test_empty_text_returns_empty(self):
+        self.assertEqual(_parse_dialogue(""), [])
+
+    def test_no_speakers_returns_empty(self):
+        self.assertEqual(_parse_dialogue("Just some random text without labels."), [])
+
+    def test_single_speaker(self):
+        text = "COMMANDER REX: Solo line here."
+        result = _parse_dialogue(text)
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result[0][0], "COMMANDER REX")
+
+    def test_case_insensitive_speakers(self):
+        text = "commander rex: lowercase works\ndr. nova: also lowercase"
+        result = _parse_dialogue(text)
+        self.assertEqual(len(result), 2)
+        # Should normalize to uppercase
+        self.assertEqual(result[0][0], "COMMANDER REX")
+        self.assertEqual(result[1][0], "DR. NOVA")
+
+    def test_dr_nova_without_period(self):
+        text = "DR NOVA: No period variant."
+        result = _parse_dialogue(text)
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result[0][0], "DR. NOVA")
+
+    def test_audio_tags_preserved_in_parse(self):
+        """Parsing should preserve audio tags — stripping happens separately."""
+        text = "COMMANDER REX: [laughs] That's a good one."
+        result = _parse_dialogue(text)
+        self.assertEqual(len(result), 1)
+        self.assertIn("[laughs]", result[0][1])
+
+    def test_multiline_dialogue(self):
+        text = (
+            "COMMANDER REX: First line.\n"
+            "DR. NOVA: Second line.\n"
+            "COMMANDER REX: Third line.\n"
+            "DR. NOVA: Fourth line."
+        )
+        result = _parse_dialogue(text)
+        self.assertEqual(len(result), 4)
+
+
+class TestStripAudioTags(unittest.TestCase):
+    """Test audio tag stripping for text display."""
+
+    def test_strips_laughs(self):
+        self.assertEqual(_strip_audio_tags("[laughs] That's funny"), "That's funny")
+
+    def test_strips_multiple_tags(self):
+        text = "[sighs] Well [clears throat] let me think [gasps] wow!"
+        result = _strip_audio_tags(text)
+        self.assertEqual(result, "Well let me think wow!")
+
+    def test_strips_whispers(self):
+        self.assertEqual(_strip_audio_tags("[whispers] Can you hear me?"), "Can you hear me?")
+
+    def test_no_tags_unchanged(self):
+        text = "Just normal text here."
+        self.assertEqual(_strip_audio_tags(text), text)
+
+    def test_case_insensitive(self):
+        self.assertEqual(_strip_audio_tags("[LAUGHS] funny"), "funny")
+
+    def test_collapses_double_spaces(self):
+        text = "Before [sighs] after"
+        result = _strip_audio_tags(text)
+        self.assertNotIn("  ", result)

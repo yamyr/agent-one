@@ -29,9 +29,18 @@ const mobileAgents = computed(() => {
 })
 
 
-function onWsConnect() {
+async function onWsConnect() {
   paused.value = false
   fetch('/api/simulation/reset', { method: 'POST' })
+  try {
+    const res = await fetch('/api/narration/status')
+    if (res.ok) {
+      const data = await res.json()
+      narrationEnabled.value = data.enabled
+    }
+  } catch {
+    // Server may not be ready yet — keep default
+  }
 }
 
 async function toggleNarration() {
@@ -48,7 +57,7 @@ async function resetSimulation() {
   }
 }
 
-const { events, connected, worldState, agentIds, agentEvents, narration } = useWebSocket({ onConnect: onWsConnect })
+const { events, connected, worldState, agentIds, agentEvents, narration, narrationChunk } = useWebSocket({ onConnect: onWsConnect })
 
 async function togglePause() {
   const endpoint = paused.value ? '/api/simulation/resume' : '/api/simulation/pause'
@@ -98,6 +107,7 @@ function onUnfollow() {
 
     <NarrationPlayer
       :narration="narration"
+      :narration-chunk="narrationChunk"
       :narration-enabled="narrationEnabled"
       @toggle-narration="toggleNarration"
     />
