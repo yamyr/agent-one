@@ -42,6 +42,7 @@ INTERESTING_EVENTS = {
     # Mission-level
     "mission_success": 3,  # mission completed!
     "mission_failed": 3,  # mission failed
+    "mission_aborted": 3,  # mission manually aborted
 }
 
 # Only narrate thinking events if they contain these keywords

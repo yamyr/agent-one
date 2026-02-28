@@ -14,6 +14,7 @@ from .config import settings
 from .narrator import Narrator
 from .protocol import make_message
 from .station import StationAgent, execute_action as station_execute_action
+from .world import abort_mission as world_abort_mission
 from .world import get_snapshot, WORLD
 from .world import observe_station
 
@@ -173,3 +174,18 @@ class Host:
         )
         await broadcaster.send(msg.to_dict())
         return {"ok": True, "rover_id": rover_id}
+
+    async def abort_mission(self, reason="Manual abort from mission control"):
+        """Abort the running mission and broadcast the event."""
+        result = world_abort_mission(reason)
+        if result is None:
+            return {"ok": False, "error": "Mission already ended"}
+        msg = make_message(
+            source="host",
+            type="event",
+            name="mission_aborted",
+            payload=result,
+        )
+        await broadcaster.send(msg.to_dict())
+        await self._narrator.feed(msg.to_dict())
+        return {"ok": True, **result}

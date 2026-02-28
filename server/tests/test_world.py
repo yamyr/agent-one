@@ -7,6 +7,7 @@ from app.world import BATTERY_COST_ANALYZE, BATTERY_COST_ANALYZE_GROUND
 from app.world import BATTERY_COST_SCAN, BATTERY_COST_MOVE_DRONE
 from app.world import CHARGE_RATE, REVEAL_RADIUS, ROVER_REVEAL_RADIUS, DRONE_REVEAL_RADIUS
 from app.world import AGENT_STARTS
+from app.world import abort_mission, all_agents_at_station
 from app.world import assign_mission, _cells_in_radius, record_memory, MEMORY_MAX
 from app.world import update_tasks, _direction_hint
 from app.world import observe_rover, observe_station
@@ -1594,3 +1595,75 @@ class TestChunkSystem(unittest.TestCase):
         self.assertIn("bounds", snap)
         self.assertIn("min_x", snap["bounds"])
         self.assertIn("max_x", snap["bounds"])
+
+
+class TestAbortMission(unittest.TestCase):
+    def setUp(self):
+        self._original_status = WORLD["mission"]["status"]
+
+    def tearDown(self):
+        WORLD["mission"]["status"] = self._original_status
+
+    def test_abort_sets_status(self):
+        WORLD["mission"]["status"] = "running"
+        result = abort_mission("test reason")
+        self.assertIsNotNone(result)
+        self.assertEqual(result["status"], "aborted")
+        self.assertEqual(result["reason"], "test reason")
+        self.assertEqual(WORLD["mission"]["status"], "aborted")
+
+    def test_abort_noop_when_success(self):
+        WORLD["mission"]["status"] = "success"
+        result = abort_mission("too late")
+        self.assertIsNone(result)
+
+    def test_abort_noop_when_failed(self):
+        WORLD["mission"]["status"] = "failed"
+        result = abort_mission("too late")
+        self.assertIsNone(result)
+
+    def test_abort_noop_when_already_aborted(self):
+        WORLD["mission"]["status"] = "aborted"
+        result = abort_mission("again")
+        self.assertIsNone(result)
+
+    def test_abort_default_reason(self):
+        WORLD["mission"]["status"] = "running"
+        result = abort_mission()
+        self.assertIn("Manual abort", result["reason"])
+
+    def test_abort_updates_agent_objectives(self):
+        WORLD["mission"]["status"] = "running"
+        WORLD["agents"]["rover-mock"]["mission"]["objective"] = "Collect stones"
+        abort_mission("test")
+        self.assertIn("ABORTED", WORLD["agents"]["rover-mock"]["mission"]["objective"])
+
+    def test_abort_tasks_override(self):
+        """During abort, update_tasks should set 'return to station' task."""
+        WORLD["mission"]["status"] = "aborted"
+        WORLD["agents"]["rover-mock"]["position"] = [5, 5]
+        update_tasks("rover-mock")
+        tasks = WORLD["agents"]["rover-mock"]["tasks"]
+        self.assertEqual(len(tasks), 1)
+        self.assertIn("MISSION ABORTED", tasks[0])
+        self.assertIn("return to station", tasks[0])
+
+    def test_abort_tasks_at_station(self):
+        """During abort, agent at station gets standing-by task."""
+        WORLD["mission"]["status"] = "aborted"
+        station_pos = WORLD["agents"]["station"]["position"]
+        WORLD["agents"]["rover-mock"]["position"] = list(station_pos)
+        update_tasks("rover-mock")
+        tasks = WORLD["agents"]["rover-mock"]["tasks"]
+        self.assertIn("standing by", tasks[0])
+
+    def test_all_agents_at_station_true(self):
+        station_pos = WORLD["agents"]["station"]["position"]
+        for aid, agent in WORLD["agents"].items():
+            if agent.get("type") in ("rover", "drone"):
+                agent["position"] = list(station_pos)
+        self.assertTrue(all_agents_at_station())
+
+    def test_all_agents_at_station_false(self):
+        WORLD["agents"]["rover-mock"]["position"] = [99, 99]
+        self.assertFalse(all_agents_at_station())

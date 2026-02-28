@@ -117,6 +117,11 @@ def narration_status():
     return {"enabled": narrator.enabled}
 
 
+@app.post("/mission/abort")
+async def abort_mission(reason: str = "Manual abort from mission control"):
+    return await host.abort_mission(reason)
+
+
 @app.post("/rover/{rover_id}/recall")
 async def recall_rover(rover_id: str):
     return await host.recall_rover(rover_id)

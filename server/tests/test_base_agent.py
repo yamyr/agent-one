@@ -89,6 +89,16 @@ class TestBaseAgentRun(unittest.TestCase):
         # Should have ticked twice: first raises, second stops
         self.assertEqual(agent.tick_count, 2)
 
+    def test_run_continues_on_mission_aborted(self):
+        """Aborted is NOT terminal — agents keep running to return to station."""
+        WORLD["mission"]["status"] = "aborted"
+        agent = _CountingAgent(max_ticks=3)
+        host = MagicMock()
+        host.paused = False
+        asyncio.run(agent.run(host))
+        # Agent should still tick (aborted is not terminal)
+        self.assertEqual(agent.tick_count, 3)
+
     def test_agent_id_and_interval(self):
         agent = _CountingAgent(agent_id="my-rover", interval=1.5)
         self.assertEqual(agent.agent_id, "my-rover")

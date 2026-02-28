@@ -49,6 +49,10 @@ async function toggleNarration() {
   narrationEnabled.value = data.enabled
 }
 
+async function abortMission() {
+  await fetch('/api/mission/abort', { method: 'POST' })
+}
+
 async function resetSimulation() {
   const res = await fetch('/api/simulation/reset', { method: 'POST' })
   if (res.ok) {
@@ -112,7 +116,10 @@ function onUnfollow() {
       @toggle-narration="toggleNarration"
     />
 
-    <MissionBar :mission="worldState ? worldState.mission : null" />
+    <MissionBar
+      :mission="worldState ? worldState.mission : null"
+      @abort="abortMission"
+    />
 
     <div class="top-row">
       <div class="left-col">

@@ -21,7 +21,7 @@ from .world import BATTERY_COST_MOVE, BATTERY_COST_MOVE_DRONE, BATTERY_COST_DIG
 from .world import BATTERY_COST_PICKUP, BATTERY_COST_ANALYZE, BATTERY_COST_ANALYZE_GROUND
 from .world import BATTERY_COST_SCAN, RETURN_TO_BASE_THRESHOLD
 from .world import check_ground, _direction_hint, _find_stone_at, must_return_to_base
-from .world import execute_action, get_snapshot, charge_rover, next_tick
+from .world import execute_action, get_snapshot, charge_rover, next_tick, all_agents_at_station
 
 logger = logging.getLogger(__name__)
 
@@ -681,6 +681,28 @@ class MockDroneAgent:
         )
         agent["last_context"] = context
 
+        # Check for recall command — override everything, head to station
+        for cmd in agent.get("pending_commands", []):
+            if cmd["name"] == "recall":
+                station = WORLD["agents"].get("station")
+                sp = station["position"] if station else [0, 0]
+                dx, dy = sp[0] - x, sp[1] - y
+                if dx == 0 and dy == 0:
+                    thinking = f"Recall received but already at station ({x}, {y})."
+                    return {"thinking": thinking, "action": {"name": "move", "params": {"direction": "north", "distance": 1}}}
+                if abs(dx) >= abs(dy):
+                    direction = "east" if dx > 0 else "west"
+                    distance = min(abs(dx), MAX_MOVE_DISTANCE_DRONE)
+                else:
+                    direction = "north" if dy > 0 else "south"
+                    distance = min(abs(dy), MAX_MOVE_DISTANCE_DRONE)
+                reason = cmd.get("payload", {}).get("reason", "emergency")
+                thinking = f"RECALL received: {reason}. Heading to station at ({sp[0]},{sp[1]})."
+                return {
+                    "thinking": thinking,
+                    "action": {"name": "move", "params": {"direction": direction, "distance": distance}},
+                }
+
         # Battery safety — return to base if battery is low
         if must_return_to_base(agent):
             station = WORLD["agents"].get("station")
@@ -774,12 +796,24 @@ class RoverLoop(BaseAgent):
     _reasoner: MockRoverReasoner | MistralRoverReasoner
 
     async def tick(self, host) -> None:
+        mission_status = WORLD["mission"]["status"]
+
         # Inject pending commands from inbox into WORLD for reasoner to read
         pending = host.drain_inbox(self.agent_id)
+        # During abort, force recall so rover heads to station
+        if mission_status == "aborted":
+            pending = [{"name": "recall", "payload": {"reason": "Mission aborted — return to station"}}]
         if pending:
             WORLD["agents"][self.agent_id]["pending_commands"] = pending
         else:
             WORLD["agents"][self.agent_id].pop("pending_commands", None)
+
+        # If aborted and already at station, stop this agent's loop
+        rover = WORLD["agents"].get(self.agent_id)
+        station_agent = WORLD["agents"].get("station")
+        if mission_status == "aborted" and rover and station_agent and rover["position"] == station_agent["position"]:
+            logger.info("Agent %s at station — abort complete", self.agent_id)
+            return
 
         turn = await asyncio.to_thread(self._reasoner.run_turn)
         tick = next_tick()
@@ -819,15 +853,17 @@ class RoverLoop(BaseAgent):
                     )
                     messages.append(check_msg)
 
-                mission_event = result.get("mission")
-                if mission_event:
-                    mission_msg = make_message(
-                        source="world",
-                        type="event",
-                        name="mission_" + mission_event["status"],
-                        payload=mission_event,
-                    )
-                    messages.append(mission_msg)
+                # Don't check mission success/failure during abort
+                if mission_status != "aborted":
+                    mission_event = result.get("mission")
+                    if mission_event:
+                        mission_msg = make_message(
+                            source="world",
+                            type="event",
+                            name="mission_" + mission_event["status"],
+                            payload=mission_event,
+                        )
+                        messages.append(mission_msg)
 
         for msg in messages:
             await host.broadcast(msg.to_dict())
@@ -838,7 +874,6 @@ class RoverLoop(BaseAgent):
 
         # Auto-charge rover when it arrives at station
         rover = WORLD["agents"].get(self.agent_id)
-        station_agent = WORLD["agents"].get("station")
         if (
             rover
             and station_agent
@@ -878,6 +913,21 @@ class DroneLoop(BaseAgent):
     _reasoner: DroneAgent | MockDroneAgent
 
     async def tick(self, host) -> None:
+        mission_status = WORLD["mission"]["status"]
+        drone = WORLD["agents"].get(self.agent_id)
+        station_agent = WORLD["agents"].get("station")
+
+        # If aborted and at station, stop this agent
+        if mission_status == "aborted" and drone and station_agent and drone["position"] == station_agent["position"]:
+            logger.info("Agent %s at station — abort complete", self.agent_id)
+            return
+
+        # During abort, force recall so drone heads to station
+        if mission_status == "aborted":
+            WORLD["agents"][self.agent_id]["pending_commands"] = [
+                {"name": "recall", "payload": {"reason": "Mission aborted — return to station"}}
+            ]
+
         turn = await asyncio.to_thread(self._reasoner.run_turn)
         tick = next_tick()
         messages = []
@@ -914,8 +964,6 @@ class DroneLoop(BaseAgent):
         )
 
         # Auto-charge drone when at station
-        drone = WORLD["agents"].get(self.agent_id)
-        station_agent = WORLD["agents"].get("station")
         if (
             drone
             and station_agent

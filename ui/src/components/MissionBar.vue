@@ -5,6 +5,8 @@ defineProps({
     default: null,
   },
 })
+
+const emit = defineEmits(['abort'])
 </script>
 
 <template>
@@ -19,6 +21,11 @@ defineProps({
       class="mission-status"
       :class="mission.status"
     >{{ mission.status }}</span>
+    <button
+      v-if="mission.status === 'running'"
+      class="abort-btn"
+      @click="emit('abort')"
+    >ABORT</button>
   </div>
 </template>
 
@@ -70,8 +77,26 @@ defineProps({
   color: #44cc44;
 }
 
-.mission-status.failed {
+.mission-status.failed,
+.mission-status.aborted {
   background: #331111;
   color: #cc4444;
+}
+
+.abort-btn {
+  font-family: 'Courier New', monospace;
+  font-size: 0.65rem;
+  padding: 0.15rem 0.5rem;
+  border-radius: 3px;
+  border: 1px solid #555;
+  background: #1a1a24;
+  color: #cc4444;
+  cursor: pointer;
+  margin-left: 0.25rem;
+}
+
+.abort-btn:hover {
+  border-color: #cc4444;
+  color: #ee6666;
 }
 </style>
