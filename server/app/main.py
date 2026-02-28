@@ -35,12 +35,14 @@ async def _trigger_station(event):
         station_events = await asyncio.to_thread(station.handle_event, event)
         for se in station_events:
             await broadcaster.send(se)
-        await broadcaster.send({
-            "source": "world",
-            "type": "event",
-            "name": "state",
-            "payload": get_snapshot(),
-        })
+        await broadcaster.send(
+            {
+                "source": "world",
+                "type": "event",
+                "name": "state",
+                "payload": get_snapshot(),
+            }
+        )
     except Exception:
         logger.exception("Station trigger error")
 
@@ -53,12 +55,14 @@ async def agent_loop(agent, interval):
             events = []
 
             if turn["thinking"]:
-                events.append({
-                    "source": agent.agent_id,
-                    "type": "event",
-                    "name": "thinking",
-                    "payload": {"text": turn["thinking"]},
-                })
+                events.append(
+                    {
+                        "source": agent.agent_id,
+                        "type": "event",
+                        "name": "thinking",
+                        "payload": {"text": turn["thinking"]},
+                    }
+                )
 
             if turn["action"]:
                 result = execute_action(
@@ -67,29 +71,35 @@ async def agent_loop(agent, interval):
                     turn["action"]["params"],
                 )
                 if result["ok"]:
-                    events.append({
-                        "source": agent.agent_id,
-                        "type": "action",
-                        "name": turn["action"]["name"],
-                        "payload": result,
-                    })
+                    events.append(
+                        {
+                            "source": agent.agent_id,
+                            "type": "action",
+                            "name": turn["action"]["name"],
+                            "payload": result,
+                        }
+                    )
                     ground = result.get("ground")
                     if ground and ground["stone"]:
-                        events.append({
-                            "source": agent.agent_id,
-                            "type": "event",
-                            "name": "check",
-                            "payload": ground,
-                        })
+                        events.append(
+                            {
+                                "source": agent.agent_id,
+                                "type": "event",
+                                "name": "check",
+                                "payload": ground,
+                            }
+                        )
 
             for event in events:
                 await broadcaster.send(event)
-            await broadcaster.send({
-                "source": "world",
-                "type": "event",
-                "name": "state",
-                "payload": get_snapshot(),
-            })
+            await broadcaster.send(
+                {
+                    "source": "world",
+                    "type": "event",
+                    "name": "state",
+                    "payload": get_snapshot(),
+                }
+            )
 
             # Trigger station on stone-found events
             for event in events:
@@ -110,12 +120,14 @@ async def lifespan(app):
         station_events = await asyncio.to_thread(station.define_mission)
         for event in station_events:
             await broadcaster.send(event)
-        await broadcaster.send({
-            "source": "world",
-            "type": "event",
-            "name": "state",
-            "payload": get_snapshot(),
-        })
+        await broadcaster.send(
+            {
+                "source": "world",
+                "type": "event",
+                "name": "state",
+                "payload": get_snapshot(),
+            }
+        )
     except Exception:
         logger.exception("Station startup failed")
 

@@ -53,7 +53,10 @@ WORLD = {
             "visited": [[2, 10]],
             "type": "rover",
             "tools": [
-                {"name": "move", "description": "Move one tile in a cardinal direction (north/south/east/west)."},
+                {
+                    "name": "move",
+                    "description": "Move one tile in a cardinal direction (north/south/east/west).",
+                },
                 {"name": "check_ground", "description": "Scan current tile for rocks or minerals."},
             ],
         },
@@ -64,7 +67,10 @@ WORLD = {
             "visited": [[2, 12]],
             "type": "rover",
             "tools": [
-                {"name": "move", "description": "Move one tile in a cardinal direction (north/south/east/west)."},
+                {
+                    "name": "move",
+                    "description": "Move one tile in a cardinal direction (north/south/east/west).",
+                },
                 {"name": "check_ground", "description": "Scan current tile for rocks or minerals."},
             ],
         },

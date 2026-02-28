@@ -5,7 +5,6 @@ from app.agent import MockRoverAgent
 
 
 class TestMockRoverAgent(unittest.TestCase):
-
     def setUp(self):
         WORLD["agents"]["rover-mock"]["position"] = [10, 10]
         WORLD["agents"]["rover-mock"]["battery"] = 1.0
@@ -56,7 +55,10 @@ class TestMockRoverAgent(unittest.TestCase):
     def test_mock_prefers_unvisited(self):
         WORLD["agents"]["rover-mock"]["position"] = [10, 10]
         WORLD["agents"]["rover-mock"]["visited"] = [
-            [10, 10], [11, 10], [10, 9], [9, 10],
+            [10, 10],
+            [11, 10],
+            [10, 9],
+            [9, 10],
         ]
         agent = MockRoverAgent()
         turn = agent.run_turn()

@@ -25,7 +25,6 @@ def _mock_client_response(content=None, tool_calls=None):
 
 
 class TestStationDefine(unittest.TestCase):
-
     @patch("app.station.settings")
     def test_define_mission_returns_events(self, mock_settings):
         mock_settings.mistral_api_key = "test-key"
@@ -34,7 +33,9 @@ class TestStationDefine(unittest.TestCase):
         station._client = mock_client
 
         tool_calls = [
-            _mock_tool_call("assign_mission", {"agent_id": "rover-mock", "objective": "Explore north sector"}),
+            _mock_tool_call(
+                "assign_mission", {"agent_id": "rover-mock", "objective": "Explore north sector"}
+            ),
         ]
         mock_client.chat.complete.return_value = _mock_client_response(
             content="Assigning initial missions.",
@@ -73,7 +74,6 @@ class TestStationDefine(unittest.TestCase):
 
 
 class TestStationHandleEvent(unittest.TestCase):
-
     @patch("app.station.settings")
     def test_handle_event_returns_events(self, mock_settings):
         mock_settings.mistral_api_key = "test-key"
@@ -82,7 +82,10 @@ class TestStationHandleEvent(unittest.TestCase):
         station._client = mock_client
 
         tool_calls = [
-            _mock_tool_call("assign_mission", {"agent_id": "rover-mistral", "objective": "Collect the basalt stone"}),
+            _mock_tool_call(
+                "assign_mission",
+                {"agent_id": "rover-mistral", "objective": "Collect the basalt stone"},
+            ),
         ]
         mock_client.chat.complete.return_value = _mock_client_response(
             content="Stone found, reassigning rover.",
@@ -104,7 +107,6 @@ class TestStationHandleEvent(unittest.TestCase):
 
 
 class TestExecuteToolCalls(unittest.TestCase):
-
     def setUp(self):
         self._orig_mission = WORLD["agents"]["rover-mock"]["mission"].copy()
 
@@ -112,7 +114,9 @@ class TestExecuteToolCalls(unittest.TestCase):
         WORLD["agents"]["rover-mock"]["mission"] = self._orig_mission
 
     def test_assign_mission_tool_call(self):
-        tool_calls = [_mock_tool_call("assign_mission", {"agent_id": "rover-mock", "objective": "Go north"})]
+        tool_calls = [
+            _mock_tool_call("assign_mission", {"agent_id": "rover-mock", "objective": "Go north"})
+        ]
         events = _execute_tool_calls(tool_calls)
 
         self.assertEqual(len(events), 1)
@@ -130,7 +134,6 @@ class TestExecuteToolCalls(unittest.TestCase):
 
 
 class TestBuildWorldSummary(unittest.TestCase):
-
     def test_summary_contains_rovers(self):
         summary = _build_world_summary()
         self.assertIn("rover-mock", summary)

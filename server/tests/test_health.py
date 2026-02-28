@@ -6,7 +6,6 @@ from app.main import app
 
 
 class TestHealth(unittest.TestCase):
-
     def setUp(self):
         self.client = TestClient(app)
 
