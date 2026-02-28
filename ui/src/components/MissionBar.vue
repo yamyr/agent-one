@@ -25,7 +25,9 @@ const emit = defineEmits(['abort'])
       v-if="mission.status === 'running'"
       class="abort-btn"
       @click="emit('abort')"
-    >ABORT</button>
+    >
+      ABORT
+    </button>
   </div>
 </template>
 
@@ -36,67 +38,67 @@ const emit = defineEmits(['abort'])
   gap: 0.75rem;
   padding: 0.4rem 0.75rem;
   margin-bottom: 0.5rem;
-  border: 1px solid #1a1a24;
-  border-radius: 4px;
-  background: #0c0c14;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--bg-card);
   font-size: 0.75rem;
 }
 
 .mission-label {
-  color: #555;
+  color: var(--text-muted);
   text-transform: uppercase;
   letter-spacing: 0.08em;
   font-size: 0.65rem;
 }
 
 .mission-target {
-  color: #b8962a;
+  color: var(--accent-amber-dark);
 }
 
 .mission-progress {
-  color: #c8c8d0;
+  color: var(--text-primary);
   font-weight: bold;
 }
 
 .mission-status {
   margin-left: auto;
   padding: 0.15rem 0.4rem;
-  border-radius: 3px;
+  border-radius: var(--radius-sm);
   font-size: 0.7rem;
   text-transform: uppercase;
   letter-spacing: 0.05em;
 }
 
 .mission-status.running {
-  background: #1a1a30;
-  color: #6688cc;
+  background: var(--bg-status-info);
+  color: var(--accent-blue);
 }
 
 .mission-status.success {
-  background: #113311;
-  color: #44cc44;
+  background: var(--bg-status-ok);
+  color: var(--accent-green);
 }
 
 .mission-status.failed,
 .mission-status.aborted {
-  background: #331111;
-  color: #cc4444;
+  background: var(--bg-status-error);
+  color: var(--accent-red);
 }
 
 .abort-btn {
-  font-family: 'Courier New', monospace;
+  font-family: var(--font-mono);
   font-size: 0.65rem;
   padding: 0.15rem 0.5rem;
-  border-radius: 3px;
-  border: 1px solid #555;
-  background: #1a1a24;
-  color: #cc4444;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--text-muted);
+  background: var(--bg-input);
+  color: var(--accent-red);
   cursor: pointer;
   margin-left: 0.25rem;
 }
 
 .abort-btn:hover {
-  border-color: #cc4444;
-  color: #ee6666;
+  border-color: var(--accent-red);
+  color: var(--accent-red-light);
 }
 </style>

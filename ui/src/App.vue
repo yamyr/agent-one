@@ -132,12 +132,16 @@ function onUnfollow() {
             :class="['follow-btn', { active: followAgent === id }]"
             :style="{ borderColor: agentColor(id), color: followAgent === id ? '#0a0a0f' : agentColor(id), backgroundColor: followAgent === id ? agentColor(id) : 'transparent' }"
             @click="setFollowAgent(id)"
-          >{{ id }}</button>
+          >
+            {{ id }}
+          </button>
           <button
             :class="['follow-btn', { active: !followAgent }]"
             :style="{ borderColor: '#555', color: !followAgent ? '#0a0a0f' : '#555', backgroundColor: !followAgent ? '#555' : 'transparent' }"
             @click="followAgent = null"
-          >Free</button>
+          >
+            Free
+          </button>
         </div>
         <WorldMap
           ref="worldMapRef"
@@ -174,6 +178,62 @@ function onUnfollow() {
 </template>
 
 <style>
+:root {
+  /* Backgrounds */
+  --bg-primary: #0a0a0f;
+  --bg-card: #0c0c14;
+  --bg-elevated: #12121a;
+  --bg-input: #1a1a24;
+  --bg-tile: #060609;
+  --bg-revealed: #0e0e16;
+
+  /* Borders */
+  --border-subtle: #1a1a24;
+  --border-medium: #2a2a38;
+  --border-dim: #111118;
+  --border-separator: #222;
+
+  /* Text */
+  --text-primary: #c8c8d0;
+  --text-muted: #555;
+  --text-dim: #333;
+  --text-dimmer: #444;
+  --text-secondary: #888;
+  --text-tertiary: #666;
+
+  /* Accents */
+  --accent-orange: #e06030;
+  --accent-gold: #ccaa44;
+  --accent-amber: #cc8844;
+  --accent-amber-light: #eebb66;
+  --accent-amber-dark: #b8962a;
+  --accent-green: #44cc44;
+  --accent-green-soft: #88cc88;
+  --accent-red: #cc4444;
+  --accent-red-light: #ee6666;
+  --accent-teal: #44ccaa;
+  --accent-blue: #6688cc;
+  --accent-action: #c86040;
+  --accent-task: #e0a040;
+  --accent-memory: #7a9a7a;
+  --accent-mission: #8a8a6a;
+
+  /* Status backgrounds */
+  --bg-status-ok: #113311;
+  --bg-status-error: #331111;
+  --bg-status-info: #1a1a30;
+  --bg-status-warn: #2a1a0a;
+  --bg-status-narration: #2a1a30;
+
+  /* Typography */
+  --font-mono: 'Courier New', monospace;
+
+  /* Radii */
+  --radius-sm: 3px;
+  --radius-md: 4px;
+  --radius-lg: 6px;
+}
+
 * {
   margin: 0;
   padding: 0;
@@ -181,9 +241,9 @@ function onUnfollow() {
 }
 
 body {
-  background: #0a0a0f;
-  color: #c8c8d0;
-  font-family: 'Courier New', monospace;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font-family: var(--font-mono);
 }
 
 .app {
@@ -207,7 +267,7 @@ body {
 }
 
 .empty {
-  color: #444;
+  color: var(--text-dimmer);
   padding: 1rem;
   text-align: center;
   font-size: 0.8rem;
@@ -215,7 +275,7 @@ body {
 
 h2 {
   font-size: 0.85rem;
-  color: #555;
+  color: var(--text-muted);
   text-transform: uppercase;
   letter-spacing: 0.1em;
   margin-bottom: 0.5rem;
@@ -226,10 +286,10 @@ h2 {
   width: 4px;
 }
 ::-webkit-scrollbar-track {
-  background: #0a0a0f;
+  background: var(--bg-primary);
 }
 ::-webkit-scrollbar-thumb {
-  background: #222;
+  background: var(--border-separator);
   border-radius: 2px;
 }
 
@@ -242,17 +302,17 @@ h2 {
 
 .follow-label {
   font-size: 0.7rem;
-  color: #555;
+  color: var(--text-muted);
   text-transform: uppercase;
   letter-spacing: 0.05em;
 }
 
 .follow-btn {
-  font-family: 'Courier New', monospace;
+  font-family: var(--font-mono);
   font-size: 0.65rem;
   padding: 0.15rem 0.4rem;
   border: 1px solid;
-  border-radius: 3px;
+  border-radius: var(--radius-sm);
   background: transparent;
   cursor: pointer;
   transition: all 0.15s;
