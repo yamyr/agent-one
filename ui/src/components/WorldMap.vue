@@ -497,7 +497,7 @@ defineExpose({ camX, camY, panCamera })
           :y="stoneScreenY(s)"
           :width="veinSize(s)"
           :height="veinSize(s)"
-          :fill="VEIN_COLORS[veinGrade(s)] || '#666'"
+          :fill="VEIN_COLORS[veinGrade(s)] || 'var(--text-tertiary)'"
           :opacity="veinHasGlow(s) ? 0.95 : 0.85"
           :transform="stoneRotateCenter(s)"
           :filter="veinHasGlow(s) ? 'url(#vein-glow)' : undefined"
@@ -527,7 +527,7 @@ defineExpose({ camX, camY, panCamera })
             :y1="panelScreenY(p)"
             :x2="panelScreenX(p) + (TILE_SIZE - 4) / 2"
             :y2="panelScreenY(p) + TILE_SIZE - 4"
-            :stroke="p.depleted ? '#333' : '#aa8020'"
+            :stroke="p.depleted ? 'var(--text-dim)' : 'var(--accent-panel-stroke)'"
             stroke-width="0.5"
           />
           <line
@@ -535,7 +535,7 @@ defineExpose({ camX, camY, panCamera })
             :y1="panelScreenY(p) + (TILE_SIZE - 4) / 2"
             :x2="panelScreenX(p) + TILE_SIZE - 4"
             :y2="panelScreenY(p) + (TILE_SIZE - 4) / 2"
-            :stroke="p.depleted ? '#333' : '#aa8020'"
+            :stroke="p.depleted ? 'var(--text-dim)' : 'var(--accent-panel-stroke)'"
             stroke-width="0.5"
           />
         </g>
@@ -547,7 +547,7 @@ defineExpose({ camX, camY, panCamera })
         y="0"
         :width="MAP_W"
         :height="MAP_H"
-        fill="#020208"
+        fill="var(--bg-primary)"
         opacity="0.6"
         mask="url(#fog-mask)"
         class="fog-overlay"

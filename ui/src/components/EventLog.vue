@@ -8,6 +8,29 @@ defineProps({
   },
 })
 
+function eventNameClass(event) {
+  switch (event.name) {
+    case 'mission_success':
+      return 'event-name-success'
+    case 'mission_aborted':
+    case 'mission_failed':
+    case 'alert':
+      return 'event-name-error'
+    case 'analyze':
+    case 'dig':
+    case 'pickup':
+      return 'event-name-resource'
+    case 'move':
+    case 'scan':
+    case 'analyze_ground':
+      return 'event-name-map'
+    case 'thinking':
+      return 'event-name-think'
+    default:
+      return 'event-name-default'
+  }
+}
+
 function formatPayload(event) {
   const p = event.payload
   if (!p) return ''
@@ -79,7 +102,7 @@ function formatPayload(event) {
           :style="{ color: agentColor(event.source) }"
         >{{ event.source }}</span>
         <span class="event-type">{{ event.type }}</span>
-        <span class="event-name">{{ event.name }}</span>
+        <span :class="['event-name', eventNameClass(event)]">{{ event.name }}</span>
         <span
           v-if="event.payload && formatPayload(event)"
           class="event-payload"
@@ -129,6 +152,13 @@ function formatPayload(event) {
   color: var(--accent-gold);
   font-size: 0.8rem;
 }
+
+.event-name-default { color: var(--accent-gold); }
+.event-name-success { color: var(--accent-green); }
+.event-name-error { color: var(--accent-red); }
+.event-name-resource { color: var(--accent-amber); }
+.event-name-map { color: var(--accent-blue); }
+.event-name-think { color: var(--accent-teal); }
 
 .event-payload {
   font-size: 0.7rem;

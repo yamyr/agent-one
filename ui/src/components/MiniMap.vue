@@ -124,7 +124,7 @@ function onClick(e) {
         y="0"
         :width="mapW"
         :height="mapH"
-        fill="#060609"
+        fill="var(--bg-minimap)"
       />
 
       <!-- Revealed tiles -->
@@ -135,7 +135,7 @@ function onClick(e) {
         :y="t.sy"
         :width="MINI_TILE"
         :height="MINI_TILE"
-        fill="#1a1a28"
+        fill="var(--bg-minimap-revealed)"
       />
 
       <!-- Agent dots -->
@@ -167,7 +167,7 @@ function onClick(e) {
         :width="viewRect.w"
         :height="viewRect.h"
         fill="none"
-        stroke="#668"
+        stroke="var(--accent-think)"
         stroke-width="1"
         opacity="0.7"
       />

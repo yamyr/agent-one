@@ -193,7 +193,7 @@ const emit = defineEmits(['select-agent'])
 }
 
 .ae-type.think {
-  color: #668;
+  color: var(--accent-think);
 }
 
 .ae-type.action {
@@ -213,7 +213,7 @@ const emit = defineEmits(['select-agent'])
 }
 
 .ae-text.action-text {
-  color: #7a9a7a;
+  color: var(--accent-memory);
 }
 
 @media (max-width: 768px) {
