@@ -74,9 +74,18 @@ jobs:
         env:
           WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL_PR || secrets.DISCORD_WEBHOOK_URL }}
         run: |
-          curl -fsS -X POST "$WEBHOOK_URL" \
-            -H "Content-Type: application/json" \
-            --data @payload.json
+          for i in 1 2 3; do
+            HTTP_CODE=$(curl -sS -o /dev/null -w "%{http_code}" -X POST "$WEBHOOK_URL" \
+              -H "Content-Type: application/json" \
+              --data @payload.json) && break
+            if [ "$HTTP_CODE" = "429" ]; then
+              echo "Rate limited (429), retry $i/3 after ${i}s..."
+              sleep "$i"
+            else
+              echo "HTTP $HTTP_CODE — failing"
+              exit 1
+            fi
+          done
 
   notify-main-push:
     if: github.event_name == 'push'
@@ -120,6 +129,15 @@ jobs:
         env:
           WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL_MAIN || secrets.DISCORD_WEBHOOK_URL }}
         run: |
-          curl -fsS -X POST "$WEBHOOK_URL" \
-            -H "Content-Type: application/json" \
-            --data @payload.json
+          for i in 1 2 3; do
+            HTTP_CODE=$(curl -sS -o /dev/null -w "%{http_code}" -X POST "$WEBHOOK_URL" \
+              -H "Content-Type: application/json" \
+              --data @payload.json) && break
+            if [ "$HTTP_CODE" = "429" ]; then
+              echo "Rate limited (429), retry $i/3 after ${i}s..."
+              sleep "$i"
+            else
+              echo "HTTP $HTTP_CODE — failing"
+              exit 1
+            fi
+          done
