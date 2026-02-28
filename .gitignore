@@ -1,3 +1,23 @@
-mcpbench
 snowball
+redis
 _private
+
+# Python
+__pycache__/
+*.pyc
+*.egg-info/
+.venv/
+
+# Node
+node_modules/
+dist/
+
+# IDE
+.idea/
+.vscode/
+
+# Env
+.env
+
+# Test logs
+test_surrealdb.log

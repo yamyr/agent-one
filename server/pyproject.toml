@@ -1,0 +1,35 @@
+[project]
+name = "mars"
+version = "0.1.0"
+description = "Multi-Agent Mars Mission Simulation"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.115.0",
+    "uvicorn[standard]>=0.32.0",
+    "surrealdb>=1.0.7",
+    "pydantic-settings>=2.0.0",
+    "python-dotenv>=1.0.0",
+    "rich>=13.0.0",
+    "mistralai>=1.0.0",
+]
+
+[tool.uv]
+package = true
+
+[tool.setuptools.packages.find]
+include = ["app*"]
+
+[tool.rut]
+coverage_source = ["app", "tests"]
+
+[tool.ruff]
+line-length = 100
+
+[dependency-groups]
+dev = [
+    "ruff>=0.8.0",
+    "rut",
+]
+
+[tool.uv.sources]
+rut = { path = "/home/eduardo/work/rut", editable = true }

@@ -1,0 +1,2 @@
+#!/bin/bash
+surreal start --log info --user root --pass root --bind 127.0.0.1:4002 memory

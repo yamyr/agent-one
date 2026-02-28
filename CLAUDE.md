@@ -16,13 +16,52 @@ Multi-agent LLM-powered Mars mission simulation for the Mistral Hackathon (Feb 2
 
 Agent classes and protocol types are adapted from the Snowball project (`snowball` repo).
 
+## Project Structure
+
+- `server/` — Python FastAPI backend (port 4009)
+- `ui/` — Vue 3 + Vite frontend (port 4089)
+
+## Server
+
+Uses FastAPI with SurrealDB and pydantic-settings. Managed with `uv`.
+
+```bash
+cd server
+uv sync                        # install deps
+./run                          # uvicorn on :4009 with --reload
+rut tests/                     # run all tests
+rut tests/test_health.py       # run single test file
+rut tests/test_health.py::TestHealth::test_health_returns_ok  # single test
+```
+
+Key modules:
+- `app/main.py` — FastAPI app, lifespan (DB init/close), CORS, health endpoint
+- `app/config.py` — pydantic-settings (`Settings`), reads `.env`
+- `app/db.py` — SurrealDB connection helpers, `get_db()` generator for request-scoped connections
+- `app/broadcast.py` — `Broadcaster` singleton for WebSocket fan-out
+- `app/views.py` — REST endpoints + `/ws` WebSocket endpoint
+
+Tests use `rut` (unittest runner) with in-memory SurrealDB spawned in `conftest.py` (`rut_session_setup`/`rut_session_teardown`). Base class `CaseWithDB` provides per-test DB isolation.
+
+## UI
+
+```bash
+cd ui
+npm install
+npm run dev                    # vite on :4089
+```
+
+Vite proxies `/api/*` to `http://localhost:4009` and `/ws` to `ws://localhost:4009`. Single-page app connects via WebSocket to receive real-time simulation events.
+
 ## Dependencies
 
 | What | Detail |
 |------|--------|
 | Python | 3.12+ |
-| LLM SDK | `mistralai` (pip install) |
+| LLM SDK | `mistralai` |
 | API key | `MISTRAL_API_KEY` env var |
+| SurrealDB | running on port 4002 (dev) |
+| Node | >= 22.12.0 |
 | Base code | Protocol types and BaseAgent adapted from Snowball |
 
 ## Key Spec References
