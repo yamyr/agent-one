@@ -161,35 +161,43 @@ function skipAudio() {
       <span class="narrator-label">MISSION COMMS</span>
     </div>
 
-    <div
-      v-if="dialogueLines.length > 0"
-      class="narration-text dialogue-block"
+    <Transition
+      name="narration-fade"
+      mode="out-in"
     >
       <div
-        v-for="(line, idx) in dialogueLines"
-        :key="idx"
-        class="dialogue-line"
+        v-if="dialogueLines.length > 0"
+        :key="'dialogue-' + dialogueLines.length"
+        class="narration-text dialogue-block"
       >
-        <span
-          class="speaker-label"
-          :style="{ color: line.color }"
-        >{{ line.label }}:</span>
-        <span class="speaker-text">{{ line.text }}</span>
+        <div
+          v-for="(line, idx) in dialogueLines"
+          :key="idx"
+          class="dialogue-line"
+        >
+          <span
+            class="speaker-label"
+            :style="{ color: line.color }"
+          >{{ line.label }}:</span>
+          <span class="speaker-text">{{ line.text }}</span>
+        </div>
       </div>
-    </div>
 
-    <div
-      v-else-if="currentText"
-      class="narration-text"
-    >
-      {{ currentText }}
-    </div>
-    <div
-      v-else
-      class="narration-text idle"
-    >
-      Awaiting mission events...
-    </div>
+      <div
+        v-else-if="currentText"
+        :key="'text'"
+        class="narration-text"
+      >
+        {{ currentText }}
+      </div>
+      <div
+        v-else
+        :key="'idle'"
+        class="narration-text idle"
+      >
+        Awaiting mission events...
+      </div>
+    </Transition>
 
     <div class="narration-controls">
       <button
@@ -351,6 +359,17 @@ function skipAudio() {
 
 .toggle-btn.off {
   opacity: 0.3;
+}
+
+/* ── Narration text fade transition ── */
+.narration-fade-enter-active,
+.narration-fade-leave-active {
+  transition: opacity 0.3s ease;
+}
+
+.narration-fade-enter-from,
+.narration-fade-leave-to {
+  opacity: 0;
 }
 
 /* Responsive */

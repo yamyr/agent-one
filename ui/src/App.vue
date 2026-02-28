@@ -168,12 +168,14 @@ function onUnfollow() {
       />
     </div>
 
-    <AgentDetailModal
-      v-if="selectedAgent"
-      :agent="agentData(selectedAgent)"
-      :agent-id="selectedAgent"
-      @close="closeAgent"
-    />
+    <Transition name="modal">
+      <AgentDetailModal
+        v-if="selectedAgent"
+        :agent="agentData(selectedAgent)"
+        :agent-id="selectedAgent"
+        @close="closeAgent"
+      />
+    </Transition>
   </div>
 </template>
 
@@ -291,6 +293,32 @@ h2 {
 ::-webkit-scrollbar-thumb {
   background: var(--border-separator);
   border-radius: 2px;
+}
+
+/* ── Modal transition ── */
+.modal-enter-active,
+.modal-leave-active {
+  transition: opacity 0.25s ease;
+}
+
+.modal-enter-active .modal,
+.modal-leave-active .modal {
+  transition: transform 0.25s ease, opacity 0.25s ease;
+}
+
+.modal-enter-from,
+.modal-leave-to {
+  opacity: 0;
+}
+
+.modal-enter-from .modal {
+  transform: translateY(16px) scale(0.97);
+  opacity: 0;
+}
+
+.modal-leave-to .modal {
+  transform: translateY(8px) scale(0.98);
+  opacity: 0;
 }
 
 .follow-bar {
