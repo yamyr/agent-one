@@ -418,12 +418,14 @@ def check_ground(agent_id):
     x, y = agent["position"]
     for stone in WORLD.get("stones", []):
         if stone["position"] == [x, y]:
-            return {"stone": {
-                "type": stone["type"],
-                "grade": stone.get("grade", "unknown"),
-                "quantity": stone.get("quantity", 0),
-                "extracted": stone.get("extracted", False),
-            }}
+            return {
+                "stone": {
+                    "type": stone["type"],
+                    "grade": stone.get("grade", "unknown"),
+                    "quantity": stone.get("quantity", 0),
+                    "extracted": stone.get("extracted", False),
+                }
+            }
     return {"stone": None}
 
 
@@ -595,7 +597,12 @@ def _execute_analyze(agent_id, agent):
     stone["quantity"] = stone["_true_quantity"]
     logger.info(
         "Agent %s analyzed vein at (%d,%d), type=%s grade=%s qty=%d",
-        agent_id, x, y, stone["type"], stone["grade"], stone["quantity"],
+        agent_id,
+        x,
+        y,
+        stone["type"],
+        stone["grade"],
+        stone["quantity"],
     )
     return {
         "ok": True,
@@ -669,7 +676,12 @@ def _execute_dig(agent_id, agent):
     stone["extracted"] = True
     logger.info(
         "Agent %s dug at (%d,%d), extracted %s grade=%s qty=%d",
-        agent_id, x, y, stone["type"], stone["grade"], stone["quantity"],
+        agent_id,
+        x,
+        y,
+        stone["type"],
+        stone["grade"],
+        stone["quantity"],
     )
     return {
         "ok": True,
@@ -697,15 +709,22 @@ def _execute_pickup(agent_id, agent):
         return {"ok": False, "error": f"Vein at ({x}, {y}) not yet extracted (dig first)"}
 
     agent["battery"] = max(0.0, agent["battery"] - BATTERY_COST_PICKUP)
-    agent.setdefault("inventory", []).append({
-        "type": stone["type"],
-        "grade": stone["grade"],
-        "quantity": stone["quantity"],
-    })
+    agent.setdefault("inventory", []).append(
+        {
+            "type": stone["type"],
+            "grade": stone["grade"],
+            "quantity": stone["quantity"],
+        }
+    )
     WORLD["stones"].remove(stone)
     logger.info(
         "Agent %s picked up %s grade=%s qty=%d at (%d,%d)",
-        agent_id, stone["type"], stone["grade"], stone["quantity"], x, y,
+        agent_id,
+        stone["type"],
+        stone["grade"],
+        stone["quantity"],
+        x,
+        y,
     )
     return {
         "ok": True,
@@ -770,11 +789,18 @@ def _execute_deploy_solar_panel(agent_id):
     for p in WORLD.get("solar_panels", []):
         if p["position"] == [x, y]:
             return {"ok": False, "error": "Solar panel already deployed here"}
-    panel = {"position": [x, y], "battery": SOLAR_BATTERY_CAPACITY, "deployed_by": agent_id, "depleted": False}
+    panel = {
+        "position": [x, y],
+        "battery": SOLAR_BATTERY_CAPACITY,
+        "deployed_by": agent_id,
+        "depleted": False,
+    }
     WORLD.setdefault("solar_panels", []).append(panel)
     agent["solar_panels_remaining"] = remaining - 1
     agent["battery"] = max(0.0, agent["battery"] - BATTERY_COST_MOVE)  # deploy costs 1 fuel
-    record_memory(agent_id, f"Deployed solar panel at ({x},{y}) — {SOLAR_BATTERY_CAPACITY:.0%} battery")
+    record_memory(
+        agent_id, f"Deployed solar panel at ({x},{y}) — {SOLAR_BATTERY_CAPACITY:.0%} battery"
+    )
     return {"ok": True, "result": f"Solar panel deployed at ({x},{y})", "panel": panel}
 
 
@@ -790,7 +816,11 @@ def _execute_use_solar_battery(agent_id):
             panel["battery"] = 0.0
             panel["depleted"] = True
             record_memory(agent_id, f"Used solar battery at ({x},{y}), gained {charge:.0%}")
-            return {"ok": True, "result": f"Recharged {charge:.0%} from solar panel", "new_battery": agent["battery"]}
+            return {
+                "ok": True,
+                "result": f"Recharged {charge:.0%} from solar panel",
+                "new_battery": agent["battery"],
+            }
     return {"ok": False, "error": "No active solar panel at current position"}
 
 
@@ -841,7 +871,11 @@ def check_mission_status():
             delivered_qty,
             mission["target_quantity"],
         )
-        return {"status": "success", "collected_quantity": collected_qty, "delivered_quantity": delivered_qty}
+        return {
+            "status": "success",
+            "collected_quantity": collected_qty,
+            "delivered_quantity": delivered_qty,
+        }
 
     # Failure: all rovers have zero battery and none are at the station
     all_dead = True
@@ -933,7 +967,9 @@ def update_tasks(agent_id):
         else:
             dist = abs(sp[0] - x) + abs(sp[1] - y)
             hint = _direction_hint(sp[0] - x, sp[1] - y)
-            agent["tasks"] = [f"MISSION ABORTED — return to station at ({sp[0]},{sp[1]}) — {hint}, {dist} tiles"]
+            agent["tasks"] = [
+                f"MISSION ABORTED — return to station at ({sp[0]},{sp[1]}) — {hint}, {dist} tiles"
+            ]
         return
     if agent.get("type") == "drone":
         _update_drone_tasks(agent_id, agent)
@@ -1038,14 +1074,20 @@ def _update_rover_tasks(agent_id, agent):
         sp = station["position"] if station else [0, 0]
         if [x, y] == sp:
             if inv_qty > 0:
-                tasks.append(f"🏁 Deliver basalt at station ({inv_qty} units, mission needs {target_qty})")
+                tasks.append(
+                    f"🏁 Deliver basalt at station ({inv_qty} units, mission needs {target_qty})"
+                )
             else:
                 tasks.append("🏁 Mission target reached! Standby at station.")
         else:
             if mission_met:
-                tasks.append(f"🏁 Mission fulfilled! Return to station at ({sp[0]},{sp[1]}) to deliver {inv_qty} units of basalt IMMEDIATELY")
+                tasks.append(
+                    f"🏁 Mission fulfilled! Return to station at ({sp[0]},{sp[1]}) to deliver {inv_qty} units of basalt IMMEDIATELY"
+                )
             else:
-                tasks.append(f"Return to station at ({sp[0]},{sp[1]}) to deliver {inv_qty} units of basalt")
+                tasks.append(
+                    f"Return to station at ({sp[0]},{sp[1]}) to deliver {inv_qty} units of basalt"
+                )
         agent["tasks"] = tasks
         return
 
@@ -1055,9 +1097,13 @@ def _update_rover_tasks(agent_id, agent):
         if not stone_here.get("analyzed"):
             tasks.append(f"Analyze unknown vein at current tile ({x},{y})")
         elif not stone_here.get("extracted"):
-            tasks.append(f"Dig {stone_here['grade']} vein (qty={stone_here['quantity']}) at current tile ({x},{y})")
+            tasks.append(
+                f"Dig {stone_here['grade']} vein (qty={stone_here['quantity']}) at current tile ({x},{y})"
+            )
         else:
-            tasks.append(f"Pick up {stone_here['grade']} vein (qty={stone_here['quantity']}) at current tile ({x},{y})")
+            tasks.append(
+                f"Pick up {stone_here['grade']} vein (qty={stone_here['quantity']}) at current tile ({x},{y})"
+            )
         agent["tasks"] = tasks
         return
 
@@ -1187,12 +1233,12 @@ def observe_rover(agent_id):
             hint = _direction_hint(sp[0] - x, sp[1] - y)
             grade_info = stone.get("grade", "unknown")
             qty_info = stone.get("quantity", 0)
-            label = f"{stone['type']} {grade_info}" if stone["type"] != "unknown" else "unknown vein"
+            label = (
+                f"{stone['type']} {grade_info}" if stone["type"] != "unknown" else "unknown vein"
+            )
             if qty_info > 0:
                 label += f" qty={qty_info}"
-            visible_stones.append(
-                f"{label} ({status}) at ({sp[0]},{sp[1]}) — {hint}, {dist} tiles"
-            )
+            visible_stones.append(f"{label} ({status}) at ({sp[0]},{sp[1]}) — {hint}, {dist} tiles")
 
     # Mission info
     world_mission = WORLD.get("mission", {})
@@ -1232,22 +1278,26 @@ def observe_station():
     for aid, agent in WORLD["agents"].items():
         if agent["type"] == "station":
             continue
-        rovers.append(RoverSummary(
-            id=aid,
-            position=list(agent["position"]),
-            battery=agent["battery"],
-            mission=AgentMission(**agent["mission"]),
-            visited_count=len(agent.get("visited", [])),
-        ))
+        rovers.append(
+            RoverSummary(
+                id=aid,
+                position=list(agent["position"]),
+                battery=agent["battery"],
+                mission=AgentMission(**agent["mission"]),
+                visited_count=len(agent.get("visited", [])),
+            )
+        )
 
     stones = []
     for s in WORLD.get("stones", []):
-        stones.append(StoneInfo(
-            type=s["type"],
-            position=list(s["position"]),
-            grade=s.get("grade", "unknown"),
-            quantity=s.get("quantity", 0),
-        ))
+        stones.append(
+            StoneInfo(
+                type=s["type"],
+                position=list(s["position"]),
+                grade=s.get("grade", "unknown"),
+                quantity=s.get("quantity", 0),
+            )
+        )
 
     return StationContext(
         grid_w=GRID_W,

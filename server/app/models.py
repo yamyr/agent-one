@@ -28,6 +28,7 @@ class StoneInfo(BaseModel):
 
 class RoverAgentState(BaseModel):
     """Rover's own internal state."""
+
     position: list[int]
     battery: float
     mission: AgentMission
@@ -41,6 +42,7 @@ class RoverAgentState(BaseModel):
 
 class RoverWorldView(BaseModel):
     """World info visible to the rover (not agent state)."""
+
     grid_w: int
     grid_h: int
     station_position: list[int]
@@ -51,6 +53,7 @@ class RoverWorldView(BaseModel):
 
 class PendingCommand(BaseModel):
     """A command queued for an agent by the Host (e.g. recall, assign_mission)."""
+
     name: str
     payload: dict = {}
     id: str = ""
@@ -58,6 +61,7 @@ class PendingCommand(BaseModel):
 
 class RoverComputed(BaseModel):
     """Derived fields for decision-making."""
+
     unvisited_dirs: list[str] = []
     stone_line: str = "none"
     stone_here: StoneInfo | None = None
