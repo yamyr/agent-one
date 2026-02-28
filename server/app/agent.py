@@ -88,12 +88,21 @@ USE_SOLAR_BATTERY_TOOL = {
     },
 }
 
-NOTIFY_BASE_TOOL = {
+NOTIFY_TOOL = {
     "type": "function",
     "function": {
-        "name": "notify_base",
-        "description": f"Send a radio notification to station about collected stones. Costs 2 fuel units (~{BATTERY_COST_NOTIFY:.2%} battery). Use after picking up a vein to inform the station.",
-        "parameters": {"type": "object", "properties": {}},
+        "name": "notify",
+        "description": f"Send a radio message to station. Costs {BATTERY_COST_NOTIFY:.0%} battery. Use to report discoveries, request help, or share status updates.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "message": {
+                    "type": "string",
+                    "description": "The message to send to station.",
+                },
+            },
+            "required": ["message"],
+        },
     },
 }
 
@@ -103,7 +112,7 @@ ROVER_TOOLS = [
     DIG_TOOL,
     DEPLOY_SOLAR_PANEL_TOOL,
     USE_SOLAR_BATTERY_TOOL,
-    NOTIFY_BASE_TOOL,
+    NOTIFY_TOOL,
 ]
 
 
@@ -181,12 +190,21 @@ class MistralRoverReasoner:
             "- Grades: low, medium, high, rich, pristine. Higher grade = more basalt.\n"
             "- After analyzing: DIG to extract and collect into inventory in one step.\n"
             "\n"
+            "RADIO (notify tool):\n"
+            f"- Costs 2 fuel units (~{BATTERY_COST_NOTIFY:.2%} battery). Use sparingly — battery is precious.\n"
+            "- Notify station when you dig a high/rich/pristine vein so it can track mission progress.\n"
+            "- Notify station when your battery is critically low and you might not make it back.\n"
+            "- Notify station when you think you have collected enough basalt to meet the target,\n"
+            "  so it can decide whether to recall you or send you for more.\n"
+            "- Do NOT notify for routine moves or low-grade finds — save fuel for exploration.\n"
+            "\n"
             "RULES:\n"
             f"- Battery is your lifeline. Move costs 1 fuel unit/tile (~{BATTERY_COST_MOVE:.2%}), dig 6 units (~{BATTERY_COST_DIG:.2%}), analyze 3 units (~{BATTERY_COST_ANALYZE:.2%}).\n"
             "- Station is your base at ({sx},{sy}). Return there when battery is low — "
             "the station will recharge you automatically.\n"
-            "- ALWAYS keep enough battery to return to station. When your battery drops to 67% or below, \n"
-            "head back to station IMMEDIATELY — this is the return-to-base threshold.\n"
+            "- ALWAYS keep enough battery to return to station. Check 'moves remaining' vs 'distance to station'.\n"
+            "  If moves remaining <= distance to station + 5 (safety margin), head back IMMEDIATELY.\n"
+            "- But if there is a vein at your CURRENT TILE, analyze/dig it first — it costs no move fuel to stay.\n"
             "- If you find an unknown vein: analyze → dig. Both on the same tile.\n"
             "- Once you have collected enough basalt, RETURN TO STATION to deliver and complete the mission.\n"
             "- CRITICAL: Once you have collected the target quantity of basalt, STOP exploring and RETURN TO STATION IMMEDIATELY.\n"
@@ -217,11 +235,14 @@ class MistralRoverReasoner:
         else:
             parts.append("\n== Current Tasks ==\n1. Explore unvisited tiles to find veins")
 
+        safety_margin = dist_to_station + 5
+        battery_critical = moves_on_battery <= safety_margin
+
         parts.append(
             f"\n== State ==\n"
             f"Position: ({x}, {y})\n"
             f"Battery: {battery:.0%} ({moves_on_battery} moves remaining, {FUEL_CAPACITY_ROVER} fuel capacity)\n"
-            f"Distance to station: {dist_to_station} tiles\n"
+            f"Distance to station: {dist_to_station} tiles (need {safety_margin} moves to return safely)\n"
             f"Inventory: {len(inventory)}/{MAX_INVENTORY_ROVER} veins"
             + (
                 " ("
@@ -231,6 +252,11 @@ class MistralRoverReasoner:
                 else ""
             )
             + f"\nSolar panels remaining: {agent.get('solar_panels_remaining', 0)}"
+            + (
+                "\n⚠️ BATTERY CRITICAL — return to station now!"
+                if battery_critical
+                else ""
+            )
         )
 
         # Nearby solar panels
@@ -341,7 +367,7 @@ class MistralRoverReasoner:
                     "analyze",
                     "deploy_solar_panel",
                     "use_solar_battery",
-                    "notify_base",
+                    "notify",
                 ):
                     action = {"name": name, "params": args}
                 else:
@@ -424,7 +450,7 @@ SCAN_TOOL = {
     },
 }
 
-DRONE_TOOLS = [DRONE_MOVE_TOOL, SCAN_TOOL]
+DRONE_TOOLS = [DRONE_MOVE_TOOL, SCAN_TOOL, NOTIFY_TOOL]
 
 
 class DroneAgent:
@@ -487,8 +513,16 @@ class DroneAgent:
             "- Try to cover the map systematically. Don't scan the same area twice.\n"
             "- Prioritize scanning unexplored areas far from previous scan positions.\n"
             "\n"
+            "RADIO (notify tool):\n"
+            f"- Costs 2 fuel units (~{BATTERY_COST_NOTIFY:.2%} battery). Use it — your scan findings are critical.\n"
+            "- Notify station after every scan that finds a hotspot (peak > 0.5).\n"
+            "  Include the position and peak reading so station can dispatch rovers.\n"
+            "- Notify station when you have completed a sweep of a region.\n"
+            "- Notify station if your battery is low and you cannot cover remaining areas.\n"
+            "- You are the eyes of the mission. Rovers are blind without your reports.\n"
+            "\n"
             "RULES:\n"
-            f"- Battery: move costs 1 fuel unit/tile (~{BATTERY_COST_MOVE_DRONE:.2%}), scan costs 2 fuel units (~{BATTERY_COST_SCAN:.2%}). You can fly up to {MAX_MOVE_DISTANCE_DRONE} tiles per move.\n"
+            f"- Battery: move costs 1 fuel unit/tile (~{BATTERY_COST_MOVE_DRONE:.2%}), scan costs 2 fuel units (~{BATTERY_COST_SCAN:.2%}), notify costs 2 fuel units (~{BATTERY_COST_NOTIFY:.2%}). You can fly up to {MAX_MOVE_DISTANCE_DRONE} tiles per move.\n"
             "- Station is at ({sx},{sy}). Return when battery is low for recharge.\n"
             "- ALWAYS keep enough battery to return to station.\n"
             "- Follow your current tasks list.".format(sx=station_pos[0], sy=station_pos[1])
@@ -581,7 +615,7 @@ class DroneAgent:
                     if isinstance(tc.function.arguments, str)
                     else tc.function.arguments
                 )
-                if name in ("move", "scan"):
+                if name in ("move", "scan", "notify"):
                     action = {"name": name, "params": args}
                 else:
                     logger.warning("%s called unknown tool %r, ignoring", self.agent_id, name)
@@ -806,6 +840,16 @@ class RoverLoop(BaseAgent):
                     )
                     messages.append(check_msg)
 
+                # Emit notify event for station routing
+                if turn["action"]["name"] == "notify" and result.get("message"):
+                    notify_msg = make_message(
+                        source=self.agent_id,
+                        type="event",
+                        name="notify",
+                        payload={"message": result["message"], "position": result["position"]},
+                    )
+                    messages.append(notify_msg)
+
                 # Don't check mission success/failure during abort
                 if mission_status != "aborted":
                     mission_event = result.get("mission")
@@ -817,6 +861,16 @@ class RoverLoop(BaseAgent):
                             payload=mission_event,
                         )
                         messages.append(mission_msg)
+
+                task_text = result.get("task_update")
+                if task_text:
+                    task_msg = make_message(
+                        source=self.agent_id,
+                        type="event",
+                        name="task_update",
+                        payload={"task": task_text},
+                    )
+                    messages.append(task_msg)
 
         for msg in messages:
             await host.broadcast(msg.to_dict())
@@ -904,6 +958,26 @@ class DroneLoop(BaseAgent):
                     payload=result,
                 )
                 messages.append(action_msg)
+
+                # Emit notify event for station routing
+                if turn["action"]["name"] == "notify" and result.get("message"):
+                    notify_msg = make_message(
+                        source=self.agent_id,
+                        type="event",
+                        name="notify",
+                        payload={"message": result["message"], "position": result["position"]},
+                    )
+                    messages.append(notify_msg)
+
+                task_text = result.get("task_update")
+                if task_text:
+                    task_msg = make_message(
+                        source=self.agent_id,
+                        type="event",
+                        name="task_update",
+                        payload={"task": task_text},
+                    )
+                    messages.append(task_msg)
 
         for msg in messages:
             await host.broadcast(msg.to_dict())

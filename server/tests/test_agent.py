@@ -1,7 +1,7 @@
 import unittest
 
 from app.world import world
-from app.agent import MistralRoverReasoner
+from app.agent import MistralRoverReasoner, ROVER_TOOLS, DRONE_TOOLS
 
 
 class TestRoverFallback(unittest.TestCase):
@@ -53,3 +53,18 @@ class TestRoverFallback(unittest.TestCase):
         agent = MistralRoverReasoner()
         turn = agent._fallback_turn("test reason")
         self.assertEqual(turn["action"]["params"]["direction"], "north")
+
+
+class TestToolLists(unittest.TestCase):
+    def _tool_names(self, tools):
+        return [t["function"]["name"] for t in tools]
+
+    def test_notify_in_rover_tools(self):
+        names = self._tool_names(ROVER_TOOLS)
+        self.assertIn("notify", names)
+        self.assertNotIn("notify_base", names)
+
+    def test_notify_in_drone_tools(self):
+        names = self._tool_names(DRONE_TOOLS)
+        self.assertIn("notify", names)
+        self.assertNotIn("notify_base", names)

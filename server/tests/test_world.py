@@ -1464,49 +1464,55 @@ class TestStoneProximityConcentration(unittest.TestCase):
         self.assertEqual(val, 0.0)
 
 
-class TestNotifyBase(unittest.TestCase):
+class TestNotify(unittest.TestCase):
     def setUp(self):
         world.state["agents"]["rover-mistral"]["position"] = [5, 5]
         world.state["agents"]["rover-mistral"]["battery"] = 1.0
-        world.state["agents"]["rover-mistral"]["inventory"] = [
-            {"type": "basalt_vein", "grade": "rich", "quantity": 400},
-        ]
+        world.state["agents"]["rover-mistral"]["inventory"] = []
         world.state["agents"]["rover-mistral"]["visited"] = [[5, 5]]
         world.state["agents"]["rover-mistral"]["memory"] = []
+        world.state["agents"]["drone-mistral"]["position"] = [3, 3]
+        world.state["agents"]["drone-mistral"]["battery"] = 1.0
+        world.state["agents"]["drone-mistral"]["memory"] = []
         self._original_stones = world.state.get("stones", [])
         world.state["stones"] = []
 
     def tearDown(self):
         world.state["stones"] = self._original_stones
 
-    def test_notify_base_success(self):
-        result = execute_action("rover-mistral", "notify_base", {})
+    def test_notify_rover_success(self):
+        result = execute_action("rover-mistral", "notify", {"message": "Found rich vein at (5,5)"})
         self.assertTrue(result["ok"])
         self.assertEqual(result["position"], [5, 5])
-        self.assertIn("rich", result["message"])
-        self.assertEqual(len(result["inventory_summary"]), 1)
-        self.assertEqual(result["inventory_summary"][0]["grade"], "rich")
-        self.assertEqual(result["inventory_summary"][0]["quantity"], 400)
+        self.assertEqual(result["message"], "Found rich vein at (5,5)")
         self.assertAlmostEqual(
             world.state["agents"]["rover-mistral"]["battery"], 1.0 - BATTERY_COST_NOTIFY
         )
 
-    def test_notify_base_empty_inventory(self):
-        world.state["agents"]["rover-mistral"]["inventory"] = []
-        result = execute_action("rover-mistral", "notify_base", {})
-        self.assertFalse(result["ok"])
-        self.assertIn("empty", result["error"])
+    def test_notify_drone_success(self):
+        result = execute_action("drone-mistral", "notify", {"message": "High concentration detected"})
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["position"], [3, 3])
+        self.assertEqual(result["message"], "High concentration detected")
+        self.assertAlmostEqual(
+            world.state["agents"]["drone-mistral"]["battery"], 1.0 - BATTERY_COST_NOTIFY
+        )
 
-    def test_notify_base_low_battery(self):
+    def test_notify_empty_message(self):
+        result = execute_action("rover-mistral", "notify", {"message": ""})
+        self.assertFalse(result["ok"])
+        self.assertIn("Empty message", result["error"])
+
+    def test_notify_missing_message(self):
+        result = execute_action("rover-mistral", "notify", {})
+        self.assertFalse(result["ok"])
+        self.assertIn("Empty message", result["error"])
+
+    def test_notify_low_battery(self):
         world.state["agents"]["rover-mistral"]["battery"] = 0.0
-        result = execute_action("rover-mistral", "notify_base", {})
+        result = execute_action("rover-mistral", "notify", {"message": "help"})
         self.assertFalse(result["ok"])
         self.assertIn("Not enough battery", result["error"])
-
-    def test_notify_base_drone_rejected(self):
-        result = execute_action("drone-mistral", "notify_base", {})
-        self.assertFalse(result["ok"])
-        self.assertIn("Drones cannot", result["error"])
 
 
 class TestInTransitQuantity(unittest.TestCase):

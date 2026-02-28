@@ -254,32 +254,19 @@ def _update_bounds(x, y):
     bounds["max_y"] = max(bounds["max_y"], y)
 
 
-_ROVER_TOOL_DEFS = [
-    {
-        "name": "move",
-        "description": "Move 1-3 tiles in a cardinal direction (north/south/east/west). Costs 1 fuel unit per tile (~0.29% battery). Ground is auto-scanned after each move.",
-    },
-    {
-        "name": "analyze",
-        "description": "Analyze an unknown vein at current tile to reveal its grade (low/medium/high/rich/pristine) and basalt quantity. Costs 3 fuel units (~0.86% battery).",
-    },
-    {
-        "name": "dig",
-        "description": "Dig and collect an analyzed vein at current tile into inventory. Costs 6 fuel units (~1.71% battery). Vein must be analyzed first.",
-    },
-]
+def _tools_for_ui(tool_schemas):
+    """Extract {name, description} from Mistral tool schemas for the UI."""
+    return [{"name": t["function"]["name"], "description": t["function"]["description"]} for t in tool_schemas]
 
 
-_DRONE_TOOL_DEFS = [
-    {
-        "name": "move",
-        "description": "Fly 1-6 tiles in a cardinal direction (north/south/east/west). Costs 1 fuel unit per tile (~0.4% battery).",
-    },
-    {
-        "name": "scan",
-        "description": "Scan the area below and around the drone to sample concentration readings. Returns probability values for surrounding tiles indicating likelihood of precious stone deposits. Costs 2 fuel units (~0.8% battery).",
-    },
-]
+def _rover_tools_for_ui():
+    from .agent import ROVER_TOOLS
+    return _tools_for_ui(ROVER_TOOLS)
+
+
+def _drone_tools_for_ui():
+    from .agent import DRONE_TOOLS
+    return _tools_for_ui(DRONE_TOOLS)
 
 
 def _make_drone(start_x, start_y):
@@ -293,7 +280,7 @@ def _make_drone(start_x, start_y):
         "memory": [],
         "tasks": [],
         "type": "drone",
-        "tools": list(_DRONE_TOOL_DEFS),
+        "tools": None,  # populated lazily via _ensure_agent_tools()
     }
 
 
@@ -308,7 +295,7 @@ def _make_rover(start_x, start_y):
         "memory": [],
         "tasks": [],
         "type": "rover",
-        "tools": list(_ROVER_TOOL_DEFS),
+        "tools": None,  # populated lazily via _ensure_agent_tools()
         "solar_panels_remaining": MAX_SOLAR_PANELS,
     }
 
@@ -558,12 +545,10 @@ def execute_action(agent_id, action_name, params):
         if is_drone:
             return {"ok": False, "error": "Drones cannot use solar batteries"}
         result = _execute_use_solar_battery(agent_id)
-    elif action_name == "notify_base":
-        if is_drone:
-            return {"ok": False, "error": "Drones cannot notify base"}
-        result = _execute_notify_base(agent_id, agent)
+    elif action_name == "notify":
+        result = _execute_notify(agent_id, agent, params)
         if result["ok"]:
-            record_memory(agent_id, f"Notified base: {result['message']}")
+            record_memory(agent_id, f"Notified station: {result['message']}")
     else:
         return {"ok": False, "error": f"Unknown action: {action_name}"}
 
@@ -575,7 +560,9 @@ def execute_action(agent_id, action_name, params):
         if mission_event:
             result["mission"] = mission_event
 
-    update_tasks(agent_id)
+    new_task = update_tasks(agent_id)
+    if new_task is not None:
+        result["task_update"] = new_task
     return result
 
 
@@ -695,20 +682,18 @@ def _execute_dig(agent_id, agent):
     }
 
 
-def _execute_notify_base(agent_id, agent):
-    """Send a radio notification to station about collected stone. Costs 2 fuel."""
+def _execute_notify(agent_id, agent, params):
+    """Send a radio notification to station. Costs 2 fuel."""
     if agent["battery"] < BATTERY_COST_NOTIFY:
-        return {"ok": False, "error": "Not enough battery to notify base"}
-    inventory = agent.get("inventory", [])
-    if not inventory:
-        return {"ok": False, "error": "Nothing to report — inventory is empty"}
+        return {"ok": False, "error": "Not enough battery to notify"}
+    message = params.get("message", "")
+    if not message:
+        return {"ok": False, "error": "Empty message"}
     agent["battery"] = max(0.0, agent["battery"] - BATTERY_COST_NOTIFY)
-    last_stone = inventory[-1]
     return {
         "ok": True,
         "position": list(agent["position"]),
-        "message": f"Collected {last_stone['grade']} {last_stone['type']} (qty={last_stone['quantity']})",
-        "inventory_summary": [{"grade": s["grade"], "quantity": s["quantity"]} for s in inventory],
+        "message": message,
     }
 
 
@@ -943,10 +928,15 @@ def direction_hint(dx, dy):
 
 
 def update_tasks(agent_id):
-    """Recompute short-term tasks for an agent based on current world state."""
+    """Recompute short-term tasks for an agent based on current world state.
+
+    Returns the new primary task string if it changed, else None.
+    """
     agent = WORLD["agents"].get(agent_id)
     if agent is None:
-        return
+        return None
+    old_task = agent["tasks"][0] if agent.get("tasks") else None
+    old_key = old_task.split(" — ")[0] if old_task else None
     # Mission aborted — only task is return to station
     if WORLD["mission"]["status"] == "aborted":
         station = WORLD["agents"].get("station")
@@ -965,6 +955,12 @@ def update_tasks(agent_id):
         _update_drone_tasks(agent_id, agent)
     else:
         _update_rover_tasks(agent_id, agent)
+
+    new_task = agent["tasks"][0] if agent.get("tasks") else None
+    new_key = new_task.split(" — ")[0] if new_task else None
+    if new_key != old_key:
+        return new_task
+    return None
 
 
 def _update_drone_tasks(agent_id, agent):
@@ -1226,8 +1222,19 @@ def observe_station():
     )
 
 
+def _ensure_agent_tools():
+    """Lazily populate agent tool lists from the canonical LLM schemas in agent.py."""
+    for name, agent in WORLD["agents"].items():
+        if agent.get("tools") is None:
+            if agent.get("type") == "drone":
+                agent["tools"] = _drone_tools_for_ui()
+            elif agent.get("type") == "rover":
+                agent["tools"] = _rover_tools_for_ui()
+
+
 def get_snapshot():
     """Return a deep copy of the current world state, filtered by fog-of-war."""
+    _ensure_agent_tools()
     snap = copy.deepcopy(WORLD)
     # Remove internal chunk data
     snap.pop("chunks", None)

@@ -111,24 +111,34 @@ function eventText(e) {
       >
         No activity yet
       </div>
-      <div
+      <template
         v-for="(e, i) in mergedEvents"
         :key="'e-'+i"
-        class="agent-event"
       >
-        <span class="ae-type action">{{ e.name }}</span>
-        <span class="ae-text action-text">{{ eventText(e) }}</span>
-        <span
-          v-if="e.reason"
-          class="ae-reason"
-        >{{ e.reason }}</span>
         <div
-          v-if="e.reason"
-          class="ae-tooltip"
+          v-if="e.name === 'task_update'"
+          class="ae-task-pill"
         >
-          {{ e.reason }}
+          {{ e.payload?.task || '' }}
         </div>
-      </div>
+        <div
+          v-else
+          class="agent-event"
+        >
+          <span class="ae-type action">{{ e.name }}</span>
+          <span class="ae-text action-text">{{ eventText(e) }}</span>
+          <span
+            v-if="e.reason"
+            class="ae-reason"
+          >{{ e.reason }}</span>
+          <div
+            v-if="e.reason"
+            class="ae-tooltip"
+          >
+            {{ e.reason }}
+          </div>
+        </div>
+      </template>
     </div>
   </div>
 </template>
@@ -261,6 +271,19 @@ function eventText(e) {
 
 .agent-event:hover .ae-tooltip {
   display: block;
+}
+
+.ae-task-pill {
+  font-size: 0.65rem;
+  color: var(--accent-task);
+  background: rgba(224, 160, 64, 0.08);
+  border: 1px solid rgba(224, 160, 64, 0.25);
+  border-radius: 9999px;
+  padding: 0.15rem 0.6rem;
+  margin: 0.2rem 0.1rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 @media (max-width: 768px) {
