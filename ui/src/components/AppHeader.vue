@@ -4,13 +4,14 @@ defineProps({
   paused: Boolean,
 })
 
-const emit = defineEmits(['toggle-pause'])
+const emit = defineEmits(['toggle-pause', 'reset'])
 </script>
 
 <template>
   <header>
     <h1>Mars Mission Control</h1>
     <div class="header-controls">
+      <button class="reset-btn" @click="emit('reset')">RESET</button>
       <button class="pause-btn" :class="{ paused }" @click="emit('toggle-pause')">
         {{ paused ? 'RESUME' : 'PAUSE' }}
       </button>
@@ -40,6 +41,22 @@ h1 {
   display: flex;
   align-items: center;
   gap: 0.5rem;
+}
+
+.reset-btn {
+  font-family: 'Courier New', monospace;
+  font-size: 0.75rem;
+  padding: 0.25rem 0.6rem;
+  border-radius: 3px;
+  border: 1px solid #555;
+  background: #1a1a24;
+  color: #cc4444;
+  cursor: pointer;
+}
+
+.reset-btn:hover {
+  border-color: #cc4444;
+  color: #ee6666;
 }
 
 .pause-btn {

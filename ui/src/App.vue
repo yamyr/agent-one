@@ -8,10 +8,23 @@ import MissionBar from './components/MissionBar.vue'
 import EventLog from './components/EventLog.vue'
 import AgentDetailModal from './components/AgentDetailModal.vue'
 
-const { events, connected, worldState, agentIds, agentEvents } = useWebSocket()
-
 const selectedAgent = ref(null)
 const paused = ref(false)
+
+function onWsConnect() {
+  paused.value = false
+  fetch('/api/simulation/reset', { method: 'POST' })
+}
+
+async function resetSimulation() {
+  const res = await fetch('/api/simulation/reset', { method: 'POST' })
+  if (res.ok) {
+    paused.value = false
+    events.value = []
+  }
+}
+
+const { events, connected, worldState, agentIds, agentEvents } = useWebSocket({ onConnect: onWsConnect })
 
 async function togglePause() {
   const endpoint = paused.value ? '/api/simulation/resume' : '/api/simulation/pause'
@@ -36,7 +49,7 @@ function agentData(id) {
 
 <template>
   <div class="app">
-    <AppHeader :connected="connected" :paused="paused" @toggle-pause="togglePause" />
+    <AppHeader :connected="connected" :paused="paused" @toggle-pause="togglePause" @reset="resetSimulation" />
 
     <MissionBar :mission="worldState ? worldState.mission : null" />
 

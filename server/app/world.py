@@ -5,7 +5,13 @@ import logging
 import math
 import random
 
+from .config import settings
+
 logger = logging.getLogger(__name__)
+
+if settings.world_seed:
+    random.seed(settings.world_seed)
+    logger.info("World seed: %s", settings.world_seed)
 
 GRID_W, GRID_H = 20, 20
 
@@ -154,8 +160,6 @@ def _expand_revealed(agent, cx, cy):
             agent.setdefault("revealed", []).append(list(cell))
 
 
-_stones, _core_positions = _generate_stones()
-
 _ROVER_TOOL_DEFS = [
     {
         "name": "move",
@@ -167,52 +171,60 @@ _ROVER_TOOL_DEFS = [
     {"name": "analyze_ground", "description": "Analyze ground concentration at current tile to detect nearby core deposits. Costs 3% battery. Returns a 0.0-1.0 reading."},
 ]
 
-WORLD = {
-    "grid": {"w": GRID_W, "h": GRID_H},
-    "agents": {
-        "station": {
-            "position": [0, 0],
-            "type": "station",
-            "battery": 1.0,
-            "mission": {"objective": "Coordinate Mars mission", "plan": []},
-            "visited": [[0, 0]],
+
+def _make_rover(start_x, start_y):
+    return {
+        "position": [start_x, start_y],
+        "battery": 1.0,
+        "mission": {"objective": "Explore the terrain", "plan": []},
+        "visited": [[start_x, start_y]],
+        "revealed": _init_revealed(start_x, start_y),
+        "inventory": [],
+        "memory": [],
+        "tasks": [],
+        "type": "rover",
+        "ground_readings": {},
+        "tools": list(_ROVER_TOOL_DEFS),
+    }
+
+
+def _build_initial_world():
+    if settings.world_seed:
+        random.seed(settings.world_seed)
+    stones, core_positions = _generate_stones()
+    return {
+        "grid": {"w": GRID_W, "h": GRID_H},
+        "agents": {
+            "station": {
+                "position": [0, 0],
+                "type": "station",
+                "battery": 1.0,
+                "mission": {"objective": "Coordinate Mars mission", "plan": []},
+                "visited": [[0, 0]],
+            },
+            "rover-mock": _make_rover(2, 10),
+            "rover-mistral": _make_rover(2, 12),
         },
-        "rover-mock": {
-            "position": [2, 10],
-            "battery": 1.0,
-            "mission": {"objective": "Explore the terrain", "plan": []},
-            "visited": [[2, 10]],
-            "revealed": _init_revealed(2, 10),
-            "inventory": [],
-            "memory": [],
-            "tasks": [],
-            "type": "rover",
-            "ground_readings": {},
-            "tools": list(_ROVER_TOOL_DEFS),
+        "stones": stones,
+        "concentration_map": _compute_concentration_map(core_positions),
+        "mission": {
+            "status": "running",
+            "target_type": TARGET_STONE_TYPE,
+            "target_count": TARGET_STONE_COUNT,
+            "collected_count": 0,
         },
-        "rover-mistral": {
-            "position": [2, 12],
-            "battery": 1.0,
-            "mission": {"objective": "Explore the terrain", "plan": []},
-            "visited": [[2, 12]],
-            "revealed": _init_revealed(2, 12),
-            "inventory": [],
-            "memory": [],
-            "tasks": [],
-            "type": "rover",
-            "ground_readings": {},
-            "tools": list(_ROVER_TOOL_DEFS),
-        },
-    },
-    "stones": _stones,
-    "concentration_map": _compute_concentration_map(_core_positions),
-    "mission": {
-        "status": "running",
-        "target_type": TARGET_STONE_TYPE,
-        "target_count": TARGET_STONE_COUNT,
-        "collected_count": 0,
-    },
-}
+    }
+
+
+WORLD = _build_initial_world()
+
+
+def reset_world():
+    """Reset WORLD to initial state. Re-seeds RNG if world_seed is set."""
+    fresh = _build_initial_world()
+    WORLD.clear()
+    WORLD.update(fresh)
+    logger.info("World reset")
 
 
 def check_ground(agent_id):

@@ -14,7 +14,7 @@ from .config import settings
 from .db import init_db, close_db
 from .station import StationAgent
 from .views import router as views_router
-from .world import execute_action, get_snapshot, WORLD, charge_rover
+from .world import execute_action, get_snapshot, reset_world, WORLD, charge_rover
 
 logging.basicConfig(
     level=logging.INFO,
@@ -28,6 +28,7 @@ logger = logging.getLogger(__name__)
 
 station = StationAgent()
 simulation_paused = False
+_agent_tasks = []
 
 
 async def _trigger_station(event):
@@ -152,11 +153,8 @@ async def agent_loop(agent, interval):
         await asyncio.sleep(interval)
 
 
-@asynccontextmanager
-async def lifespan(app):
-    init_db()
-
-    # Station defines initial missions at startup
+async def _station_startup():
+    """Run station mission definition in background."""
     try:
         station_events = await asyncio.to_thread(station.define_mission)
         for event in station_events:
@@ -172,11 +170,41 @@ async def lifespan(app):
     except Exception:
         logger.exception("Station startup failed")
 
-    mock_task = asyncio.create_task(agent_loop(MockRoverAgent(), interval=2))
-    mistral_task = asyncio.create_task(agent_loop(RoverAgent(), interval=2))
+
+async def _start_simulation():
+    """Start station mission definition and agent loops."""
+    global simulation_paused
+    simulation_paused = False
+
+    _agent_tasks.append(asyncio.create_task(_station_startup()))
+
+    active = [a.strip() for a in settings.active_agents.split(",") if a.strip()]
+    agent_map = {
+        "rover-mock": lambda: MockRoverAgent(),
+        "rover-mistral": lambda: RoverAgent(),
+    }
+    for name in active:
+        factory = agent_map.get(name)
+        if factory:
+            _agent_tasks.append(asyncio.create_task(agent_loop(factory(), interval=2)))
+            logger.info("Started agent loop: %s", name)
+        else:
+            logger.warning("Unknown agent in ACTIVE_AGENTS: %s", name)
+
+
+def _stop_simulation():
+    """Cancel all running agent loops."""
+    for task in _agent_tasks:
+        task.cancel()
+    _agent_tasks.clear()
+
+
+@asynccontextmanager
+async def lifespan(app):
+    init_db()
+    await _start_simulation()
     yield
-    mock_task.cancel()
-    mistral_task.cancel()
+    _stop_simulation()
     close_db()
 
 
@@ -219,6 +247,14 @@ def resume_simulation():
 @app.get("/simulation/status")
 def simulation_status():
     return {"paused": simulation_paused}
+
+
+@app.post("/simulation/reset")
+async def reset_simulation():
+    _stop_simulation()
+    reset_world()
+    await _start_simulation()
+    return {"reset": True}
 
 
 # Serve Vue static files (must be after all API routes)
