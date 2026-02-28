@@ -181,6 +181,7 @@ useKeyboard({
             :key="id"
             :class="['follow-btn', { active: followAgent === id }]"
             :style="{ borderColor: agentColor(id), color: followAgent === id ? 'var(--bg-primary)' : agentColor(id), backgroundColor: followAgent === id ? agentColor(id) : 'transparent' }"
+            :aria-label="`Follow ${id}`"
             @click="setFollowAgent(id)"
           >
             {{ id }}
@@ -188,6 +189,7 @@ useKeyboard({
           <button
             :class="['follow-btn', { active: !followAgent }]"
             :style="{ borderColor: 'var(--accent-free)', color: !followAgent ? 'var(--bg-primary)' : 'var(--accent-free)', backgroundColor: !followAgent ? 'var(--accent-free)' : 'transparent' }"
+            aria-label="Switch to free camera"
             @click="followAgent = null"
           >
             Free
@@ -414,6 +416,22 @@ h2 {
 
 .follow-btn.active {
   font-weight: bold;
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent-blue);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }
 
 /* ── Responsive: Tablet (≤768px) ── */

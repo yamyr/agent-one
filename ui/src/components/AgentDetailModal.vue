@@ -28,6 +28,9 @@ function batteryPct() {
 <template>
   <div
     class="modal-overlay"
+    role="dialog"
+    aria-modal="true"
+    :aria-label="`Agent details for ${agentId}`"
     @click.self="emit('close')"
   >
     <div
@@ -41,6 +44,8 @@ function batteryPct() {
         >{{ agentId }}</span>
         <button
           class="modal-close"
+          type="button"
+          aria-label="Close agent details"
           @click="emit('close')"
         >
           x

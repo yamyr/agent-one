@@ -79,7 +79,12 @@ function formatPayload(event) {
 </script>
 
 <template>
-  <section class="event-log">
+  <section
+    class="event-log"
+    role="log"
+    aria-live="polite"
+    aria-relevant="additions"
+  >
     <h2>Event Log</h2>
     <div
       v-if="events.length === 0"

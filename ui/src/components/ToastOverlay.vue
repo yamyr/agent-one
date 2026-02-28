@@ -17,7 +17,12 @@ const ICONS = {
 </script>
 
 <template>
-  <div class="toast-container">
+  <div
+    class="toast-container"
+    role="status"
+    aria-live="polite"
+    aria-atomic="false"
+  >
     <TransitionGroup name="toast">
       <div
         v-for="toast in toasts"

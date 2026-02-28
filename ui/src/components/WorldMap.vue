@@ -387,6 +387,8 @@ defineExpose({ camX, camY, panCamera })
       <button
         class="zoom-btn"
         title="Zoom out"
+        type="button"
+        aria-label="Zoom out map"
         @click="zoomOut"
       >
         −
@@ -395,6 +397,8 @@ defineExpose({ camX, camY, panCamera })
       <button
         class="zoom-btn"
         title="Zoom in"
+        type="button"
+        aria-label="Zoom in map"
         @click="zoomIn"
       >
         +
@@ -402,6 +406,8 @@ defineExpose({ camX, camY, panCamera })
       <button
         class="zoom-btn reset"
         title="Reset zoom"
+        type="button"
+        aria-label="Reset map zoom"
         @click="resetZoom"
       >
         Reset
@@ -411,6 +417,8 @@ defineExpose({ camX, camY, panCamera })
       v-if="worldState"
       :viewBox="mapViewBox"
       class="map-svg"
+      role="img"
+      aria-label="Interactive world map. Drag or use keyboard arrows/WASD to pan, mouse wheel to zoom."
       @mousedown.prevent="onMouseDown"
       @mousemove="onMouseMove"
       @mouseup="onMouseUp"
