@@ -8,6 +8,23 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **Drone Scout Agent**: Aerial drone entity that scouts terrain for precious stone deposits
+  - `DroneAgent` (LLM-powered via Mistral) + `MockDroneAgent` (deterministic fallback) in `agent.py`
+  - Drone flies 1-6 tiles per move at 1% battery/tile (rovers: 1-3 tiles at 2%)
+  - `scan` action: samples concentration map around drone position, returns probability readings
+  - `drone_scans` shared memory: rovers read scan results and navigate toward high-concentration hotspots
+  - Drone is a pure scout — cannot dig, analyze, or pick up stones
+  - Per-agent reveal radius: `ROVER_REVEAL_RADIUS=3`, `DRONE_REVEAL_RADIUS=6`
+  - Per-agent max move distance: rovers 3 tiles, drone 6 tiles
+  - Purple triangle marker on UI map with larger dashed visibility circle
+  - 12 new drone unit tests (142 total pass)
+
+### Changed
+
+- Rover visibility radius reduced from 5 to 3 tiles (balanced by drone's 6-tile radius)
+- `update_tasks()` split into `_update_rover_tasks()` and `_update_drone_tasks()`
+- Rovers now check `drone_scans` for hotspots when no visible stones are found
+
 - **ElevenLabs AI Narration**: Real-time narration of Mars mission events via ElevenLabs TTS
   - `server/app/narrator.py` — narration engine with event filtering (drama weights 1-3), Mistral LLM text generation ("David Attenborough meets space podcaster" persona), ElevenLabs TTS audio conversion, async event batching, and rate limiting
   - `ui/src/components/NarrationPlayer.vue` — audio player with base64 MP3 playback queue, skip/mute controls, pulsing mic icon, responsive layout
