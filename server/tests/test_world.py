@@ -820,6 +820,11 @@ class TestMissionCompletion(unittest.TestCase):
     def test_mission_failed_all_rovers_depleted(self):
         world.state["agents"]["rover-mistral"]["battery"] = BATTERY_COST_MOVE
         world.state["agents"]["rover-mistral"]["position"] = [15, 15]
+        # Deplete all other rovers too
+        for aid, agent in world.state["agents"].items():
+            if agent.get("type") == "rover" and aid != "rover-mistral":
+                agent["battery"] = 0.0
+                agent["position"] = [15, 15]
         world.state["stones"] = []
         # This move will drain rover-mistral to 0
         result = execute_action("rover-mistral", "move", {"direction": "east"})

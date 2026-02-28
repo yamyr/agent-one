@@ -1005,8 +1005,8 @@ class RoverLoop(BaseAgent):
 class RoverMistralLoop(RoverLoop):
     """Rover loop wired to MistralRoverReasoner."""
 
-    def __init__(self, interval: float = 3.0, world: World | None = None):
-        super().__init__(agent_id="rover-mistral", interval=interval, world=world)
+    def __init__(self, agent_id: str = "rover-mistral", interval: float = 3.0, world: World | None = None):
+        super().__init__(agent_id=agent_id, interval=interval, world=world)
         self._reasoner = MistralRoverReasoner(agent_id=self.agent_id, world=self._world)
         set_agent_model(self.agent_id, self._reasoner.model)
 

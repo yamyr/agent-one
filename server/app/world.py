@@ -65,7 +65,7 @@ VEIN_QUANTITY_RANGES = {
     "rich": (351, 700),
     "pristine": (701, 1000),
 }
-TARGET_QUANTITY = 100  # mission success threshold (total basalt delivered)
+TARGET_QUANTITY = 300  # mission success threshold (total basalt delivered)
 
 ROVER_REVEAL_RADIUS = 3
 DRONE_REVEAL_RADIUS = 6
@@ -314,6 +314,7 @@ def _build_initial_world():
                 "memory": [],
             },
             "rover-mistral": _make_rover(0, 0),
+            "rover-2": _make_rover(0, 0),
             "drone-mistral": _make_drone(0, 0),
         },
         "stones": [],
