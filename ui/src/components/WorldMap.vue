@@ -290,6 +290,20 @@ function trailSegments(trail) {
   return segs
 }
 
+// Fog-of-war: compute screen positions for each mobile agent's clear zone
+const fogAgents = computed(() => {
+  if (!props.worldState) return []
+  const agents = []
+  for (const id of props.agentIds) {
+    const a = props.worldState.agents[id]
+    if (!a || a.type === 'station') continue
+    const { sx, sy } = worldToScreen(a.position[0], a.position[1])
+    const r = revealRadius(id) * TILE_SIZE
+    agents.push({ id, cx: sx, cy: sy, r: r + TILE_SIZE }) // +1 tile feather
+  }
+  return agents
+})
+
 function panCamera(dx, dy) {
   targetCamX.value += dx
   targetCamY.value += dy
@@ -333,7 +347,7 @@ defineExpose({ camX, camY, panCamera })
         :fill="tileFill(t) || undefined"
       />
 
-      <!-- SVG filter for vein glow -->
+      <!-- SVG defs: filters, gradients, masks -->
       <defs>
         <filter
           id="vein-glow"
@@ -352,6 +366,42 @@ defineExpose({ camX, camY, panCamera })
             <feMergeNode in="SourceGraphic" />
           </feMerge>
         </filter>
+
+        <!-- Fog-of-war: radial gradient for clear zones -->
+        <radialGradient id="fog-clear-grad">
+          <stop
+            offset="0%"
+            stop-color="black"
+          />
+          <stop
+            offset="55%"
+            stop-color="black"
+          />
+          <stop
+            offset="100%"
+            stop-color="black"
+            stop-opacity="0"
+          />
+        </radialGradient>
+
+        <!-- Fog mask: white = fog visible, agent circles punch soft holes -->
+        <mask id="fog-mask">
+          <rect
+            x="0"
+            y="0"
+            :width="MAP_W"
+            :height="MAP_H"
+            fill="white"
+          />
+          <circle
+            v-for="fa in fogAgents"
+            :key="'fog-'+fa.id"
+            :cx="fa.cx"
+            :cy="fa.cy"
+            :r="fa.r"
+            fill="url(#fog-clear-grad)"
+          />
+        </mask>
       </defs>
 
       <!-- veins (stones) -->
@@ -405,6 +455,18 @@ defineExpose({ camX, camY, panCamera })
           />
         </g>
       </template>
+
+      <!-- fog-of-war overlay -->
+      <rect
+        x="0"
+        y="0"
+        :width="MAP_W"
+        :height="MAP_H"
+        fill="#020208"
+        opacity="0.6"
+        mask="url(#fog-mask)"
+        class="fog-overlay"
+      />
 
       <!-- agent movement trails -->
       <template
