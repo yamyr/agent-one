@@ -47,6 +47,12 @@ function stopTypewriter() {
 
 onUnmounted(() => {
   stopTypewriter()
+  if (currentAudio) {
+    currentAudio.pause()
+    currentAudio = null
+  }
+  audioQueue.value = []
+  isProcessing.value = false
 })
 
 watch(() => props.narrationChunk, (event) => {

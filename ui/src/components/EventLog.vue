@@ -19,6 +19,7 @@ const pinnedToTop = ref(true)
 const newEventKeys = ref(new Set())
 
 let lastSeenUid = 0
+let animationTimerId = null
 
 function onScroll() {
   const el = container.value
@@ -59,8 +60,9 @@ watch(
       newEventKeys.value = keys
 
       // Clear animation class after transition completes
-      setTimeout(() => {
+      animationTimerId = setTimeout(() => {
         newEventKeys.value = new Set()
+        animationTimerId = null
       }, 350)
 
       // Auto-scroll to top if pinned
@@ -96,6 +98,10 @@ onMounted(() => {
 onBeforeUnmount(() => {
   if (resizeObserver) {
     resizeObserver.disconnect()
+  }
+  if (animationTimerId) {
+    clearTimeout(animationTimerId)
+    animationTimerId = null
   }
 })
 
