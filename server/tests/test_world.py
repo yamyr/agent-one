@@ -859,7 +859,6 @@ class TestUpdateTasks(unittest.TestCase):
 
 
 class TestResetWorld(unittest.TestCase):
-
     def test_reset_restores_positions(self):
         WORLD["agents"]["randy-rover"]["position"] = [15, 15]
         WORLD["agents"]["randy-rover"]["battery"] = 0.1

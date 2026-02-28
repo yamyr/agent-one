@@ -61,6 +61,23 @@ pip install mistralai
 export MISTRAL_API_KEY="your-key-here"
 ```
 
+## Releases and Versioning
+
+- Releases are automated with GitHub Actions using Release Please (`.github/workflows/release.yml`).
+- On every push to `main`, Release Please opens or updates a release PR.
+- When the release PR is merged, GitHub tags `vX.Y.Z` and publishes a GitHub Release.
+- The release version is synced across:
+  - `server/pyproject.toml`
+  - `server/app/main.py`
+  - `ui/package.json`
+  - `ui/package-lock.json`
+  - `version.txt`
+  - `.release-please-manifest.json`
+- Release metadata and notes are written into `Changelog.md`.
+- If `RELEASE_TOKEN` is configured in GitHub Secrets, release PRs/tags use it; otherwise workflow falls back to `GITHUB_TOKEN`.
+
+Recommended commit style for stable version bumps is Conventional Commits (`feat:`, `fix:`, `chore:`, etc.).
+
 ## Project Structure
 
 ```
