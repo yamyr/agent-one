@@ -7,7 +7,7 @@ import random
 from mistralai import Mistral
 
 from .config import settings
-from .world import WORLD, GRID_W, GRID_H, DIRECTIONS, MAX_MOVE_DISTANCE, check_ground
+from .world import WORLD, GRID_W, GRID_H, DIRECTIONS, MAX_MOVE_DISTANCE, check_ground, _direction_hint
 
 logger = logging.getLogger(__name__)
 
@@ -120,14 +120,20 @@ class RoverAgent:
             "Your job: explore the grid, find stones, dig them out, pick them up.\n"
             "Think step by step but keep it to 1-2 sentences, then call a tool.\n"
             "\n"
+            "COORDINATE SYSTEM:\n"
+            "- North = Y decreases, South = Y increases\n"
+            "- East = X increases, West = X decreases\n"
+            "- To reach a tile with HIGHER Y, move SOUTH. To reach LOWER Y, move NORTH.\n"
+            "\n"
             "RULES:\n"
-            "- Battery is your lifeline. Each move costs 2%, dig costs 6%, pickup costs 2%.\n"
+            "- Battery is your lifeline. Each move costs 2%/tile, dig costs 6%, pickup costs 2%.\n"
             "- Station is your base at ({sx},{sy}). You can recharge there.\n"
             "- ALWAYS keep enough battery to return to station. If distance_to_station * 2% "
             "approaches your battery, head back immediately.\n"
             "- If you find a stone: dig it, then pickup. Both must happen on the same tile.\n"
             "- Prefer unvisited tiles when exploring. Don't backtrack aimlessly.\n"
-            "- Ground is auto-scanned after every move. No need to check manually.".format(
+            "- Ground is auto-scanned after every move. No need to check manually.\n"
+            "- Follow your current tasks list. It tells you exactly what to do next.".format(
                 sx=station_pos[0], sy=station_pos[1]
             )
         )
@@ -138,6 +144,15 @@ class RoverAgent:
             f"Objective: {mission['objective']}\n"
             f"Target: collect {target_count} {target_type} stones ({collected}/{target_count} done)"
         )
+
+        # Current tasks
+        tasks = agent.get("tasks", [])
+        if tasks:
+            parts.append("\n== Current Tasks ==")
+            for i, task in enumerate(tasks, 1):
+                parts.append(f"{i}. {task}")
+        else:
+            parts.append("\n== Current Tasks ==\n1. Explore unvisited tiles to find stones")
 
         # Internal state
         parts.append(
@@ -158,7 +173,8 @@ class RoverAgent:
             if sp in revealed_set and list(sp) != [x, y]:
                 dist = abs(sp[0] - x) + abs(sp[1] - y)
                 status = "extracted" if stone.get("extracted") else "buried"
-                visible_stones.append(f"{stone['type']} ({status}) at ({sp[0]},{sp[1]}) dist={dist}")
+                hint = _direction_hint(sp[0] - x, sp[1] - y)
+                visible_stones.append(f"{stone['type']} ({status}) at ({sp[0]},{sp[1]}) — {hint}, {dist} tiles")
 
         # Environment
         parts.append(

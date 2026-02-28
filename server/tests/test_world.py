@@ -5,6 +5,7 @@ from app.world import check_mission_status
 from app.world import BATTERY_COST_MOVE, BATTERY_COST_DIG, BATTERY_COST_PICKUP
 from app.world import CHARGE_RATE, REVEAL_RADIUS, GRID_W, GRID_H, AGENT_STARTS, MAX_MOVE_DISTANCE
 from app.world import assign_mission, _cells_in_radius, record_memory, MEMORY_MAX
+from app.world import update_tasks, _direction_hint
 
 
 class TestMoveAgent(unittest.TestCase):
@@ -172,7 +173,7 @@ class TestStones(unittest.TestCase):
 
     def test_guaranteed_core_stones(self):
         core_count = sum(1 for s in WORLD["stones"] if s["type"] == "core")
-        self.assertGreaterEqual(core_count, 2)
+        self.assertGreaterEqual(core_count, 1)
 
     def test_stones_in_snapshot(self):
         snap = get_snapshot()
@@ -561,6 +562,8 @@ class TestMissionCompletion(unittest.TestCase):
         WORLD["agents"]["rover-mistral"]["inventory"] = []
         self._original_stones = WORLD.get("stones", [])
         self._original_mission = WORLD["mission"].copy()
+        WORLD["mission"]["status"] = "running"
+        WORLD["mission"]["collected_count"] = 0
 
     def tearDown(self):
         WORLD["stones"] = self._original_stones
@@ -570,7 +573,7 @@ class TestMissionCompletion(unittest.TestCase):
         self.assertIn("mission", WORLD)
         self.assertEqual(WORLD["mission"]["status"], "running")
         self.assertEqual(WORLD["mission"]["target_type"], "core")
-        self.assertEqual(WORLD["mission"]["target_count"], 2)
+        self.assertEqual(WORLD["mission"]["target_count"], 1)
 
     def test_mission_in_snapshot(self):
         snap = get_snapshot()
@@ -721,3 +724,76 @@ class TestMemory(unittest.TestCase):
     def test_record_memory_unknown_agent(self):
         # Should not raise
         record_memory("nonexistent", "noop")
+
+
+class TestDirectionHint(unittest.TestCase):
+
+    def test_north(self):
+        self.assertEqual(_direction_hint(0, -3), "north")
+
+    def test_south_east(self):
+        self.assertEqual(_direction_hint(2, 5), "south, east")
+
+    def test_west(self):
+        self.assertEqual(_direction_hint(-1, 0), "west")
+
+    def test_here(self):
+        self.assertEqual(_direction_hint(0, 0), "here")
+
+
+class TestUpdateTasks(unittest.TestCase):
+
+    def setUp(self):
+        self._orig_pos = WORLD["agents"]["rover-mock"]["position"][:]
+        self._orig_inv = WORLD["agents"]["rover-mock"].get("inventory", [])[:]
+        self._orig_stones = WORLD.get("stones", [])[:]
+        self._orig_tasks = WORLD["agents"]["rover-mock"].get("tasks", [])[:]
+        WORLD["agents"]["rover-mock"]["position"] = [5, 5]
+        WORLD["agents"]["rover-mock"]["inventory"] = []
+        WORLD["agents"]["rover-mock"]["tasks"] = []
+
+    def tearDown(self):
+        WORLD["agents"]["rover-mock"]["position"] = self._orig_pos
+        WORLD["agents"]["rover-mock"]["inventory"] = self._orig_inv
+        WORLD["stones"] = self._orig_stones
+        WORLD["agents"]["rover-mock"]["tasks"] = self._orig_tasks
+
+    def test_explore_when_no_stones(self):
+        WORLD["stones"] = []
+        update_tasks("rover-mock")
+        tasks = WORLD["agents"]["rover-mock"]["tasks"]
+        self.assertEqual(len(tasks), 1)
+        self.assertIn("Explore", tasks[0])
+
+    def test_dig_when_stone_buried(self):
+        WORLD["stones"] = [{"position": [5, 5], "type": "core"}]
+        update_tasks("rover-mock")
+        tasks = WORLD["agents"]["rover-mock"]["tasks"]
+        self.assertEqual(len(tasks), 1)
+        self.assertIn("Dig", tasks[0])
+
+    def test_pickup_when_stone_extracted(self):
+        WORLD["stones"] = [{"position": [5, 5], "type": "core", "extracted": True}]
+        update_tasks("rover-mock")
+        tasks = WORLD["agents"]["rover-mock"]["tasks"]
+        self.assertEqual(len(tasks), 1)
+        self.assertIn("Pick up", tasks[0])
+
+    def test_navigate_to_known_stone(self):
+        WORLD["stones"] = [{"position": [8, 5], "type": "core"}]
+        # Make sure the stone tile is revealed
+        agent = WORLD["agents"]["rover-mock"]
+        if [8, 5] not in agent.get("revealed", []):
+            agent.setdefault("revealed", []).append([8, 5])
+        update_tasks("rover-mock")
+        tasks = WORLD["agents"]["rover-mock"]["tasks"]
+        self.assertEqual(len(tasks), 1)
+        self.assertIn("Navigate", tasks[0])
+        self.assertIn("east", tasks[0])
+
+    def test_return_to_station_when_has_target(self):
+        WORLD["agents"]["rover-mock"]["inventory"] = [{"type": "core"}]
+        update_tasks("rover-mock")
+        tasks = WORLD["agents"]["rover-mock"]["tasks"]
+        self.assertEqual(len(tasks), 1)
+        self.assertIn("Return to station", tasks[0])

@@ -27,6 +27,7 @@ logger = logging.getLogger(__name__)
 
 
 station = StationAgent()
+simulation_paused = False
 
 
 async def _trigger_station(event):
@@ -55,6 +56,10 @@ async def agent_loop(agent, interval):
         if mission_status in ("success", "failed"):
             logger.info("Agent loop stopped (%s): mission %s", agent.agent_id, mission_status)
             return
+
+        if simulation_paused:
+            await asyncio.sleep(interval)
+            continue
 
         try:
             turn = await asyncio.to_thread(agent.run_turn)
@@ -147,8 +152,8 @@ async def lifespan(app):
     except Exception:
         logger.exception("Station startup failed")
 
-    mock_task = asyncio.create_task(agent_loop(MockRoverAgent(), interval=10))
-    mistral_task = asyncio.create_task(agent_loop(RoverAgent(), interval=20))
+    mock_task = asyncio.create_task(agent_loop(MockRoverAgent(), interval=2))
+    mistral_task = asyncio.create_task(agent_loop(RoverAgent(), interval=2))
     yield
     mock_task.cancel()
     mistral_task.cancel()
@@ -175,6 +180,25 @@ app.include_router(views_router)
 @app.get("/health")
 def health():
     return {"status": "ok"}
+
+
+@app.post("/simulation/pause")
+def pause_simulation():
+    global simulation_paused
+    simulation_paused = True
+    return {"paused": True}
+
+
+@app.post("/simulation/resume")
+def resume_simulation():
+    global simulation_paused
+    simulation_paused = False
+    return {"paused": False}
+
+
+@app.get("/simulation/status")
+def simulation_status():
+    return {"paused": simulation_paused}
 
 
 # Serve Vue static files (must be after all API routes)

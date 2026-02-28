@@ -1,15 +1,23 @@
 <script setup>
 defineProps({
   connected: Boolean,
+  paused: Boolean,
 })
+
+const emit = defineEmits(['toggle-pause'])
 </script>
 
 <template>
   <header>
     <h1>Mars Mission Control</h1>
-    <span class="status" :class="{ online: connected }">
-      {{ connected ? 'CONNECTED' : 'DISCONNECTED' }}
-    </span>
+    <div class="header-controls">
+      <button class="pause-btn" :class="{ paused }" @click="emit('toggle-pause')">
+        {{ paused ? 'RESUME' : 'PAUSE' }}
+      </button>
+      <span class="status" :class="{ online: connected }">
+        {{ connected ? 'CONNECTED' : 'DISCONNECTED' }}
+      </span>
+    </div>
   </header>
 </template>
 
@@ -26,6 +34,34 @@ header {
 h1 {
   font-size: 1.2rem;
   color: #e06030;
+}
+
+.header-controls {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.pause-btn {
+  font-family: 'Courier New', monospace;
+  font-size: 0.75rem;
+  padding: 0.25rem 0.6rem;
+  border-radius: 3px;
+  border: 1px solid #555;
+  background: #1a1a24;
+  color: #cc8844;
+  cursor: pointer;
+}
+
+.pause-btn:hover {
+  border-color: #888;
+  color: #eebb66;
+}
+
+.pause-btn.paused {
+  background: #2a1a0a;
+  border-color: #cc8844;
+  color: #eebb66;
 }
 
 .status {

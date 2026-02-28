@@ -25,7 +25,7 @@ AGENT_STARTS = {(0, 0), (2, 10), (2, 12)}
 STONE_TYPES = ["core", "basalt"]
 REVEAL_RADIUS = 5
 TARGET_STONE_TYPE = "core"
-TARGET_STONE_COUNT = 2
+TARGET_STONE_COUNT = 1
 MEMORY_MAX = 8
 
 
@@ -99,6 +99,7 @@ WORLD = {
             "revealed": _init_revealed(2, 10),
             "inventory": [],
             "memory": [],
+            "tasks": [],
             "type": "rover",
             "tools": [
                 {
@@ -119,6 +120,7 @@ WORLD = {
             "revealed": _init_revealed(2, 12),
             "inventory": [],
             "memory": [],
+            "tasks": [],
             "type": "rover",
             "tools": [
                 {
@@ -231,6 +233,7 @@ def execute_action(agent_id, action_name, params):
         if mission_event:
             result["mission"] = mission_event
 
+    update_tasks(agent_id)
     return result
 
 
@@ -356,6 +359,84 @@ def record_memory(agent_id, text):
     mem.append(text)
     if len(mem) > MEMORY_MAX:
         del mem[: len(mem) - MEMORY_MAX]
+
+
+def _direction_hint(dx, dy):
+    """Return human-readable direction hint from deltas."""
+    parts = []
+    if dy < 0:
+        parts.append("north")
+    elif dy > 0:
+        parts.append("south")
+    if dx > 0:
+        parts.append("east")
+    elif dx < 0:
+        parts.append("west")
+    return ", ".join(parts) if parts else "here"
+
+
+def update_tasks(agent_id):
+    """Recompute short-term tasks for an agent based on current world state."""
+    agent = WORLD["agents"].get(agent_id)
+    if agent is None:
+        return
+    x, y = agent["position"]
+    mission = WORLD["mission"]
+    target_type = mission["target_type"]
+    inventory = agent.get("inventory", [])
+    revealed_set = {tuple(c) for c in agent.get("revealed", [])}
+    tasks = []
+
+    # Already collected target stone → return to station
+    has_target = any(s["type"] == target_type for s in inventory)
+    if has_target:
+        station = WORLD["agents"].get("station")
+        sp = station["position"] if station else [0, 0]
+        if [x, y] == sp:
+            tasks.append("Deliver stone at station (mission complete)")
+        else:
+            tasks.append(f"Return to station at ({sp[0]},{sp[1]}) to complete mission")
+        agent["tasks"] = tasks
+        return
+
+    # Stone at current tile → dig or pickup
+    stone_here = _find_stone_at(x, y)
+    if stone_here:
+        if not stone_here.get("extracted"):
+            tasks.append(f"Dig {stone_here['type']} stone at current tile ({x},{y})")
+        else:
+            tasks.append(f"Pick up {stone_here['type']} stone at current tile ({x},{y})")
+        agent["tasks"] = tasks
+        return
+
+    # Known stones on revealed tiles → navigate to nearest target type first
+    known_stones = []
+    for stone in WORLD.get("stones", []):
+        sp = tuple(stone["position"])
+        if sp in revealed_set:
+            dist = abs(sp[0] - x) + abs(sp[1] - y)
+            known_stones.append((dist, stone))
+    known_stones.sort(key=lambda t: t[0])
+
+    # Prefer target type
+    for dist, stone in known_stones:
+        if stone["type"] == target_type:
+            sx, sy = stone["position"]
+            hint = _direction_hint(sx - x, sy - y)
+            tasks.append(f"Navigate to {stone['type']} stone at ({sx},{sy}) — {hint}, {dist} tiles")
+            break
+
+    if not tasks:
+        for dist, stone in known_stones:
+            sx, sy = stone["position"]
+            hint = _direction_hint(sx - x, sy - y)
+            tasks.append(f"Navigate to {stone['type']} stone at ({sx},{sy}) — {hint}, {dist} tiles")
+            break
+
+    if not tasks:
+        tasks.append("Explore unvisited tiles to find stones")
+
+    agent["tasks"] = tasks
 
 
 def assign_mission(agent_id, objective):

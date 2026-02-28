@@ -11,6 +11,14 @@ import AgentDetailModal from './components/AgentDetailModal.vue'
 const { events, connected, worldState, agentIds, agentEvents } = useWebSocket()
 
 const selectedAgent = ref(null)
+const paused = ref(false)
+
+async function togglePause() {
+  const endpoint = paused.value ? '/api/simulation/resume' : '/api/simulation/pause'
+  const res = await fetch(endpoint, { method: 'POST' })
+  const data = await res.json()
+  paused.value = data.paused
+}
 
 function selectAgent(id) {
   selectedAgent.value = id
@@ -28,7 +36,7 @@ function agentData(id) {
 
 <template>
   <div class="app">
-    <AppHeader :connected="connected" />
+    <AppHeader :connected="connected" :paused="paused" @toggle-pause="togglePause" />
 
     <MissionBar :mission="worldState ? worldState.mission : null" />
 
