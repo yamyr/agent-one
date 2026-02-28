@@ -1,6 +1,6 @@
 <script setup>
 import { computed, ref, watch } from 'vue'
-import { TILE_SIZE, MAP_W, MAP_H, VIEWPORT_W, VIEWPORT_H, STONE_COLORS, SOLAR_PANEL_COLOR, SOLAR_PANEL_DEPLETED_COLOR, agentColor, revealRadius } from '../constants.js'
+import { TILE_SIZE, MAP_W, MAP_H, VIEWPORT_W, VIEWPORT_H, VEIN_COLORS, VEIN_SIZES, SOLAR_PANEL_COLOR, SOLAR_PANEL_DEPLETED_COLOR, agentColor, revealRadius } from '../constants.js'
 
 const props = defineProps({
   worldState: {
@@ -120,18 +120,33 @@ function isStoneVisible(s) {
          wy >= camY.value && wy < camY.value + VIEWPORT_H
 }
 
+function veinGrade(s) {
+  return s.grade || 'unknown'
+}
+
+function veinSize(s) {
+  return VEIN_SIZES[veinGrade(s)] || 6
+}
+
 function stoneScreenX(s) {
-  return (s.position[0] - camX.value) * TILE_SIZE + TILE_SIZE / 2 - 4
+  const half = veinSize(s) / 2
+  return (s.position[0] - camX.value) * TILE_SIZE + TILE_SIZE / 2 - half
 }
 
 function stoneScreenY(s) {
-  return (VIEWPORT_H - 1 - (s.position[1] - camY.value)) * TILE_SIZE + TILE_SIZE / 2 - 4
+  const half = veinSize(s) / 2
+  return (VIEWPORT_H - 1 - (s.position[1] - camY.value)) * TILE_SIZE + TILE_SIZE / 2 - half
 }
 
 function stoneRotateCenter(s) {
   const cx = (s.position[0] - camX.value) * TILE_SIZE + TILE_SIZE / 2
   const cy = (VIEWPORT_H - 1 - (s.position[1] - camY.value)) * TILE_SIZE + TILE_SIZE / 2
   return `rotate(45, ${cx}, ${cy})`
+}
+
+function veinHasGlow(s) {
+  const g = veinGrade(s)
+  return g === 'rich' || g === 'pristine'
 }
 
 function isPanelVisible(p) {
@@ -211,17 +226,29 @@ defineExpose({ camX, camY })
         :class="isRevealed(t.x, t.y) ? 'grid-tile revealed' : 'grid-tile'"
       />
 
-      <!-- stones -->
+      <!-- SVG filter for vein glow -->
+      <defs>
+        <filter id="vein-glow" x="-50%" y="-50%" width="200%" height="200%">
+          <feGaussianBlur in="SourceGraphic" stdDeviation="2" result="blur" />
+          <feMerge>
+            <feMergeNode in="blur" />
+            <feMergeNode in="SourceGraphic" />
+          </feMerge>
+        </filter>
+      </defs>
+
+      <!-- veins (stones) -->
       <template v-for="(s, i) in (worldState.stones || [])" :key="'stone-'+i">
         <rect
           v-if="isStoneVisible(s)"
           :x="stoneScreenX(s)"
           :y="stoneScreenY(s)"
-          width="8"
-          height="8"
-          :fill="STONE_COLORS[s.type] || '#666'"
-          opacity="0.85"
+          :width="veinSize(s)"
+          :height="veinSize(s)"
+          :fill="VEIN_COLORS[veinGrade(s)] || '#666'"
+          :opacity="veinHasGlow(s) ? 0.95 : 0.85"
           :transform="stoneRotateCenter(s)"
+          :filter="veinHasGlow(s) ? 'url(#vein-glow)' : undefined"
         />
       </template>
 

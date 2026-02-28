@@ -1,5 +1,5 @@
 <script setup>
-import { agentColor } from '../constants.js'
+import { agentColor, VEIN_COLORS } from '../constants.js'
 
 const props = defineProps({
   agent: {
@@ -119,9 +119,9 @@ function batteryPct() {
               v-for="(stone, i) in agent.inventory"
               :key="i"
               class="inv-stone"
-              :class="stone.type"
+              :style="{ color: VEIN_COLORS[stone.grade || 'unknown'], borderColor: VEIN_COLORS[stone.grade || 'unknown'] + '44' }"
             >
-              {{ stone.type }}
+              {{ (stone.grade || 'unknown').toUpperCase() }} <template v-if="stone.quantity">&times;{{ stone.quantity }}</template>
             </span>
           </div>
         </div>
@@ -277,21 +277,8 @@ function batteryPct() {
   border-radius: 3px;
   border: 1px solid #1a1a24;
   background: #0e0e16;
-}
-
-.inv-stone.core {
-  color: #b8962a;
-  border-color: #3a2a0a;
-}
-
-.inv-stone.basalt {
-  color: #888;
-  border-color: #333;
-}
-
-.inv-stone.unknown {
-  color: #4a4a6a;
-  border-color: #2a2a3a;
+  font-weight: bold;
+  letter-spacing: 0.03em;
 }
 
 .modal-context {

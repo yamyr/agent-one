@@ -76,6 +76,9 @@ SYSTEM_PROMPT = (
     "Your role is to assign missions to rover agents, respond to field reports, "
     "and recharge rovers when they return to the station.\n"
     "You have one rover available: 'rover-mistral' and one drone: 'drone-mistral'.\n"
+    "The mission goal is to collect basalt from veins. Each vein has a grade "
+    "(low/medium/high/rich/pristine) that determines basalt quantity.\n"
+    "Rovers must deliver enough basalt to the station to meet the target quantity.\n"
     "Keep responses short (1-2 sentences of reasoning, then act).\n"
     "Always assign missions to at least one rover when defining the initial mission.\n"
     "When a rover arrives at the station with low battery, charge it.\n"
@@ -91,9 +94,11 @@ def _build_world_summary(context: StationContext):
             f"  {rover.id}: pos=({x},{y}) battery={rover.battery:.0%} "
             f'mission="{rover.mission.objective}" visited={rover.visited_count}'
         )
-    lines.append(f"Stones on map: {len(context.stones)}")
+    lines.append(f"Veins on map: {len(context.stones)}")
     for s in context.stones:
-        lines.append(f"  {s.type} at ({s.position[0]}, {s.position[1]})")
+        grade_str = f" grade={s.grade}" if s.grade != "unknown" else ""
+        qty_str = f" qty={s.quantity}" if s.quantity > 0 else ""
+        lines.append(f"  {s.type}{grade_str}{qty_str} at ({s.position[0]}, {s.position[1]})")
     return "\n".join(lines)
 
 
@@ -178,12 +183,12 @@ class StationAgent:
         """Called at startup to define initial missions for rovers."""
         return self._call_llm(
             "The mission is starting. Review the world state and assign initial "
-            "missions to the rovers. Consider the stone locations and grid layout.",
+            "missions to the rovers. Consider the vein locations and grid layout.",
             context,
         )
 
     def handle_event(self, event, context: StationContext):
-        """Called when a relevant field event occurs (e.g. stone found)."""
+        """Called when a relevant field event occurs (e.g. vein found)."""
         prompt = (
             f"Field report from {event['source']}: {event['name']}\n"
             f"Details: {json.dumps(event.get('payload', {}))}\n"

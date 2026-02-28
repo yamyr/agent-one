@@ -56,7 +56,7 @@ THINKING_KEYWORDS = [
     "return",
     "station",
     "emergency",
-    "core",
+    "vein",
     "found",
     "discover",
 ]
@@ -436,9 +436,8 @@ class Narrator:
             mission = WORLD.get("mission", {})
             summary_parts = [
                 f"Mission status: {mission.get('status', 'unknown')}",
-                f"Target: {mission.get('target_count', '?')} "
-                f"{mission.get('target_type', '?')} stones "
-                f"({mission.get('collected_count', 0)} collected)",
+                f"Target: {mission.get('target_quantity', '?')} units of basalt "
+                f"({mission.get('collected_quantity', 0)} collected)",
             ]
             for aid, agent in agents.items():
                 if agent.get("type") == "rover":
@@ -446,7 +445,7 @@ class Narrator:
                     bat = agent.get("battery", 0)
                     inv = len(agent.get("inventory", []))
                     summary_parts.append(
-                        f"{aid}: pos=({x},{y}) battery={bat:.0%} inventory={inv} stones"
+                        f"{aid}: pos=({x},{y}) battery={bat:.0%} inventory={inv} veins"
                     )
             world_summary = "\n".join(summary_parts)
 

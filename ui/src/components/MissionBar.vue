@@ -15,8 +15,8 @@ const emit = defineEmits(['abort'])
     class="mission-bar"
   >
     <span class="mission-label">Mission</span>
-    <span class="mission-target">collect {{ mission.target_count }} {{ mission.target_type }}</span>
-    <span class="mission-progress">{{ mission.collected_count }} / {{ mission.target_count }}</span>
+    <span class="mission-target">collect {{ mission.target_quantity || mission.target_count }} basalt</span>
+    <span class="mission-progress">{{ mission.collected_quantity || mission.collected_count || 0 }} / {{ mission.target_quantity || mission.target_count }}</span>
     <span
       class="mission-status"
       :class="mission.status"

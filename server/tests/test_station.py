@@ -221,7 +221,7 @@ class TestBuildWorldSummary(unittest.TestCase):
         summary = _build_world_summary(ctx)
         self.assertIn("Grid: 20x20", summary)
 
-    def test_summary_contains_stones(self):
+    def test_summary_contains_veins(self):
         ctx = _make_station_context()
         summary = _build_world_summary(ctx)
-        self.assertIn("Stones on map: 2", summary)
+        self.assertIn("Veins on map: 2", summary)
