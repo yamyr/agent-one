@@ -355,6 +355,7 @@ def _init_world_chunks():
 
 WORLD = _build_initial_world()
 _init_world_chunks()
+storm_mod.schedule_next_storm(WORLD)
 
 
 class World:
@@ -589,7 +590,9 @@ def _find_stone_at(x, y):
 
 def _execute_analyze(agent_id, agent):
     """Analyze an unknown vein at the current tile to reveal its type, grade, and quantity."""
-    if agent["battery"] < BATTERY_COST_ANALYZE:
+    storm_mult = storm_mod.get_battery_multiplier(WORLD)
+    cost = BATTERY_COST_ANALYZE * storm_mult
+    if agent["battery"] < cost:
         return {"ok": False, "error": "Not enough battery to analyze"}
 
     x, y = agent["position"]
@@ -599,7 +602,7 @@ def _execute_analyze(agent_id, agent):
     if stone.get("analyzed"):
         return {"ok": False, "error": f"Vein at ({x}, {y}) already analyzed"}
 
-    agent["battery"] = max(0.0, agent["battery"] - BATTERY_COST_ANALYZE)
+    agent["battery"] = max(0.0, agent["battery"] - cost)
     stone["analyzed"] = True
     stone["type"] = stone["_true_type"]
     stone["grade"] = stone["_true_grade"]
@@ -626,11 +629,13 @@ def _execute_analyze(agent_id, agent):
 
 def _execute_scan(agent_id, agent):
     """Drone aerial scan: sample concentration map around current position."""
-    if agent["battery"] < BATTERY_COST_SCAN:
+    storm_mult = storm_mod.get_battery_multiplier(WORLD)
+    cost = BATTERY_COST_SCAN * storm_mult
+    if agent["battery"] < cost:
         return {"ok": False, "error": "Not enough battery to scan"}
 
     x, y = agent["position"]
-    agent["battery"] = max(0.0, agent["battery"] - BATTERY_COST_SCAN)
+    agent["battery"] = max(0.0, agent["battery"] - cost)
     scan_radius = DRONE_REVEAL_RADIUS
     readings = {}
     peak = 0.0
@@ -655,7 +660,9 @@ def _execute_dig(agent_id, agent):
     """Dig and collect an analyzed vein at current tile into inventory."""
     if len(agent.get("inventory", [])) >= MAX_INVENTORY_ROVER:
         return {"ok": False, "error": "Inventory full (max 3 veins)"}
-    if agent["battery"] < BATTERY_COST_DIG:
+    storm_mult = storm_mod.get_battery_multiplier(WORLD)
+    cost = BATTERY_COST_DIG * storm_mult
+    if agent["battery"] < cost:
         return {"ok": False, "error": "Not enough battery to dig"}
 
     x, y = agent["position"]
@@ -665,7 +672,7 @@ def _execute_dig(agent_id, agent):
     if not stone.get("analyzed"):
         return {"ok": False, "error": "Vein not yet analyzed (analyze first)"}
 
-    agent["battery"] = max(0.0, agent["battery"] - BATTERY_COST_DIG)
+    agent["battery"] = max(0.0, agent["battery"] - cost)
     agent.setdefault("inventory", []).append(
         {
             "type": stone["type"],
@@ -697,12 +704,14 @@ def _execute_dig(agent_id, agent):
 
 def _execute_notify_base(agent_id, agent):
     """Send a radio notification to station about collected stone. Costs 2 fuel."""
-    if agent["battery"] < BATTERY_COST_NOTIFY:
+    storm_mult = storm_mod.get_battery_multiplier(WORLD)
+    cost = BATTERY_COST_NOTIFY * storm_mult
+    if agent["battery"] < cost:
         return {"ok": False, "error": "Not enough battery to notify base"}
     inventory = agent.get("inventory", [])
     if not inventory:
         return {"ok": False, "error": "Nothing to report — inventory is empty"}
-    agent["battery"] = max(0.0, agent["battery"] - BATTERY_COST_NOTIFY)
+    agent["battery"] = max(0.0, agent["battery"] - cost)
     last_stone = inventory[-1]
     return {
         "ok": True,
@@ -1248,4 +1257,16 @@ def get_snapshot():
     # Ensure bounds are present
     if "bounds" not in snap:
         snap["bounds"] = {"min_x": 0, "max_x": GRID_W - 1, "min_y": 0, "max_y": GRID_H - 1}
+    # Add storm info for UI
+    snap["storm"] = storm_mod.get_storm_info(WORLD)
     return snap
+
+
+def check_storm_tick():
+    """Advance storm lifecycle on the global WORLD. Returns list of event dicts."""
+    return storm_mod.check_storm_tick(WORLD)
+
+
+def get_storm_info():
+    """Return current storm info from the global WORLD."""
+    return storm_mod.get_storm_info(WORLD)

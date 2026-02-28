@@ -121,6 +121,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Fixed
+
+- **WS reconnect preserves event history**: WebSocket reconnect no longer clears the event log — only the first connection clears events; subsequent reconnects preserve accumulated events while worldState is refreshed from server ([#72](https://github.com/mhack-agent-one/agent-one/issues/72))
+
+
 ### Added (UI Polish Round 3 — Phases 3–8)
 
 - **Persisted zoom preference**: Zoom level saved to `localStorage` via `usePreferences` composable; survives page refresh
