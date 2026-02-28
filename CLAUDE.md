@@ -172,3 +172,7 @@ Every PR description **must** follow the template in `.github/PULL_REQUEST_TEMPL
 ## Active Technologies
 - Python 3.14+ (server), JavaScript/Vue 3 (UI) + FastAPI, Vue 3, Vite, Mistral AI SDK, ElevenLabs SDK
 - Node 24 LTS, uv package manager
+- Python 3.14+ + FastAPI (005-fix-version-drift)
+
+## Recent Changes
+- 005-fix-version-drift: Added Python 3.14+ + FastAPI

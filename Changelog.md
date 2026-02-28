@@ -7,6 +7,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [0.2.0](https://github.com/mhack-agent-one/agent-one/compare/v0.1.0...v0.2.0) (2026-02-28)
 
 
+### Bug Fixes
+
+* **server:** fix version drift — sync FastAPI app version from 0.1.0 to 0.2.0 to match pyproject.toml ([#65](https://github.com/mhack-agent-one/agent-one/issues/65))
 ### Features
 
 * add ABORT mission feature. ([05015a6](https://github.com/mhack-agent-one/agent-one/commit/05015a674767facad137062ebdaf487702844e6f))
