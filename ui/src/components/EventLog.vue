@@ -7,6 +7,52 @@ defineProps({
     default: () => [],
   },
 })
+
+function formatPayload(event) {
+  const p = event.payload
+  if (!p) return ''
+
+  switch (event.name) {
+    case 'thinking':
+      return p.text || ''
+    case 'move':
+      if (p.from && p.to)
+        return `(${p.from[0]},${p.from[1]}) → (${p.to[0]},${p.to[1]})  bat ${Math.round((p.battery ?? 0) * 100)}%`
+      return ''
+    case 'analyze':
+      if (p.stone)
+        return `${p.stone.grade} vein at (${p.position[0]},${p.position[1]}) qty=${p.stone.quantity}`
+      return ''
+    case 'dig':
+      if (p.stone)
+        return `extracted ${p.stone.grade} at (${p.position[0]},${p.position[1]})`
+      return ''
+    case 'pickup':
+      if (p.stone)
+        return `picked up ${p.stone.grade} qty=${p.stone.quantity}  inv=${p.inventory_count}`
+      return ''
+    case 'analyze_ground':
+      return `concentration ${p.concentration} at (${p.position[0]},${p.position[1]})`
+    case 'scan':
+      return `peak ${p.peak} at (${p.position[0]},${p.position[1]})`
+    case 'charge_rover':
+      return `battery → ${Math.round((p.battery ?? 0) * 100)}%`
+    case 'alert':
+      return p.message || ''
+    case 'state':
+      return '' // skip world snapshots
+    case 'mission_success':
+      return `✓ mission complete — ${p.collected_quantity ?? '?'} collected`
+    case 'mission_aborted':
+      return `✗ mission aborted — ${p.reason || '?'}`
+    case 'assign_mission':
+      return p.objective || ''
+    case 'recall':
+      return `recall ${p.rover_id || ''}${p.reason ? ' — ' + p.reason : ''}`
+    default:
+      return JSON.stringify(p, null, 2)
+  }
+}
 </script>
 
 <template>
@@ -33,10 +79,10 @@ defineProps({
       >{{ event.source }}</span>
       <span class="event-type">{{ event.type }}</span>
       <span class="event-name">{{ event.name }}</span>
-      <pre
-        v-if="event.payload"
+      <span
+        v-if="event.payload && formatPayload(event)"
         class="event-payload"
-      >{{ JSON.stringify(event.payload, null, 2) }}</pre>
+      >{{ formatPayload(event) }}</span>
     </div>
   </section>
 </template>
@@ -83,10 +129,12 @@ defineProps({
 }
 
 .event-payload {
-  width: 100%;
   font-size: 0.7rem;
   color: var(--text-muted);
-  padding: 0.15rem 0 0 100px;
-  white-space: pre-wrap;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex: 1;
+  min-width: 0;
 }
 </style>
