@@ -6,7 +6,7 @@ import logging
 from mistralai import Mistral
 
 from .config import settings
-from .world import WORLD, GRID_W, GRID_H, assign_mission
+from .world import WORLD, GRID_W, GRID_H, assign_mission, charge_rover
 
 logger = logging.getLogger(__name__)
 
@@ -20,7 +20,7 @@ ASSIGN_MISSION_TOOL = {
             "properties": {
                 "agent_id": {
                     "type": "string",
-                    "description": "The rover agent to assign (e.g. 'rover-mock', 'rover-mistral').",
+                    "description": "The rover agent to assign (e.g. 'randy-rover', 'rover-mistral').",
                 },
                 "objective": {
                     "type": "string",
@@ -50,14 +50,34 @@ BROADCAST_ALERT_TOOL = {
     },
 }
 
-STATION_TOOLS = [ASSIGN_MISSION_TOOL, BROADCAST_ALERT_TOOL]
+CHARGE_ROVER_TOOL = {
+    "type": "function",
+    "function": {
+        "name": "charge_rover",
+        "description": "Recharge a rover's battery. The rover must be co-located with the station. Adds 20% charge per call.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "rover_id": {
+                    "type": "string",
+                    "description": "The rover agent to charge (e.g. 'randy-rover', 'rover-mistral').",
+                },
+            },
+            "required": ["rover_id"],
+        },
+    },
+}
+
+STATION_TOOLS = [ASSIGN_MISSION_TOOL, BROADCAST_ALERT_TOOL, CHARGE_ROVER_TOOL]
 
 SYSTEM_PROMPT = (
     "You are the Mars base station. You coordinate the Mars mission.\n"
-    "Your role is to assign missions to rover agents and respond to field reports.\n"
-    "You have two rovers available: 'rover-mock' and 'rover-mistral'.\n"
+    "Your role is to assign missions to rover agents, respond to field reports, "
+    "and recharge rovers when they return to the station.\n"
+    "You have two rovers available: 'randy-rover' and 'rover-mistral'.\n"
     "Keep responses short (1-2 sentences of reasoning, then act).\n"
     "Always assign missions to at least one rover when defining the initial mission.\n"
+    "When a rover arrives at the station with low battery, charge it.\n"
 )
 
 
@@ -107,6 +127,16 @@ def _execute_tool_calls(tool_calls):
                     "type": "event",
                     "name": "alert",
                     "payload": {"message": args["message"]},
+                }
+            )
+        elif name == "charge_rover":
+            result = charge_rover(args["rover_id"])
+            events.append(
+                {
+                    "source": "station",
+                    "type": "action",
+                    "name": "charge_rover",
+                    "payload": result,
                 }
             )
     return events
