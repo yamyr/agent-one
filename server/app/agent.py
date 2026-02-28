@@ -135,10 +135,12 @@ class RoverAgent:
             "\n"
             "RULES:\n"
             "- Battery is your lifeline. Each move costs 2%/tile, dig costs 6%, pickup costs 2%.\n"
-            "- Station is your base at ({sx},{sy}). You can recharge there.\n"
+            "- Station is your base at ({sx},{sy}). Return there when battery is low — "
+            "the station will recharge you automatically.\n"
             "- ALWAYS keep enough battery to return to station. If distance_to_station * 2% "
             "approaches your battery, head back immediately.\n"
             "- If you find a stone: dig it, then pickup. Both must happen on the same tile.\n"
+            "- Once you have collected all target stones, RETURN TO STATION to complete the mission.\n"
             "- Prefer unvisited tiles when exploring. Don't backtrack aimlessly.\n"
             "- Ground is auto-scanned after every move. No need to check manually.\n"
             "- Follow your current tasks list. It tells you exactly what to do next.".format(
@@ -248,7 +250,7 @@ class RoverAgent:
 
 
 class MockRoverAgent:
-    """Mock rover that picks a random valid direction each turn — no LLM calls."""
+    """Mock rover that explores, collects stones, and returns to station — no LLM calls."""
 
     def __init__(self, agent_id="randy-rover"):
         self.agent_id = agent_id
@@ -256,19 +258,8 @@ class MockRoverAgent:
     def run_turn(self):
         agent = WORLD["agents"][self.agent_id]
         x, y = agent["position"]
-        visited_set = {tuple(p) for p in agent.get("visited", [])}
-
-        valid = []
-        unvisited = []
-        for name, (dx, dy) in DIRECTIONS.items():
-            nx, ny = x + dx, y + dy
-            if 0 <= nx < GRID_W and 0 <= ny < GRID_H:
-                valid.append((name, nx, ny))
-                if (nx, ny) not in visited_set:
-                    unvisited.append((name, nx, ny))
-
-        candidates = unvisited if unvisited else valid
-        direction, tx, ty = random.choice(candidates)
+        mission = WORLD.get("mission", {})
+        target_type = mission.get("target_type", "core")
 
         context = (
             f"Mock rover at ({x},{y}), battery={agent['battery']:.0%}, "
@@ -276,6 +267,55 @@ class MockRoverAgent:
             f'mission="{agent["mission"]["objective"]}"'
         )
         agent["last_context"] = context
+
+        # Check for stone at current tile — dig or pickup
+        ground = check_ground(self.agent_id)
+        if ground["stone"]:
+            if not ground["stone"]["extracted"]:
+                thinking = f"I'm at ({x}, {y}). Found a {ground['stone']['type']} stone — digging."
+                return {"thinking": thinking, "action": {"name": "dig", "params": {}}}
+            else:
+                thinking = f"I'm at ({x}, {y}). Stone extracted — picking up."
+                return {"thinking": thinking, "action": {"name": "pickup", "params": {}}}
+
+        # If carrying target stone, navigate toward station
+        has_target = any(s["type"] == target_type for s in agent.get("inventory", []))
+        if has_target:
+            station = WORLD["agents"].get("station")
+            sp = station["position"] if station else [0, 0]
+            dx, dy = sp[0] - x, sp[1] - y
+            if dx != 0:
+                direction = "east" if dx > 0 else "west"
+                distance = min(abs(dx), MAX_MOVE_DISTANCE)
+            elif dy != 0:
+                direction = "south" if dy > 0 else "north"
+                distance = min(abs(dy), MAX_MOVE_DISTANCE)
+            else:
+                # Already at station
+                direction = "north"
+                distance = 1
+            thinking = f"I'm at ({x}, {y}). Carrying target stone, heading to station at ({sp[0]},{sp[1]})."
+            return {
+                "thinking": thinking,
+                "action": {
+                    "name": "move",
+                    "params": {"direction": direction, "distance": distance},
+                },
+            }
+
+        # Default: explore unvisited tiles
+        visited_set = {tuple(p) for p in agent.get("visited", [])}
+        valid = []
+        unvisited = []
+        for name, (ddx, ddy) in DIRECTIONS.items():
+            nx, ny = x + ddx, y + ddy
+            if 0 <= nx < GRID_W and 0 <= ny < GRID_H:
+                valid.append((name, nx, ny))
+                if (nx, ny) not in visited_set:
+                    unvisited.append((name, nx, ny))
+
+        candidates = unvisited if unvisited else valid
+        direction, tx, ty = random.choice(candidates)
 
         thinking = f"I'm at ({x}, {y}). I'll move {direction} to ({tx}, {ty})."
         action = {"name": "move", "params": {"direction": direction}}
