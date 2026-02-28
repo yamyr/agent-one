@@ -2,6 +2,7 @@
 import { computed, ref, watch, onMounted, onUnmounted } from 'vue'
 import { TILE_SIZE, VIEWPORT_W, VIEWPORT_H, VEIN_COLORS, VEIN_SIZES, SOLAR_PANEL_COLOR, SOLAR_PANEL_DEPLETED_COLOR, agentColor, revealRadius } from '../constants.js'
 import { usePreferences } from '../composables/usePreferences.js'
+import { useRevealedSet } from '../composables/useRevealedSet.js'
 
 const props = defineProps({
   worldState: {
@@ -115,20 +116,7 @@ const stations = computed(() => {
   })
 })
 
-const revealedSet = computed(() => {
-  const set = new Set()
-  if (!props.worldState) return set
-  for (const agent of Object.values(props.worldState.agents)) {
-    for (const cell of (agent.revealed || [])) {
-      set.add(`${cell[0]},${cell[1]}`)
-    }
-  }
-  return set
-})
-
-function isRevealed(x, y) {
-  return revealedSet.value.has(`${x},${y}`)
-}
+const { isRevealed } = useRevealedSet(() => props.worldState)
 
 // Grade weights for concentration radius (mirrors server logic)
 const GRADE_ORDER = ['low', 'medium', 'high', 'rich', 'pristine']
