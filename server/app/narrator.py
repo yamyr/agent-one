@@ -14,6 +14,7 @@ import re
 import time
 
 from elevenlabs import DialogueInput, ElevenLabs
+from huggingface_hub import InferenceClient
 from mistralai import Mistral
 
 from .config import settings
@@ -312,6 +313,7 @@ class Narrator:
         self._mistral: Mistral | None = None
         self._elevenlabs: ElevenLabs | None = None
         self._running = False
+        self._huggingface: InferenceClient | None = None
 
     @property
     def enabled(self) -> bool:
@@ -336,6 +338,13 @@ class Narrator:
                 return None
             self._elevenlabs = ElevenLabs(api_key=settings.elevenlabs_api_key)
         return self._elevenlabs
+
+    def _get_huggingface(self) -> InferenceClient:
+        if self._huggingface is None:
+            if not settings.hugging_face_read:
+                raise RuntimeError("HUGGING_FACE_READ not set")
+            self._huggingface = InferenceClient(token=settings.hugging_face_read, provider="auto")
+        return self._huggingface
 
     async def feed(self, event: dict):
         """Feed an event to the narrator. Non-blocking.
@@ -525,21 +534,33 @@ class Narrator:
             logger.exception("Narrator batch processing failed")
 
     def _generate_text(self, prompt: str) -> str | None:
-        """Call Mistral to generate narration dialogue (runs in thread).
+        """Call LLM to generate narration dialogue (runs in thread).
 
         Kept as a non-streaming fallback.
         """
         try:
-            client = self._get_mistral()
-            response = client.chat.complete(
-                model=settings.narration_model,
-                messages=[
-                    {"role": "system", "content": NARRATOR_SYSTEM_PROMPT},
-                    {"role": "user", "content": prompt},
-                ],
-                max_tokens=350,
-                temperature=0.9,
-            )
+            if settings.llm_provider == "huggingface":
+                client = self._get_huggingface()
+                response = client.chat_completion(
+                    model=settings.huggingface_narration_model,
+                    messages=[
+                        {"role": "system", "content": NARRATOR_SYSTEM_PROMPT},
+                        {"role": "user", "content": prompt},
+                    ],
+                    max_tokens=350,
+                    temperature=0.9,
+                )
+            else:
+                client = self._get_mistral()
+                response = client.chat.complete(
+                    model=settings.narration_model,
+                    messages=[
+                        {"role": "system", "content": NARRATOR_SYSTEM_PROMPT},
+                        {"role": "user", "content": prompt},
+                    ],
+                    max_tokens=350,
+                    temperature=0.9,
+                )
             text = response.choices[0].message.content
             return text.strip() if text else None
         except Exception:
@@ -547,43 +568,72 @@ class Narrator:
             return None
 
     async def _generate_text_streaming(self, prompt: str) -> str | None:
-        """Stream narration from Mistral, broadcasting chunks as they arrive.
+        """Stream narration from LLM, broadcasting chunks as they arrive.
 
         Each chunk is sent to the UI as a ``narration_chunk`` event so the text
         appears progressively.  Returns the full accumulated text when done.
         """
         try:
-            client = self._get_mistral()
+            if settings.llm_provider == "huggingface":
+                client = self._get_huggingface()
+                stream = client.chat_completion(
+                    model=settings.huggingface_narration_model,
+                    messages=[
+                        {"role": "system", "content": NARRATOR_SYSTEM_PROMPT},
+                        {"role": "user", "content": prompt},
+                    ],
+                    max_tokens=350,
+                    temperature=0.9,
+                    stream=True,
+                )
 
-            stream = client.chat.stream(
-                model=settings.narration_model,
-                messages=[
-                    {"role": "system", "content": NARRATOR_SYSTEM_PROMPT},
-                    {"role": "user", "content": prompt},
-                ],
-                max_tokens=350,
-                temperature=0.9,
-            )
+                full_text = ""
+                for chunk_event in stream:
+                    chunk = chunk_event.choices[0].delta.content
+                    if chunk:
+                        full_text += chunk
+                        await self._broadcast(
+                            {
+                                "source": "narrator",
+                                "type": "narration",
+                                "name": "narration_chunk",
+                                "payload": {
+                                    "text": _strip_audio_tags(chunk),
+                                },
+                            }
+                        )
 
-            full_text = ""
-            for event in stream:
-                chunk = event.data.choices[0].delta.content
-                if chunk:
-                    full_text += chunk
-                    # Broadcast each chunk for progressive display (stripped
-                    # of audio tags since these are for TTS only)
-                    await self._broadcast(
-                        {
-                            "source": "narrator",
-                            "type": "narration",
-                            "name": "narration_chunk",
-                            "payload": {
-                                "text": _strip_audio_tags(chunk),
-                            },
-                        }
-                    )
+                return full_text.strip() if full_text else None
+            else:
+                client = self._get_mistral()
 
-            return full_text.strip() if full_text else None
+                stream = client.chat.stream(
+                    model=settings.narration_model,
+                    messages=[
+                        {"role": "system", "content": NARRATOR_SYSTEM_PROMPT},
+                        {"role": "user", "content": prompt},
+                    ],
+                    max_tokens=350,
+                    temperature=0.9,
+                )
+
+                full_text = ""
+                for event in stream:
+                    chunk = event.data.choices[0].delta.content
+                    if chunk:
+                        full_text += chunk
+                        await self._broadcast(
+                            {
+                                "source": "narrator",
+                                "type": "narration",
+                                "name": "narration_chunk",
+                                "payload": {
+                                    "text": _strip_audio_tags(chunk),
+                                },
+                            }
+                        )
+
+                return full_text.strip() if full_text else None
         except Exception:
             logger.exception("Narrator streaming LLM call failed")
             return None

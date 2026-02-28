@@ -121,6 +121,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added (HuggingFace Integration)
+
+- **HuggingFace Inference API** as alternative LLM provider alongside Mistral — agents can now use models hosted on HuggingFace via config-driven provider selection (`LLM_PROVIDER=huggingface`)
+- Config fields: `HUGGING_FACE_READ`, `HUGGING_FACE_WRITE`, `LLM_PROVIDER`, `HUGGINGFACE_MODEL`, `HUGGINGFACE_NARRATION_MODEL`
+- `HuggingFaceRoverReasoner` class inheriting from `MistralRoverReasoner` with HF `InferenceClient`
+- `HuggingFaceDroneAgent` class inheriting from `DroneAgent` with HF `InferenceClient`
+- `RoverHuggingFaceLoop` and `DroneHuggingFaceLoop` agent loop classes
+- AGENT_MAP entries: `"rover-huggingface"`, `"drone-huggingface"`
+- Station agent HuggingFace support via `_get_hf_client()` and provider-aware `_call_llm()`
+- Narrator HuggingFace support via `_get_huggingface()` with both streaming and non-streaming text generation
+- `huggingface-hub>=0.25.0` dependency added to `server/pyproject.toml`
+- Comprehensive test suite in `test_huggingface.py` (37 tests) covering all HuggingFace agent variants
+- Updated `env.sample` with HuggingFace environment variables
+
 ### Added (UI Polish Round 3 — Phases 3–8)
 
 - **Persisted zoom preference**: Zoom level saved to `localStorage` via `usePreferences` composable; survives page refresh
@@ -129,7 +143,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **Toast dedup count badge**: Identical messages within 5s window show `×N` count badge instead of duplicating
 - **Toast timer management**: Dedup resets dismiss timer; evicted toasts clean up their timers
 - **EventLog skeleton state**: 6 pulsing skeleton rows with staggered animation delays shown before WebSocket data arrives
-
 ### Fixed (Zoom Scaling)
 
 - **Dynamic viewport tile count**: WorldMap zoom now scales tile count proportionally — zooming out (0.7x) renders ~29×29 tiles, zooming in (2.2x) renders ~10×10 tiles, instead of fixed 20×20
