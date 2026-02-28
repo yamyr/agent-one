@@ -119,7 +119,12 @@ function onClick(e) {
       v-if="worldState"
       :viewBox="`0 0 ${mapW} ${mapH}`"
       class="minimap-svg"
+      role="img"
+      aria-label="Minimap overview — click to navigate"
+      tabindex="0"
       @click="onClick"
+      @keydown.enter="onClick"
+      @keydown.space.prevent="onClick"
     >
       <!-- Background -->
       <rect

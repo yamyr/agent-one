@@ -202,16 +202,20 @@ function skipAudio() {
     <div class="narration-controls">
       <button
         v-if="isPlaying"
+        type="button"
         class="skip-btn"
         title="Skip narration"
+        aria-label="Skip narration"
         @click="skipAudio"
       >
         SKIP
       </button>
       <button
+        type="button"
         class="toggle-btn"
         :class="{ off: !narrationEnabled }"
         :title="narrationEnabled ? 'Turn voice off' : 'Turn voice on'"
+        :aria-label="narrationEnabled ? 'Turn voice off' : 'Turn voice on'"
         @click="emit('toggle-narration')"
       >
         {{ narrationEnabled ? 'Voice ON' : 'Voice OFF' }}

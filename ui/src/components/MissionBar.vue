@@ -49,7 +49,9 @@ const progressPct = computed(() => Math.min(100, Math.round((collected.value / t
     >{{ mission.status }}</span>
     <button
       v-if="mission.status === 'running'"
+      type="button"
       class="abort-btn"
+      aria-label="Abort mission"
       @click="emit('abort')"
     >
       ABORT

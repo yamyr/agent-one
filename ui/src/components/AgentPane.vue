@@ -76,8 +76,13 @@ function eventText(e) {
   <div class="agent-pane">
     <div
       class="agent-header"
+      role="button"
+      tabindex="0"
+      :aria-label="`View details for ${agentId}`"
       style="cursor:pointer"
       @click="emit('select-agent', agentId)"
+      @keydown.enter="emit('select-agent', agentId)"
+      @keydown.space.prevent="emit('select-agent', agentId)"
     >
       <div class="agent-row-1">
         <span
