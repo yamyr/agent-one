@@ -1,6 +1,6 @@
 <script setup>
 import { computed } from 'vue'
-import { VIEWPORT_W, VIEWPORT_H, agentColor } from '../constants.js'
+import { VIEWPORT_W, VIEWPORT_H, VEIN_COLORS, agentColor } from '../constants.js'
 
 const props = defineProps({
   worldState: {
@@ -13,6 +13,18 @@ const props = defineProps({
   },
   camX: { type: Number, default: 0 },
   camY: { type: Number, default: 0 },
+})
+
+const veins = computed(() => {
+  if (!props.worldState) return []
+  return (props.worldState.stones || [])
+    .filter(s => revealedSet.value.has(`${s.position[0]},${s.position[1]}`))
+    .map((s, i) => ({
+      key: `vein-${i}-${s.position[0]}-${s.position[1]}`,
+      cx: (s.position[0] - bounds.value.min_x) * MINI_TILE + MINI_TILE / 2,
+      cy: (bounds.value.max_y - s.position[1]) * MINI_TILE + MINI_TILE / 2,
+      color: VEIN_COLORS[s.grade || 'unknown'] || VEIN_COLORS.unknown,
+    }))
 })
 
 const emit = defineEmits(['navigate'])
@@ -135,6 +147,17 @@ function onClick(e) {
         :r="Math.max(2, MINI_TILE * 0.8)"
         :fill="a.color"
         opacity="0.9"
+      />
+
+      <!-- Vein indicators -->
+      <circle
+        v-for="v in veins"
+        :key="v.key"
+        :cx="v.cx"
+        :cy="v.cy"
+        r="1"
+        :fill="v.color"
+        opacity="0.95"
       />
 
       <!-- Viewport rectangle -->
