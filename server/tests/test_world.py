@@ -868,11 +868,13 @@ class TestMissionCompletion(unittest.TestCase):
         self.assertEqual(snap["mission"]["status"], "running")
 
     def test_collected_quantity_updates_on_pickup(self):
+        """Pickup away from station: vein is in transit, not yet collected."""
         WORLD["stones"] = [
             _make_vein([5, 5], grade="high", quantity=200, analyzed=True, extracted=True)
         ]
         execute_action("rover-mistral", "pickup", {})
-        self.assertEqual(WORLD["mission"]["collected_quantity"], 200)
+        self.assertEqual(WORLD["mission"]["collected_quantity"], 0)
+        self.assertEqual(WORLD["mission"]["in_transit_quantity"], 200)
 
     def test_pickup_away_from_station_no_success(self):
         """Picking up a vein away from station should NOT trigger success."""
@@ -883,7 +885,8 @@ class TestMissionCompletion(unittest.TestCase):
         result = execute_action("rover-mistral", "pickup", {})
         self.assertEqual(WORLD["mission"]["status"], "running")
         self.assertNotIn("mission", result)
-        self.assertEqual(WORLD["mission"]["collected_quantity"], 900)
+        self.assertEqual(WORLD["mission"]["collected_quantity"], 0)
+        self.assertEqual(WORLD["mission"]["in_transit_quantity"], 900)
 
     def test_mission_success_on_delivery_to_station(self):
         """Success requires the rover to deliver basalt to the station."""

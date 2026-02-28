@@ -863,7 +863,7 @@ def check_mission_status():
                 collected_qty += qty
                 if agent["position"] == station_pos:
                     delivered_qty += qty
-    mission["collected_quantity"] = collected_qty
+    mission["collected_quantity"] = delivered_qty
     mission["in_transit_quantity"] = collected_qty - delivered_qty
 
     # Success: enough total basalt quantity delivered to station
