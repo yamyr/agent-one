@@ -325,4 +325,39 @@ h2 {
 .follow-btn.active {
   font-weight: bold;
 }
+
+/* ── Responsive: Tablet (≤768px) ── */
+@media (max-width: 768px) {
+  .app {
+    padding: 0.5rem;
+  }
+
+  .top-row {
+    flex-direction: column;
+  }
+
+  .left-col {
+    flex: none;
+  }
+}
+
+/* ── Responsive: Mobile (≤480px) ── */
+@media (max-width: 480px) {
+  .app {
+    padding: 0.25rem;
+  }
+
+  h2 {
+    font-size: 0.75rem;
+  }
+
+  .follow-bar {
+    gap: 0.2rem;
+  }
+
+  .follow-btn {
+    font-size: 0.55rem;
+    padding: 0.1rem 0.3rem;
+  }
+}
 </style>

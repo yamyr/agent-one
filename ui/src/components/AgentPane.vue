@@ -215,4 +215,24 @@ const emit = defineEmits(['select-agent'])
 .ae-text.action-text {
   color: #7a9a7a;
 }
+
+@media (max-width: 768px) {
+  .agent-pane {
+    height: 160px;
+  }
+}
+
+@media (max-width: 480px) {
+  .agent-pane {
+    height: 140px;
+  }
+
+  .agent-name {
+    font-size: 0.7rem;
+  }
+
+  .agent-stats {
+    font-size: 0.6rem;
+  }
+}
 </style>

@@ -172,4 +172,10 @@ function onClick(e) {
   display: block;
   cursor: crosshair;
 }
+
+@media (max-width: 480px) {
+  .minimap {
+    display: none;
+  }
+}
 </style>
