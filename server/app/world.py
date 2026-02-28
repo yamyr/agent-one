@@ -710,7 +710,7 @@ def _execute_charge(agent_id, agent):
     logger.info(
         "Agent %s charged %.0f%% -> %.0f%%", agent_id, old_battery * 100, agent["battery"] * 100
     )
-    return {"ok": True, "battery_before": old_battery, "battery_after": agent["battery"]}
+    return {"ok": True, "agent_id": agent_id, "battery_before": old_battery, "battery_after": agent["battery"]}
 
 
 def charge_agent(agent_id):
@@ -1049,6 +1049,7 @@ def observe_station():
         rovers.append(
             RoverSummary(
                 id=aid,
+                agent_type=agent.get("type", "rover"),
                 position=list(agent["position"]),
                 battery=agent["battery"],
                 mission=AgentMission(**agent["mission"]),

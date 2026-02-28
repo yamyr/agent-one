@@ -78,6 +78,7 @@ class RoverContext(BaseModel):
 
 class RoverSummary(BaseModel):
     id: str
+    agent_type: str = "rover"
     position: list[int]
     battery: float
     mission: AgentMission

@@ -492,19 +492,38 @@ class DroneAgent:
         dist_to_station = abs(x - station_pos[0]) + abs(y - station_pos[1])
         moves_on_battery = int(battery / BATTERY_COST_MOVE_DRONE)
 
-        visited_set = {tuple(p) for p in agent.get("visited", [])}
-        unvisited_dirs = []
-        for name, (dx, dy) in DIRECTIONS.items():
-            nx, ny = x + dx, y + dy
-            if 0 <= nx < GRID_W and 0 <= ny < GRID_H and (nx, ny) not in visited_set:
-                unvisited_dirs.append(name)
-
         scanned_positions = {tuple(s["position"]) for s in self._world.get_drone_scans()}
-        total_tiles = GRID_W * GRID_H
-        coverage = len(scanned_positions) / total_tiles * 100
+
+        # Safety margin — same logic as rover
+        safety_margin = dist_to_station + 5
+        battery_critical = moves_on_battery <= safety_margin
+
+        # Nearest unscanned area hint (same logic as MockDroneAgent)
+        search_radius = 30
+        best_target = None
+        best_dist = float("inf")
+        for gx in range(x - search_radius, x + search_radius + 1):
+            for gy in range(y - search_radius, y + search_radius + 1):
+                if (gx, gy) in scanned_positions:
+                    continue
+                min_scan_dist = min(
+                    (abs(gx - sp[0]) + abs(gy - sp[1]) for sp in scanned_positions),
+                    default=search_radius * 2,
+                )
+                if min_scan_dist < DRONE_REVEAL_RADIUS:
+                    continue
+                d = abs(gx - x) + abs(gy - y)
+                if d < best_dist:
+                    best_dist = d
+                    best_target = (gx, gy)
+
+        # Last scan result
+        drone_scans = self._world.get_drone_scans()
+        last_scan = drone_scans[-1] if drone_scans else None
 
         parts = []
 
+        # -- Instructions --
         parts.append(
             f"You are {self.agent_id}, an autonomous Mars drone scout.\n"
             "Your job: fly over the terrain and SCAN areas to detect basalt vein deposits.\n"
@@ -531,38 +550,72 @@ class DroneAgent:
             "\n"
             "RULES:\n"
             f"- Battery: move costs 1 fuel unit/tile (~{BATTERY_COST_MOVE_DRONE:.2%}), scan costs 2 fuel units (~{BATTERY_COST_SCAN:.2%}), notify costs 2 fuel units (~{BATTERY_COST_NOTIFY:.2%}). You can fly up to {MAX_MOVE_DISTANCE_DRONE} tiles per move.\n"
-            "- Station is at ({sx},{sy}). Return when battery is low for recharge.\n"
-            "- ALWAYS keep enough battery to return to station.".format(sx=station_pos[0], sy=station_pos[1])
+            "- Station is at ({sx},{sy}). Return there when battery is low — "
+            "the station will recharge you automatically.\n"
+            "- ALWAYS keep enough battery to return to station. Check 'moves remaining' vs 'distance to station'.\n"
+            "  If moves remaining <= distance to station + 5 (safety margin), return to station IMMEDIATELY.\n"
+            "- Prefer unvisited areas when exploring. Don't backtrack aimlessly.".format(
+                sx=station_pos[0], sy=station_pos[1]
+            )
         )
 
+        # -- Mission --
         parts.append(
             f"\n== Mission ==\n"
             f"Objective: {mission['objective']}\n"
-            f"Scan coverage: {coverage:.0f}% of map"
+            f"Scans performed: {len(drone_scans)}"
         )
 
         current_task = agent.get("tasks", [None])[0] if agent.get("tasks") else None
         if current_task:
             parts.append(f"\n== Current Task ==\n{current_task}")
 
+        # -- State --
         parts.append(
             f"\n== State ==\n"
             f"Position: ({x}, {y})\n"
             f"Battery: {battery:.0%} ({moves_on_battery} moves remaining, {FUEL_CAPACITY_DRONE} fuel capacity)\n"
-            f"Distance to station: {dist_to_station} tiles\n"
-            f"Tiles visited: {len(agent.get('visited', []))}\n"
-            f"Scans performed: {len(self._world.get_drone_scans())}"
+            f"Distance to station: {dist_to_station} tiles (need {safety_margin} moves to return safely)\n"
+            f"Tiles visited: {len(agent.get('visited', []))}"
+            + (
+                "\n⚠️ BATTERY CRITICAL — return to station now!"
+                if battery_critical
+                else ""
+            )
         )
 
+        # -- Last Scan --
+        if last_scan:
+            scan_pos = last_scan["position"]
+            scan_peak = last_scan["peak"]
+            parts.append(
+                f"\n== Last Scan ==\n"
+                f"Position: ({scan_pos[0]}, {scan_pos[1]}), peak concentration: {scan_peak:.2f}"
+            )
+            # Check if hotspot was notified
+            if scan_peak >= 0.5:
+                last_action_was_notify = (
+                    memory and "notify" in memory[-1].lower()
+                )
+                if not last_action_was_notify:
+                    parts.append("⚠️ HOTSPOT — notify station before moving!")
+
+        # -- Environment --
         parts.append(
             f"\n== Environment ==\n"
-            f"Grid: {GRID_W}x{GRID_H}\n"
-            f"Unvisited neighbors: {', '.join(unvisited_dirs) if unvisited_dirs else 'none'}\n"
             f"Already scanned here: {'yes' if (x, y) in scanned_positions else 'no'}"
         )
+        if best_target:
+            tx, ty = best_target
+            hint = direction_hint(tx - x, ty - y)
+            parts.append(
+                f"Nearest unscanned area: ({tx},{ty}) — {hint}, {best_dist} tiles"
+            )
+        else:
+            parts.append("Nearest unscanned area: none within range")
 
         hot_scans = []
-        for scan in self._world.get_drone_scans()[-5:]:
+        for scan in drone_scans[-5:]:
             if scan["peak"] > 0.2:
                 hot_scans.append(
                     f"  - ({scan['position'][0]},{scan['position'][1]}): peak={scan['peak']:.2f}"
@@ -576,6 +629,20 @@ class DroneAgent:
             parts.append("\n== Recent actions ==")
             for entry in recent:
                 parts.append(f"- {entry}")
+
+        # -- Urgent commands from Host inbox --
+        pending = agent.get("pending_commands", [])
+        if pending:
+            parts.append("\n== URGENT COMMANDS ==")
+            for cmd in pending:
+                if cmd["name"] == "recall":
+                    reason = cmd.get("payload", {}).get("reason", "No reason given")
+                    parts.append(f"RECALL: Return to station immediately. Reason: {reason}")
+                elif cmd["name"] == "assign_mission":
+                    objective = cmd.get("payload", {}).get("objective", "")
+                    parts.append(f"NEW MISSION: {objective}")
+                else:
+                    parts.append(f"{cmd['name'].upper()}: {cmd.get('payload', {})}")
 
         return "\n".join(parts)
 
@@ -852,6 +919,15 @@ class RoverLoop(BaseAgent):
                         payload={"message": result["message"], "position": result["position"]},
                     )
                     messages.append(notify_msg)
+                    # Log receipt on station
+                    pos = result["position"]
+                    station_log = make_message(
+                        source="station",
+                        type="event",
+                        name="thinking",
+                        payload={"text": f"Radio from {self.agent_id} at ({pos[0]},{pos[1]}): {result['message']}"},
+                    )
+                    messages.append(station_log)
 
                 # Don't check mission success/failure during abort
                 if mission_status != "aborted":
@@ -976,6 +1052,15 @@ class DroneLoop(BaseAgent):
                         payload={"message": result["message"], "position": result["position"]},
                     )
                     messages.append(notify_msg)
+                    # Log receipt on station
+                    pos = result["position"]
+                    station_log = make_message(
+                        source="station",
+                        type="event",
+                        name="thinking",
+                        payload={"text": f"Radio from {self.agent_id} at ({pos[0]},{pos[1]}): {result['message']}"},
+                    )
+                    messages.append(station_log)
 
         # LLM-owned task: update agent tasks from LLM output
         llm_task = turn.get("task")

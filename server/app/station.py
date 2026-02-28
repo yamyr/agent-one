@@ -73,15 +73,24 @@ STATION_TOOLS = [ASSIGN_MISSION_TOOL, BROADCAST_ALERT_TOOL, CHARGE_ROVER_TOOL]
 
 SYSTEM_PROMPT = (
     "You are the Mars base station. You coordinate the Mars mission.\n"
-    "Your role is to assign missions to rover agents, respond to field reports, "
-    "and recharge rovers when they return to the station.\n"
-    "You have one rover available: 'rover-mistral' and one drone: 'drone-mistral'.\n"
+    "Your role is to assign missions to all field agents, respond to field reports, "
+    "and recharge agents when they return to the station.\n"
+    "\n"
+    "AGENT TYPES:\n"
+    "- Rovers: ground units that explore, analyze veins, dig basalt, and deliver to station.\n"
+    "- Drones: aerial scouts that fly fast and scan for basalt deposits. They cannot dig.\n"
+    "\n"
     "The mission goal is to collect basalt from veins. Each vein has a grade "
     "(low/medium/high/rich/pristine) that determines basalt quantity.\n"
     "Rovers must deliver enough basalt to the station to meet the target quantity.\n"
     "Keep responses short (1-2 sentences of reasoning, then act).\n"
-    "Always assign missions to at least one rover when defining the initial mission.\n"
-    "When a rover arrives at the station with low battery, charge it.\n"
+    "Always assign missions to all available agents when defining the initial mission.\n"
+    "When an agent arrives at the station with low battery, charge it.\n"
+    "\n"
+    "DRONE COORDINATION:\n"
+    "- When you have multiple drones, send each to a DIFFERENT sector of the map.\n"
+    "- Divide the grid into quadrants or sectors and assign one drone per sector.\n"
+    "- This maximizes scan coverage and avoids redundant overlapping scans.\n"
 )
 
 
@@ -90,8 +99,9 @@ def _build_world_summary(context: StationContext):
     lines = [f"Grid: {context.grid_w}x{context.grid_h}"]
     for rover in context.rovers:
         x, y = rover.position
+        label = "drone" if rover.agent_type == "drone" else "rover"
         lines.append(
-            f"  {rover.id}: pos=({x},{y}) battery={rover.battery:.0%} "
+            f"  {rover.id} ({label}): pos=({x},{y}) battery={rover.battery:.0%} "
             f'mission="{rover.mission.objective}" visited={rover.visited_count}'
         )
     lines.append(f"Veins on map: {len(context.stones)}")
@@ -180,10 +190,18 @@ class StationAgent:
         return {"thinking": thinking, "actions": actions, "context_text": ctx_text}
 
     def define_mission(self, context: StationContext):
-        """Called at startup to define initial missions for rovers."""
+        """Called at startup to define initial missions for all field agents."""
+        drone_count = sum(1 for r in context.rovers if r.agent_type == "drone")
+        drone_hint = ""
+        if drone_count > 1:
+            drone_hint = (
+                f" You have {drone_count} drones — assign each to a different sector "
+                "of the grid so they don't overlap."
+            )
         return self._call_llm(
             "The mission is starting. Review the world state and assign initial "
-            "missions to the rovers. Consider the vein locations and grid layout.",
+            "missions to ALL agents (rovers and drones). Consider the grid layout."
+            + drone_hint,
             context,
         )
 

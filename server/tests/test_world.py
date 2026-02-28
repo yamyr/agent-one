@@ -581,6 +581,7 @@ class TestCharge(unittest.TestCase):
     def test_charge_rover_success(self):
         result = charge_rover("rover-mistral")
         self.assertTrue(result["ok"])
+        self.assertEqual(result["agent_id"], "rover-mistral")
         self.assertAlmostEqual(result["battery_before"], 0.5)
         self.assertAlmostEqual(result["battery_after"], 0.5 + CHARGE_RATE)
 
