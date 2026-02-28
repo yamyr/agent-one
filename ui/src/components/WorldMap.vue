@@ -16,6 +16,10 @@ const props = defineProps({
     type: String,
     default: null,
   },
+  events: {
+    type: Array,
+    default: () => [],
+  },
 })
 
 const emit = defineEmits(['select-agent', 'unfollow'])
@@ -32,6 +36,99 @@ const { prefs } = usePreferences()
 const ZOOM_MIN = 0.7
 const ZOOM_MAX = 2.2
 const ZOOM_STEP = 0.1
+
+// Communication line system
+const commLines = ref([])
+const COMM_LINE_DURATION = 3000
+const COMM_COLORS = {
+  relay: '#44ccaa',
+  command: '#cc8844',
+  alert: '#cc4444',
+  notify: '#4488cc',
+}
+let commRafId = null
+let lastEventCount = 0
+
+function getAgentScreenPos(agentId) {
+  if (!props.worldState) return null
+  const a = props.worldState.agents?.[agentId]
+  if (!a) return null
+  return worldToScreen(a.position[0], a.position[1])
+}
+
+function addCommLine(fromAgent, toAgent, type = 'relay') {
+  const fromPos = getAgentScreenPos(fromAgent)
+  const toPos = toAgent ? getAgentScreenPos(toAgent) : null
+  if (!fromPos) return
+  if (toAgent && !toPos) return
+
+  if (!toAgent) {
+    // Broadcast: draw lines to all other agents
+    for (const id of props.agentIds) {
+      if (id === fromAgent) continue
+      const pos = getAgentScreenPos(id)
+      if (!pos) continue
+      commLines.value.push({
+        fromAgent,
+        toAgent: id,
+        color: COMM_COLORS[type] || '#888',
+        opacity: 1.0,
+        createdAt: Date.now(),
+        type,
+      })
+    }
+    return
+  }
+
+  commLines.value.push({
+    fromAgent,
+    toAgent,
+    color: COMM_COLORS[type] || '#888',
+    opacity: 1.0,
+    createdAt: Date.now(),
+    type,
+  })
+}
+
+function updateCommLines() {
+  const now = Date.now()
+  commLines.value = commLines.value
+    .filter(line => now - line.createdAt < COMM_LINE_DURATION)
+    .map(line => ({
+      ...line,
+      opacity: Math.max(0, 1 - (now - line.createdAt) / COMM_LINE_DURATION),
+    }))
+  commRafId = requestAnimationFrame(updateCommLines)
+}
+
+const visibleCommLines = computed(() => {
+  if (!props.worldState) return []
+  return commLines.value.map(line => {
+    const from = getAgentScreenPos(line.fromAgent)
+    const to = getAgentScreenPos(line.toAgent)
+    if (!from || !to) return null
+    return { ...line, fromSx: from.sx, fromSy: from.sy, toSx: to.sx, toSy: to.sy }
+  }).filter(Boolean)
+})
+
+watch(() => props.events.length, (newLen) => {
+  if (newLen <= lastEventCount) { lastEventCount = newLen; return }
+  const newEvents = props.events.slice(lastEventCount)
+  lastEventCount = newLen
+  for (const ev of newEvents) {
+    if (ev.name === 'intel_relay') {
+      addCommLine(ev.source, ev.payload?.to, 'relay')
+    } else if (ev.name === 'assign_mission') {
+      addCommLine('station', ev.payload?.agent_id || ev.payload?.rover_id, 'command')
+    } else if (ev.name === 'recall') {
+      addCommLine('station', ev.payload?.rover_id, 'command')
+    } else if (ev.name === 'notify') {
+      addCommLine(ev.source, 'station', 'notify')
+    } else if (ev.name === 'alert') {
+      addCommLine(ev.source || 'station', null, 'alert')
+    }
+  }
+})
 
 // Dynamic viewport dimensions: more tiles when zoomed out, fewer when zoomed in
 const visibleW = computed(() => Math.ceil(VIEWPORT_W / prefs.zoom))
@@ -57,8 +154,14 @@ function cameraLoop() {
   rafId = requestAnimationFrame(cameraLoop)
 }
 
-onMounted(() => { rafId = requestAnimationFrame(cameraLoop) })
-onUnmounted(() => { if (rafId) cancelAnimationFrame(rafId) })
+onMounted(() => {
+  rafId = requestAnimationFrame(cameraLoop)
+  commRafId = requestAnimationFrame(updateCommLines)
+})
+onUnmounted(() => {
+  if (rafId) cancelAnimationFrame(rafId)
+  if (commRafId) cancelAnimationFrame(commRafId)
+})
 
 // Track drag state
 const dragging = ref(false)
@@ -628,6 +731,37 @@ defineExpose({ camX, camY, visibleW, visibleH, panCamera, navigateTo })
         />
       </template>
 
+      <!-- communication lines between agents -->
+      <g class="comm-lines">
+        <line
+          v-for="(line, i) in visibleCommLines"
+          :key="'comm-'+i"
+          :x1="line.fromSx"
+          :y1="line.fromSy"
+          :x2="line.toSx"
+          :y2="line.toSy"
+          :stroke="line.color"
+          :stroke-opacity="line.opacity"
+          stroke-width="1.5"
+          stroke-dasharray="4 4"
+          class="comm-line-animate"
+        />
+        <circle
+          v-for="(line, i) in visibleCommLines"
+          :key="'comm-dot-'+i"
+          r="2.5"
+          :fill="line.color"
+          :opacity="line.opacity"
+        >
+          <animateMotion
+            dur="0.8s"
+            repeatCount="1"
+            fill="freeze"
+            :path="`M${line.fromSx},${line.fromSy} L${line.toSx},${line.toSy}`"
+          />
+        </circle>
+      </g>
+
       <!-- station markers (square) -->
       <g
         v-for="id in stations"
@@ -882,6 +1016,14 @@ defineExpose({ camX, camY, visibleW, visibleH, panCamera, navigateTo })
 
 .ore-marker {
   opacity: 0.95;
+}
+
+@keyframes comm-dash {
+  to { stroke-dashoffset: -8; }
+}
+
+.comm-line-animate {
+  animation: comm-dash 0.6s linear infinite;
 }
 
 .cam-hint {

@@ -9,6 +9,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Features
 
+* **ui:** add communication visualization on map — animated SVG lines between agents on comm events (intel relay, command, alert, notify) with 3s fade-out and traveling pulse dots
 * add ABORT mission feature. ([05015a6](https://github.com/mhack-agent-one/agent-one/commit/05015a674767facad137062ebdaf487702844e6f))
 * add drone scout agent with aerial scanning capability ([1c1ab77](https://github.com/mhack-agent-one/agent-one/commit/1c1ab77788c9a147a96496ec35636f98a4adc7f5))
 * add ElevenLabs AI narration for real-time Mars mission commentary ([1b4d19a](https://github.com/mhack-agent-one/agent-one/commit/1b4d19a6723b7f7c32437117027ef141ea4eb5d0))
