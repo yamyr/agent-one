@@ -318,7 +318,8 @@ class MistralRoverReasoner:
             "- But if there is a vein at your CURRENT TILE, analyze/dig it first — it costs no move fuel to stay.\n"
             "- If you find an unknown vein: analyze → dig. Both on the same tile.\n"
             "- Once you have collected enough basalt, RETURN TO STATION to deliver and complete the mission.\n"
-            "- CRITICAL: Once you have collected the target quantity of basalt, STOP exploring and RETURN TO STATION IMMEDIATELY.\n"
+            "- Items are AUTO-DELIVERED when you arrive at the station — your inventory is emptied and you can go collect more.\n"
+            "- After delivering, head back out to explore and collect more basalt until the mission target is reached.\n"
             "- Prefer unvisited tiles when exploring. Don't backtrack aimlessly.\n"
             "- Ground is auto-scanned after every move. No need to check manually.\n"
             "- Abandoned structures (buildings/vehicles) are scattered near the station. They block movement — plan paths around them.\n"
@@ -340,12 +341,17 @@ class MistralRoverReasoner:
             )
         )
 
+        mission_state = self._world.state.get("mission", {})
+        delivered_so_far = mission_state.get("collected_quantity", 0)
+        in_transit = mission_state.get("in_transit_quantity", 0)
         parts.append(
             f"\n== Mission ==\n"
             f"Objective: {mission['objective']}\n"
             f"Target: collect {target_quantity} units of basalt and deliver to station.\n"
-            f"Your inventory: {len(inventory)}/{MAX_INVENTORY_ROVER} veins"
-            + ("\n🏁 INVENTORY FULL — RETURN TO STATION NOW TO DELIVER!" if inventory_full else "")
+            f"Delivered so far: {delivered_so_far}/{target_quantity} units"
+            + (f" (+ {in_transit} in transit)" if in_transit else "")
+            + f"\nYour inventory: {len(inventory)}/{MAX_INVENTORY_ROVER} veins"
+            + ("\n🏁 INVENTORY FULL — RETURN TO STATION NOW TO DEPOSIT!" if inventory_full else "")
         )
 
         current_task = agent.get("tasks", [None])[0] if agent.get("tasks") else None
@@ -1356,13 +1362,28 @@ class RoverLoop(BaseAgent):
                 if mission_status != "aborted":
                     mission_event = result.get("mission")
                     if mission_event:
-                        mission_msg = make_message(
-                            source="world",
-                            type="event",
-                            name="mission_" + mission_event["status"],
-                            payload=mission_event,
-                        )
-                        messages.append(mission_msg)
+                        # Emit deposit events for each delivery
+                        for delivery in mission_event.get("deliveries", []):
+                            deposit_msg = make_message(
+                                source=delivery["agent"],
+                                type="event",
+                                name="deposit",
+                                payload={
+                                    "items_deposited": delivery["items_deposited"],
+                                    "target_deposited": delivery["target_deposited"],
+                                    "delivered_total": mission_event.get("delivered_quantity", 0),
+                                },
+                            )
+                            messages.append(deposit_msg)
+                        # Emit mission status change (success/failed only)
+                        if mission_event["status"] in ("success", "failed"):
+                            mission_msg = make_message(
+                                source="world",
+                                type="event",
+                                name="mission_" + mission_event["status"],
+                                payload=mission_event,
+                            )
+                            messages.append(mission_msg)
 
         # LLM-owned task: update agent tasks from LLM output
         llm_task = turn.get("task")

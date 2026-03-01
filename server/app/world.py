@@ -485,6 +485,7 @@ def _build_initial_world():
         "solar_panels": [],
         "drone_scans": [],
         "structures": [],
+        "delivered_items": [],
         "tick": 0,
         "generation_id": 0,
         "bounds": {"min_x": -3, "max_x": 3, "min_y": -3, "max_y": 3},
@@ -1175,17 +1176,44 @@ def check_mission_status():
     station_pos = station["position"] if station else [0, 0]
     collected_qty = 0
     delivered_qty = 0
+
+    # Count previously delivered items
+    for item in WORLD.get("delivered_items", []):
+        if item["type"] == mission["target_type"]:
+            delivered_qty += item.get("quantity", 0)
+
+    # Auto-deliver: rovers at station deposit inventory automatically
+    delivery_events = []
     for agent in WORLD["agents"].values():
         if agent.get("type") != "rover":
             continue
-        for stone in agent.get("inventory", []):
-            if stone["type"] == mission["target_type"]:
-                qty = stone.get("quantity", 0)
-                collected_qty += qty
-                if agent["position"] == station_pos:
-                    delivered_qty += qty
+        inventory = agent.get("inventory", [])
+        if agent["position"] == station_pos and inventory:
+            delivered_count = 0
+            for stone in inventory:
+                if stone["type"] == mission["target_type"]:
+                    delivered_qty += stone.get("quantity", 0)
+                    delivered_count += 1
+            WORLD.setdefault("delivered_items", []).extend(inventory)
+            agent_id = next((k for k, v in WORLD["agents"].items() if v is agent), "?")
+            logger.info(
+                "Auto-delivered %d items from %s at station",
+                len(inventory),
+                agent_id,
+            )
+            delivery_events.append({
+                "agent": agent_id,
+                "items_deposited": len(inventory),
+                "target_deposited": delivered_count,
+            })
+            agent["inventory"] = []
+        else:
+            for stone in inventory:
+                if stone["type"] == mission["target_type"]:
+                    collected_qty += stone.get("quantity", 0)
+
     mission["collected_quantity"] = delivered_qty
-    mission["in_transit_quantity"] = collected_qty - delivered_qty
+    mission["in_transit_quantity"] = collected_qty
 
     # Success: enough total basalt quantity delivered to station
     if delivered_qty >= mission["target_quantity"]:
@@ -1199,6 +1227,7 @@ def check_mission_status():
             "status": "success",
             "collected_quantity": collected_qty,
             "delivered_quantity": delivered_qty,
+            "deliveries": delivery_events,
         }
 
     # Failure: all rovers have zero battery and none are at the station
@@ -1216,6 +1245,15 @@ def check_mission_status():
         mission["status"] = "failed"
         logger.info("Mission FAILED: all rovers depleted")
         return {"status": "failed", "reason": "all_rovers_depleted"}
+
+    # Return delivery events if any occurred (no status change)
+    if delivery_events:
+        return {
+            "status": "running",
+            "delivered_quantity": delivered_qty,
+            "in_transit_quantity": collected_qty,
+            "deliveries": delivery_events,
+        }
 
     return None
 
@@ -1619,6 +1657,19 @@ def _update_rover_tasks(agent_id, agent):
     tasks = []
 
     inv_count = len(inventory)
+    station = WORLD["agents"].get("station")
+    sp = station["position"] if station else [0, 0]
+
+    # Inventory full → top priority: return to station to deposit
+    if inv_count >= MAX_INVENTORY_ROVER:
+        dist = abs(x - sp[0]) + abs(y - sp[1])
+        if dist > 0:
+            hint = direction_hint(sp[0] - x, sp[1] - y)
+            tasks.append(
+                f"RETURN TO STATION at ({sp[0]},{sp[1]}) to deposit inventory — {hint}, {dist} tiles"
+            )
+            agent["tasks"] = tasks
+            return
 
     # Vein at current tile → analyze or dig (priority order)
     stone_here = _find_stone_at(x, y)

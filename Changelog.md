@@ -1,5 +1,18 @@
 # Changelog
 
+## [Unreleased]
+
+### Features
+
+* **world:** auto-deliver rover inventory at station — items deposited, inventory cleared, rover ventures out again
+* **ui:** deposit events shown in EventLog with 📦 icon and toast notifications
+* **agent:** rover prompt now explains auto-delivery and shows delivered/target progress
+* **world:** task planner prioritizes "Return to station" when inventory is full
+
+### Bug Fixes
+
+* **world:** rover no longer gets stuck at station with full inventory after delivery (inventory was never cleared)
+
 ## [0.5.0](https://github.com/mhack-agent-one/agent-one/compare/v0.4.0...v0.5.0) (2026-03-01)
 
 
