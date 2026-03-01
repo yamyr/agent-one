@@ -438,6 +438,7 @@ requires-dist = [
     { name = "mistralai", specifier = ">=1.0.0" },
     { name = "pydantic-settings", specifier = ">=2.0.0" },
     { name = "python-dotenv", specifier = ">=1.0.0" },
+    { name = "python-multipart", specifier = ">=0.0.9" },
     { name = "python-multipart", specifier = ">=0.0.22" },
     { name = "rich", specifier = ">=13.0.0" },
     { name = "surrealdb", specifier = ">=1.0.7" },

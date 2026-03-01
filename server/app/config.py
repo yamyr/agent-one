@@ -46,5 +46,9 @@ class Settings(BaseSettings):
     voxtral_model: str = "voxtral-mini-latest"
     voice_command_enabled: bool = True
 
+    # Voice command (Voxtral transcription + LLM parsing)
+    voice_transcription_model: str = "voxtral-mini-latest"
+    voice_command_model: str = "mistral-small-latest"
+
 
 settings = Settings()
