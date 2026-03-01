@@ -282,26 +282,26 @@ const { sectionRef, visible } = useRevealOnScroll()
   position: relative;
 }
 
-/* Connecting gradient line — animated flow */
+/* Connecting gradient line — subtle animated flow */
 .timeline::before {
   content: '';
   position: absolute;
   top: 31px; /* center of 64px circle */
   left: 32px;
   right: 32px;
-  height: 2px;
+  height: 1px;
   background: linear-gradient(
     90deg,
-    var(--mars-sunset),
-    var(--accent-cyan),
-    var(--mars-sunset),
-    var(--accent-cyan)
+    rgba(255, 107, 53, 0.25),
+    rgba(0, 212, 255, 0.15),
+    rgba(255, 107, 53, 0.25),
+    rgba(0, 212, 255, 0.15)
   );
   background-size: 200% 100%;
   z-index: 1;
   opacity: 0;
   transition: opacity 0.8s ease 0.3s;
-  animation: timeline-flow 4s linear infinite;
+  animation: timeline-flow 8s linear infinite;
 }
 
 /* ─── Step ─── */
@@ -551,17 +551,17 @@ const { sectionRef, visible } = useRevealOnScroll()
     bottom: 0;
     left: 31px; /* center of 64px circle */
     right: auto;
-    width: 2px;
+    width: 1px;
     height: 100%;
     background: linear-gradient(
       180deg,
-      var(--mars-sunset),
-      var(--accent-cyan),
-      var(--mars-sunset),
-      var(--accent-cyan)
+      rgba(255, 107, 53, 0.25),
+      rgba(0, 212, 255, 0.15),
+      rgba(255, 107, 53, 0.25),
+      rgba(0, 212, 255, 0.15)
     );
     background-size: 100% 200%;
-    animation: timeline-flow-vertical 4s linear infinite;
+    animation: timeline-flow-vertical 8s linear infinite;
   }
 
   .timeline__step {
