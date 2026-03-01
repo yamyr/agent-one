@@ -806,20 +806,6 @@ def _execute_use_solar_battery(agent_id):
     return {"ok": False, "error": "No active solar panel at current position"}
 
 
-def _nearest_solar_panel(x, y):
-    best = None
-    best_dist = float("inf")
-    for panel in WORLD.get("solar_panels", []):
-        if panel["depleted"]:
-            continue
-        px, py = panel["position"]
-        d = abs(px - x) + abs(py - y)
-        if d < best_dist:
-            best_dist = d
-            best = panel
-    return best
-
-
 def check_mission_status():
     """Update mission collected_quantity and detect success/failure.
 
