@@ -64,6 +64,9 @@ const mergedEvents = computed(() => {
 })
 
 function eventText(e) {
+  if (e.name === 'insight') {
+    return `💡 ${e.payload?.text || ''}`
+  }
   if (e.name === 'move' && e.payload?.from) {
     return `(${e.payload.from[0]},${e.payload.from[1]}) → (${e.payload.to[0]},${e.payload.to[1]})`
   }
@@ -125,6 +128,12 @@ function eventText(e) {
           class="ae-task-pill"
         >
           {{ e.payload?.task || '' }}
+        </div>
+        <div
+          v-else-if="e.name === 'insight'"
+          class="ae-insight"
+        >
+          💡 {{ e.payload?.text || '' }}
         </div>
         <div
           v-else
@@ -285,6 +294,18 @@ function eventText(e) {
   border: 1px solid rgba(224, 160, 64, 0.25);
   border-radius: 9999px;
   padding: 0.15rem 0.6rem;
+  margin: 0.2rem 0.1rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ae-insight {
+  font-size: 0.65rem;
+  color: #f59e0b;
+  background: rgba(245, 158, 11, 0.1);
+  border-left: 2px solid #f59e0b;
+  padding: 0.2rem 0.4rem;
   margin: 0.2rem 0.1rem;
   white-space: nowrap;
   overflow: hidden;

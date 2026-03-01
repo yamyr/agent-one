@@ -11,6 +11,7 @@ from app.world import AGENT_STARTS
 from app.world import abort_mission, all_agents_at_station
 from app.world import assign_mission, _cells_in_radius, record_memory, MEMORY_MAX
 from app.world import direction_hint, best_drone_hotspot
+from app.world import summarize_memories, record_strategic_insight
 from app.world import set_agent_model, set_agent_last_context, set_pending_commands
 from app.world import observe_rover, observe_station
 from app.world import VEIN_GRADES, VEIN_WEIGHTS, VEIN_QUANTITY_RANGES, TARGET_QUANTITY
@@ -1638,3 +1639,97 @@ class TestBestDroneHotspot(unittest.TestCase):
         ]
         result = best_drone_hotspot(0, 0, set())
         self.assertIsNone(result)
+
+
+class TestStrategicMemory(unittest.TestCase):
+    """Tests for Feature F: Agent Memory & Learning."""
+
+    def setUp(self):
+        from app.world import WORLD, _build_initial_world
+
+        WORLD.clear()
+        WORLD.update(_build_initial_world())
+
+    # --- summarize_memories ---
+
+    def test_summarize_memories_returns_none_when_few(self):
+        """Should return None when agent has fewer than 6 memories."""
+        result = summarize_memories("rover-mistral")
+        self.assertIsNone(result)
+
+    def test_summarize_memories_returns_prompt_when_enough(self):
+        """Should return a prompt string when agent has >= 6 memories."""
+        from app.world import WORLD
+
+        rover = WORLD["agents"]["rover-mistral"]
+        rover["memory"] = [f"memory_{i}" for i in range(8)]
+        result = summarize_memories("rover-mistral")
+        self.assertIsNotNone(result)
+        self.assertIn("Summarize", result)
+        self.assertIn("memory_7", result)
+
+    def test_summarize_memories_invalid_agent(self):
+        """Should return None for non-existent agent."""
+        result = summarize_memories("nonexistent_agent")
+        self.assertIsNone(result)
+
+    # --- record_strategic_insight ---
+
+    def test_record_strategic_insight_stores(self):
+        """Should store a strategic insight for an agent."""
+        record_strategic_insight("rover-mistral", "Zone B3 is mineral-rich", 20)
+        from app.world import WORLD
+
+        rover = WORLD["agents"]["rover-mistral"]
+        self.assertEqual(len(rover["strategic_memory"]), 1)
+        self.assertEqual(rover["strategic_memory"][0]["insight"], "Zone B3 is mineral-rich")
+        self.assertEqual(rover["strategic_memory"][0]["tick"], 20)
+
+    def test_record_strategic_insight_caps_at_five(self):
+        """Should cap strategic_memory at 5 entries (sliding window)."""
+        for i in range(7):
+            record_strategic_insight("rover-mistral", f"insight_{i}", i * 20)
+        from app.world import WORLD
+
+        rover = WORLD["agents"]["rover-mistral"]
+        self.assertEqual(len(rover["strategic_memory"]), 5)
+        self.assertEqual(rover["strategic_memory"][0]["insight"], "insight_2")
+        self.assertEqual(rover["strategic_memory"][-1]["insight"], "insight_6")
+
+    def test_record_strategic_insight_invalid_agent(self):
+        """Should silently do nothing for non-existent agent."""
+        record_strategic_insight("nonexistent", "insight", 10)
+
+    # --- Agent init ---
+
+    def test_strategic_memory_in_agent_init(self):
+        """Rover and drone should have strategic_memory: [] on init."""
+        from app.world import WORLD
+
+        for agent_id in ("rover-mistral", "drone-mistral"):
+            agent = WORLD["agents"][agent_id]
+            self.assertIn("strategic_memory", agent, f"Agent {agent_id} missing strategic_memory")
+            self.assertEqual(agent["strategic_memory"], [])
+
+    # --- Snapshot ---
+
+    def test_strategic_memory_in_snapshot(self):
+        """Strategic memory should appear in snapshot after recording."""
+        record_strategic_insight("rover-mistral", "Test insight", 10)
+        snap = get_snapshot()
+        rover = snap["agents"]["rover-mistral"]
+        self.assertIn("strategic_memory", rover)
+        self.assertEqual(len(rover["strategic_memory"]), 1)
+
+    # --- World class methods ---
+
+    def test_world_class_methods(self):
+        """World class should expose summarize_memories and record_strategic_insight."""
+        from app.world import World, WORLD
+
+        w = World(WORLD)
+        result = w.summarize_memories("rover-mistral")
+        self.assertIsNone(result)  # too few memories
+        w.record_strategic_insight("rover-mistral", "test", 5)
+        rover = WORLD["agents"]["rover-mistral"]
+        self.assertEqual(len(rover["strategic_memory"]), 1)
