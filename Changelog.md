@@ -8,6 +8,17 @@
 * **narrator:** fix `UnboundLocalError` in `_generate_text_streaming()` — remove dead duplicate code block, add proper `client = self._get_mistral()` in Mistral branch
 * **tests:** fix `test_generate_text_streaming_mistral_by_default` mock to use `AsyncMock` with `stream_async`
 
+### Bug Fixes
+
+* **ui:** guard AgentDetailModal against null `mission`, `visited`, `position`, and `battery` properties ([#89](https://github.com/mhack-agent-one/agent-one/issues/89))
+  - `position()` and `batteryPct()` now return `'?'` when data is missing instead of crashing
+  - Prevents `Cannot read properties of undefined` runtime errors for station agent or agents between missions
+
+### Testing
+
+* **ui:** add Vitest + @vue/test-utils test infrastructure with 15 tests for AgentDetailModal null safety
+* **ci:** add `npm run test` step to `ui-lint-build` job
+
 ### Documentation
 
 * **roadmap:** update ROADMAP.md milestone checkboxes to reflect current implementation state ([#74](https://github.com/mhack-agent-one/agent-one/issues/74))
