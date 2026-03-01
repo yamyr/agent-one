@@ -34,6 +34,7 @@ Autonomous agents — a **Rover**, **Drone**, and **Station** — coordinate thr
 - **Per-rover visibility radius** shown as colored dashed circles on the map
 - **Rovers start at station (0,0)** and explore outward autonomously
 - **GitHub → Discord notifications** — PR and main-branch push events forwarded to Discord channels via webhook
+- **Voice Command** — Speak naturally to the simulation ("Recall all rovers", "Abort mission"). Audio is transcribed via **Voxtral** (Mistral's voice model) and parsed into structured commands by an LLM.
 
 ## How It Works
 
@@ -151,6 +152,8 @@ A goal is satisfied when `confidence >= threshold`. Confidence updates dynamical
 | `NARRATION_ENABLED` | No | Enable/disable narration at startup (default: off) |
 | `NARRATION_VOICE_ID` | No | ElevenLabs voice ID for TTS |
 | `NARRATION_MIN_INTERVAL_SECONDS` | No | Minimum seconds between narrations |
+| `VOICE_TRANSCRIPTION_MODEL` | No | Model for voice-to-text (default: `voxtral-mini-latest`) |
+| `VOICE_COMMAND_MODEL` | No | LLM for parsing voice transcripts (default: `mistral-small-latest`) |
 
 ### Discord Notifications (GitHub Secrets)
 
