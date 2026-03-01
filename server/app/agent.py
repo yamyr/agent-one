@@ -25,10 +25,11 @@ from .world import FUEL_CAPACITY_ROVER, FUEL_CAPACITY_DRONE, DRONE_REVEAL_RADIUS
 from .world import BATTERY_COST_MOVE, BATTERY_COST_MOVE_DRONE, BATTERY_COST_DIG
 from .world import BATTERY_COST_ANALYZE, BATTERY_COST_SCAN, BATTERY_COST_NOTIFY
 from .world import MAX_INVENTORY_ROVER
-from .world import check_ground, direction_hint, best_drone_hotspot
+from .world import check_ground, direction_hint, best_drone_hotspot, observe_rover
 from .world import get_drone_intel_for_rover, get_unread_messages, send_agent_message
 from .world import set_agent_model
-from .world import execute_action, get_snapshot, charge_agent, next_tick
+from .world import execute_action, get_snapshot, charge_agent, next_tick, update_geysers
+from .world import is_obstacle_at
 from .station import StationAgent
 from .training_logger import training_logger
 from .training_models import TrainingTurn, TurnWorldSnapshot
@@ -300,7 +301,13 @@ class MistralRoverReasoner:
             "- Ground is auto-scanned after every move. No need to check manually.\n"
             f"- MOVEMENT EFFICIENCY: You can move up to {MAX_MOVE_DISTANCE} tiles per move action.\n"
             f"  When heading to a known target, ALWAYS set distance={MAX_MOVE_DISTANCE} (or the remaining distance if closer).\n"
-            "  Moving 1 tile at a time wastes turns. Use the full distance.".format(
+            "  Moving 1 tile at a time wastes turns. Use the full distance.\n"
+            "\n"
+            "HAZARDS:\n"
+            "- ICE MOUNTAINS: Impassable terrain. You cannot move onto a mountain tile.\n"
+            "  If a move is blocked by a mountain, choose a different direction.\n"
+            "- AIR GEYSERS: Cycle through idle → warning → erupting. Avoid erupting geysers.\n"
+            "  Standing on an erupting geyser drains 10% battery. Move away from warning geysers.".format(
                 sx=station_pos[0], sy=station_pos[1]
             )
         )
@@ -382,6 +389,19 @@ class MistralRoverReasoner:
             parts.append("Visible veins nearby:")
             for vs in visible_stones:
                 parts.append(f"  - {vs}")
+
+        # Nearby hazards from world state
+        ctx = observe_rover(self.agent_id)
+        if ctx.computed.nearby_obstacles:
+            parts.append("\n== Hazards ==")
+            for obs in ctx.computed.nearby_obstacles:
+                dist = abs(obs.position[0] - x) + abs(obs.position[1] - y)
+                hint = direction_hint(obs.position[0] - x, obs.position[1] - y)
+                if obs.kind == "mountain":
+                    parts.append(f"  - ICE MOUNTAIN at ({obs.position[0]},{obs.position[1]}) — {hint}, {dist} tiles (impassable)")
+                elif obs.kind == "geyser":
+                    state_warn = " ⚠️ MOVE AWAY!" if obs.state in ("warning", "erupting") else ""
+                    parts.append(f"  - AIR GEYSER at ({obs.position[0]},{obs.position[1]}) — {hint}, {dist} tiles, state: {obs.state}{state_warn}")
 
         # Drone scan hotspots — areas discovered by aerial scans not yet visited by rover
         hotspot = best_drone_hotspot(x, y, revealed_set)
@@ -522,10 +542,22 @@ class MistralRoverReasoner:
         valid = []
         for name, (dx, dy) in DIRECTIONS.items():
             nx, ny = x + dx, y + dy
+            # Skip tiles blocked by mountains
+            obs = is_obstacle_at(nx, ny)
+            if obs and obs["kind"] == "mountain":
+                continue
             valid.append((name, nx, ny))
             if (nx, ny) not in visited_set:
                 unvisited.append((name, nx, ny))
         candidates = unvisited if unvisited else valid
+        if not candidates:
+            # All neighbors are mountains — try any direction
+            direction = random.choice(list(DIRECTIONS.keys()))
+            dx, dy = DIRECTIONS[direction]
+            return {
+                "thinking": f"LLM fallback: {reason}. All neighbors blocked, trying {direction}.",
+                "action": {"name": "move", "params": {"direction": direction}},
+            }
         direction, tx, ty = random.choice(candidates)
         thinking = f"LLM fallback: {reason}. Moving {direction} to ({tx},{ty})."
         return {
@@ -1173,7 +1205,18 @@ class RoverLoop(BaseAgent):
         turn = await asyncio.to_thread(self._reasoner.run_turn)
         llm_ms = int((time.monotonic() - t0) * 1000)
         next_tick()
+        geyser_events = update_geysers()
         messages = []
+
+        # Broadcast geyser eruption events
+        for ge in geyser_events:
+            msg = make_message(
+                source="world",
+                type="event",
+                name="geyser_eruption",
+                payload=ge,
+            )
+            messages.append(msg)
 
         if turn["thinking"]:
             msg = make_message(

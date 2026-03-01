@@ -1901,3 +1901,199 @@ class TestRandomFreePos(unittest.TestCase):
         all_cells = {(x0 + dx, y0 + dy) for dx in range(CHUNK_SIZE) for dy in range(CHUNK_SIZE)}
         pos = _random_free_pos(all_cells, cx=cx, cy=cy)
         self.assertEqual(pos, (x0, y0))
+
+
+class TestObstacles(unittest.TestCase):
+    """Tests for ice mountain and air geyser environmental hazards."""
+
+    def setUp(self):
+        from app.world import reset_world
+        reset_world()
+
+    def tearDown(self):
+        from app.world import reset_world
+        reset_world()
+
+    def test_obstacles_generated_in_chunks(self):
+        """Obstacle list is populated after chunk generation."""
+        obstacles = world.state.get("obstacles", [])
+        self.assertIsInstance(obstacles, list)
+        # With 9 chunks (3x3 around origin) and ~1.2% probability, expect some obstacles
+        self.assertGreater(len(obstacles), 0)
+
+    def test_obstacle_kinds(self):
+        """Only 'mountain' and 'geyser' kinds are generated."""
+        kinds = {o["kind"] for o in world.state.get("obstacles", [])}
+        self.assertTrue(kinds.issubset({"mountain", "geyser"}))
+
+    def test_mountains_are_impassable(self):
+        """Moving onto a mountain tile should fail."""
+        mountains = [o for o in world.state.get("obstacles", []) if o["kind"] == "mountain"]
+        if not mountains:
+            self.skipTest("No mountains generated with current seed")
+        m = mountains[0]
+        mx, my = m["position"]
+        rover = world.state["agents"]["rover-mistral"]
+        rover["position"] = [mx - 1, my]
+        result = move_agent("rover-mistral", mx, my)
+        self.assertFalse(result["ok"])
+        self.assertIn("Mountain", result["error"])
+
+    def test_mountain_blocks_execute_action(self):
+        """execute_action('move') should fail when destination is a mountain."""
+        mountains = [o for o in world.state.get("obstacles", []) if o["kind"] == "mountain"]
+        if not mountains:
+            self.skipTest("No mountains generated with current seed")
+        m = mountains[0]
+        mx, my = m["position"]
+        rover = world.state["agents"]["rover-mistral"]
+        # Position rover one tile west of mountain
+        rover["position"] = [mx - 1, my]
+        rover["battery"] = 1.0
+        result = execute_action("rover-mistral", "move", {"direction": "east", "distance": 1})
+        self.assertFalse(result["ok"])
+        self.assertIn("Mountain", result["error"])
+
+    def test_geyser_state_idle(self):
+        """Geysers start in 'idle' state."""
+        geysers = [o for o in world.state.get("obstacles", []) if o["kind"] == "geyser"]
+        if not geysers:
+            self.skipTest("No geysers generated with current seed")
+        for g in geysers:
+            self.assertEqual(g["state"], "idle")
+
+    def test_geyser_cycle_transitions(self):
+        """Geyser transitions: idle → warning → erupting → idle."""
+        from app.world import update_geysers, GEYSER_CYCLE_IDLE, GEYSER_CYCLE_WARNING, GEYSER_CYCLE_ERUPTING
+        geysers = [o for o in world.state.get("obstacles", []) if o["kind"] == "geyser"]
+        if not geysers:
+            self.skipTest("No geysers generated with current seed")
+        g = geysers[0]
+        # Force start of cycle
+        g["_cycle_tick"] = 0
+        # Advance through idle phase
+        for _ in range(GEYSER_CYCLE_IDLE - 1):
+            update_geysers()
+            self.assertEqual(g["state"], "idle")
+        # Warning phase
+        update_geysers()
+        self.assertEqual(g["state"], "warning")
+        for _ in range(GEYSER_CYCLE_WARNING - 1):
+            update_geysers()
+            self.assertEqual(g["state"], "warning")
+        # Erupting phase
+        update_geysers()
+        self.assertEqual(g["state"], "erupting")
+        for _ in range(GEYSER_CYCLE_ERUPTING - 1):
+            update_geysers()
+            self.assertEqual(g["state"], "erupting")
+        # Back to idle
+        update_geysers()
+        self.assertEqual(g["state"], "idle")
+
+    def test_geyser_eruption_drains_battery(self):
+        """Agent on erupting geyser loses BATTERY_COST_GEYSER battery."""
+        from app.world import update_geysers, BATTERY_COST_GEYSER, GEYSER_CYCLE_IDLE, GEYSER_CYCLE_WARNING
+        geysers = [o for o in world.state.get("obstacles", []) if o["kind"] == "geyser"]
+        if not geysers:
+            self.skipTest("No geysers generated with current seed")
+        g = geysers[0]
+        gx, gy = g["position"]
+        rover = world.state["agents"]["rover-2"]
+        rover["position"] = [gx, gy]
+        rover["battery"] = 0.5
+        # Set geyser to just before erupting
+        g["_cycle_tick"] = GEYSER_CYCLE_IDLE + GEYSER_CYCLE_WARNING - 1
+        events = update_geysers()
+        eruption_events = [e for e in events if e["agent_id"] == "rover-2"]
+        self.assertEqual(len(eruption_events), 1)
+        self.assertAlmostEqual(rover["battery"], 0.5 - BATTERY_COST_GEYSER)
+
+    def test_geyser_eruption_clamps_battery(self):
+        """Battery doesn't go below 0.0 from geyser eruption."""
+        from app.world import update_geysers, GEYSER_CYCLE_IDLE, GEYSER_CYCLE_WARNING
+        geysers = [o for o in world.state.get("obstacles", []) if o["kind"] == "geyser"]
+        if not geysers:
+            self.skipTest("No geysers generated with current seed")
+        g = geysers[0]
+        gx, gy = g["position"]
+        rover = world.state["agents"]["rover-2"]
+        rover["position"] = [gx, gy]
+        rover["battery"] = 0.05
+        g["_cycle_tick"] = GEYSER_CYCLE_IDLE + GEYSER_CYCLE_WARNING - 1
+        update_geysers()
+        self.assertEqual(rover["battery"], 0.0)
+
+    def test_is_obstacle_at(self):
+        """is_obstacle_at returns obstacle dict or None."""
+        from app.world import is_obstacle_at
+        obstacles = world.state.get("obstacles", [])
+        if obstacles:
+            o = obstacles[0]
+            result = is_obstacle_at(o["position"][0], o["position"][1])
+            self.assertIsNotNone(result)
+            self.assertEqual(result["kind"], o["kind"])
+        # Empty tile returns None
+        self.assertIsNone(is_obstacle_at(0, 0))
+
+    def test_origin_clear_of_obstacles(self):
+        """Origin area (|x|<=1, |y|<=1) has no obstacles."""
+        from app.world import is_obstacle_at
+        for x in range(-1, 2):
+            for y in range(-1, 2):
+                self.assertIsNone(is_obstacle_at(x, y))
+
+    def test_snapshot_filters_obstacles_by_fog(self):
+        """get_snapshot only includes obstacles on revealed tiles."""
+        snap = get_snapshot()
+        all_obs = world.state.get("obstacles", [])
+        snap_obs = snap.get("obstacles", [])
+        # Snapshot should have fewer or equal obstacles (fog filter)
+        self.assertLessEqual(len(snap_obs), len(all_obs))
+        # No private fields in snapshot
+        for o in snap_obs:
+            self.assertNotIn("_cycle_tick", o)
+
+    def test_snapshot_obstacle_structure(self):
+        """Snapshot obstacles have kind, position, state — no private fields."""
+        snap = get_snapshot()
+        for o in snap.get("obstacles", []):
+            self.assertIn("kind", o)
+            self.assertIn("position", o)
+            self.assertIn("state", o)
+            for key in o:
+                self.assertFalse(key.startswith("_"), f"Private field {key} leaked")
+
+    def test_observe_rover_nearby_obstacles(self):
+        """observe_rover includes nearby obstacles on revealed tiles."""
+        from app.world import _expand_revealed
+        mountains = [o for o in world.state.get("obstacles", []) if o["kind"] == "mountain"]
+        if not mountains:
+            self.skipTest("No mountains generated with current seed")
+        m = mountains[0]
+        mx, my = m["position"]
+        rover = world.state["agents"]["rover-mistral"]
+        rover["position"] = [mx, my + 1]
+        _expand_revealed(rover, mx, my + 1)
+        ctx = observe_rover("rover-mistral")
+        obstacle_positions = [tuple(o.position) for o in ctx.computed.nearby_obstacles]
+        self.assertIn((mx, my), obstacle_positions)
+
+    def test_reset_clears_obstacles(self):
+        """reset_world clears obstacles list and index."""
+        from app.world import reset_world, is_obstacle_at
+        self.assertGreater(len(world.state.get("obstacles", [])), 0)
+        reset_world()
+        # After reset, new obstacles should be generated (not leftover)
+        # Verify index works correctly after reset
+        result = is_obstacle_at(0, 0)
+        self.assertIsNone(result)
+
+    def test_obstacle_deterministic(self):
+        """Same seed produces same obstacles."""
+        from app.world import reset_world
+        reset_world()
+        obs1 = [(o["kind"], tuple(o["position"])) for o in world.state.get("obstacles", [])]
+        reset_world()
+        obs2 = [(o["kind"], tuple(o["position"])) for o in world.state.get("obstacles", [])]
+        self.assertEqual(obs1, obs2)
