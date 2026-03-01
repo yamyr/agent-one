@@ -119,4 +119,8 @@ async def websocket_stream(ws: WebSocket):
             # keep connection alive; we don't expect input from client
             await ws.receive_text()
     except WebSocketDisconnect:
+        pass
+    except Exception:
+        logger.exception("WebSocket error")
+    finally:
         broadcaster.disconnect(ws)
