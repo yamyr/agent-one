@@ -124,6 +124,16 @@
 
 ### Added
 - **Agent Reasoning Transparency Panel (Feature C)**: Structured reasoning output from LLM agents with visual card display
+- **Training Data Logging**: Comprehensive SurrealDB-backed training data collection system that records every agent decision, world state evolution, and session parameter for replay, fine-tuning, and analysis
+  - `TrainingLogger` class (`training_logger.py`) with SurrealDB v3 persistence — session lifecycle, turn logging, event logging, periodic world snapshots
+  - Pydantic models (`training_models.py`): `TrainingSession`, `TrainingTurn`, `TrainingEvent`, `TrainingWorldSnapshot`, `TurnWorldSnapshot`, `SessionConfig`, `SessionResult`
+  - 4 SurrealDB tables: `training_session`, `training_turn`, `training_event`, `training_world_snapshot` — auto-created via `init_schema()`
+  - Integrated into `Host.start()`/`Host.stop()` for session lifecycle, `broadcast()` for event logging
+  - Integrated into `RoverLoop.tick()`, `DroneLoop.tick()`, `StationLoop.tick()` for per-agent turn logging with world snapshots
+  - 6 REST API endpoints: list sessions, get session detail, get turns/events/snapshots, export session as JSONL
+  - Config: `training_snapshot_interval` (default 10 ticks between world snapshots)
+  - All training code wrapped in `try/except` to never break simulation
+  - 11 unit tests, 441 total tests passing
 
 ### Fixed
 - **Charge event naming (#68)**: Fix remaining `charge_rover` reference in StationLoop.INTERESTING_EVENTS to `charge_agent`; fix narrator comment
