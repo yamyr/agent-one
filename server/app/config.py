@@ -46,5 +46,11 @@ class Settings(BaseSettings):
     voice_transcription_model: str = "voxtral-mini-latest"
     voice_command_model: str = "mistral-small-latest"
 
+    # Fine-tuning
+    training_data_enabled: bool = False
+    training_data_dir: str = "./training_data"
+    fine_tuned_agent_model: str = ""
+    fine_tuned_narration_model: str = ""
+
 
 settings = Settings()

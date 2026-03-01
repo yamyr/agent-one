@@ -363,10 +363,20 @@ class MistralRoverReasoner:
             ]
 
             logger.info("Calling Mistral (%s) for %s", self.model, self.agent_id)
+            effective_model = settings.fine_tuned_agent_model or self.model
             response = client.chat.complete(
-                model=self.model,
+                model=effective_model,
                 messages=messages,
                 tools=ROVER_TOOLS,
+            )
+            from .training import collector
+
+            collector.record_agent_interaction(
+                agent_id=self.agent_id,
+                agent_type="rover",
+                messages=messages,
+                tools=ROVER_TOOLS,
+                response=response,
             )
             choice = response.choices[0]
             thinking = choice.message.content or None
@@ -667,10 +677,20 @@ class DroneAgent:
             ]
 
             logger.info("Calling Mistral (%s) for %s", self.model, self.agent_id)
+            effective_model = settings.fine_tuned_agent_model or self.model
             response = client.chat.complete(
-                model=self.model,
+                model=effective_model,
                 messages=messages,
                 tools=DRONE_TOOLS,
+            )
+            from .training import collector
+
+            collector.record_agent_interaction(
+                agent_id=self.agent_id,
+                agent_type="drone",
+                messages=messages,
+                tools=DRONE_TOOLS,
+                response=response,
             )
             choice = response.choices[0]
             thinking = choice.message.content or None

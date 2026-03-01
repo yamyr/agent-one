@@ -13,6 +13,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 * **voice:** add `voice_transcription_model` and `voice_command_model` settings to `config.py`
 * **deps:** add `python-multipart>=0.0.9` for `UploadFile` support
 * **tests:** 32 comprehensive tests for voice module (transcription, command parsing, pipeline, endpoint)
+* **fine-tuning:** world-data fine-tuning pipeline — captures all LLM interactions (rover, drone, station, narrator) as JSONL training data for Mistral fine-tuning
+* **fine-tuning:** `TrainingDataCollector` singleton records system prompts, user messages, assistant responses with tool_calls across simulation generations
+* **fine-tuning:** `FineTuningManager` wraps Mistral SDK for file upload, job creation/monitoring/cancellation, and model activation
+* **fine-tuning:** 7 REST endpoints for fine-tuning lifecycle management (`/fine-tuning/status`, `/fine-tuning/data`, `/fine-tuning/jobs` CRUD, `/fine-tuning/jobs/{id}/activate`)
+* **fine-tuning:** model switching support — activate fine-tuned models at runtime for agents and narrator
+* **world:** `generation_id` tracking across simulation resets for multi-generation training data
+* **config:** 4 new settings: `training_data_enabled`, `training_data_dir`, `fine_tuned_agent_model`, `fine_tuned_narration_model`
 
 ### Fixed
 
