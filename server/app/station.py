@@ -184,11 +184,15 @@ class StationAgent:
         ]
         logger.info("Station LLM call: %s", user_message[:80])
         effective_model = settings.fine_tuned_agent_model or self.model
-        response = client.chat.complete(
-            model=effective_model,
-            messages=messages,
-            tools=STATION_TOOLS,
-        )
+        try:
+            response = client.chat.complete(
+                model=effective_model,
+                messages=messages,
+                tools=STATION_TOOLS,
+            )
+        except Exception as e:
+            logger.exception("Station LLM API failed: %s", e)
+            return {"thinking": None, "actions": [], "context_text": ctx_text}
         from .training import collector
 
         collector.record_agent_interaction(

@@ -13,12 +13,6 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
-@router.get("/mission/status")
-def mission_status():
-    """Placeholder endpoint — returns current mission state."""
-    return {"status": "idle", "mission": None}
-
-
 # ── Pydantic request models ──────────────────────────────────────────────────
 
 

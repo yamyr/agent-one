@@ -16,6 +16,7 @@ from .narrator import Narrator
 from .views import router as views_router
 from .voice import VoiceCommandProcessor, SUPPORTED_AUDIO_TYPES
 from .world import reset_world, set_agent_model
+from .training_logger import training_logger
 
 logging.basicConfig(
     level=logging.INFO,
@@ -37,7 +38,7 @@ AGENT_MAP = {
     "rover-2": lambda: RoverMistralLoop(
         agent_id="rover-2", interval=settings.llm_turn_interval_seconds
     ),
-    "drone-mistral": lambda: DroneMistralLoop(interval=2.0),
+    "drone-mistral": lambda: DroneMistralLoop(interval=settings.drone_turn_interval_seconds),
     "station-loop": lambda: StationLoop(interval=20.0),
 }
 
@@ -58,6 +59,7 @@ def _register_agents():
 @asynccontextmanager
 async def lifespan(app):
     init_db()
+    training_logger.init_schema()
     _register_agents()
     await host.start()
     yield
@@ -67,7 +69,7 @@ async def lifespan(app):
 
 app = FastAPI(
     title="Mars Mission API",
-    version="0.1.0",
+    version="0.4.0",
     lifespan=lifespan,
 )
 
