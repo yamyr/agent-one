@@ -39,12 +39,13 @@
 
 ### Features
 
-* **world:** auto-deliver rover inventory at station — items deposited, inventory cleared, rover ventures out again
-* **ui:** deposit events shown in EventLog with 📦 icon and toast notifications
-* **agent:** rover prompt now explains auto-delivery and shows delivered/target progress
-* **world:** task planner prioritizes "Return to station" when inventory is full
-* **agent:** re-enable rover-2 powered by HuggingFace Inference API (Qwen/Qwen3-32B) — separate LLM provider from rover-mistral to avoid Mistral rate limits
-* **config:** upgrade default HuggingFace model from Qwen2.5-72B to Qwen3-32B
+* **world:** ice resource system — ice deposits spawn near mountains, rovers can gather ice and recycle it into water at station
+* **world:** gas plant system — build gas plants on idle geysers, they produce gas when geyser erupts
+* **world:** base upgrade system — spend water/gas to upgrade charge speed, storage capacity, or radar range
+* **agent:** new Hauler agent role — transport-focused agent with 6-item cargo capacity for shuttling materials
+* **world:** global resource storage (water, gas) tracked at station level
+* **models:** new Pydantic models for ResourceItem, IceDeposit, GasPlantInfo, BaseUpgrade, HaulerAgentState
+* **security:** comprehensive security audit completed — no leaked secrets found
 
 ### Bug Fixes
 

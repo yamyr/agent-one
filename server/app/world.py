@@ -10,7 +10,16 @@ from collections.abc import Callable
 
 from .config import settings
 from . import storm as storm_mod
-from .models import RoverAgentState, RoverWorldView, RoverComputed, RoverContext
+from .models import (
+    RoverAgentState,
+    RoverWorldView,
+    RoverComputed,
+    RoverContext,
+    HaulerAgentState,
+    HaulerWorldView,
+    HaulerComputed,
+    HaulerContext,
+)
 from .models import AgentMission, InventoryItem, StoneInfo, ObstacleInfo
 from .models import RoverSummary, StationContext
 
@@ -58,16 +67,20 @@ DIRECTIONS = {
 # Cost per tile = 1 unit = 1/capacity as a fraction.
 FUEL_CAPACITY_ROVER = 350  # rover carries 350 fuel units
 FUEL_CAPACITY_DRONE = 250  # drone carries 250 fuel units
+FUEL_CAPACITY_HAULER = 400
 
 BATTERY_COST_MOVE = 1 / FUEL_CAPACITY_ROVER  # ~0.00286 per tile
 BATTERY_COST_MOVE_DRONE = 3 / FUEL_CAPACITY_DRONE  # 3 fuel units per tile (flying is expensive)
+BATTERY_COST_MOVE_HAULER = 1 / FUEL_CAPACITY_HAULER
 BATTERY_COST_DIG = 6 / FUEL_CAPACITY_ROVER  # 6 fuel units
+BATTERY_COST_HARVEST_ICE = 4 / FUEL_CAPACITY_ROVER  # 4 fuel units
 BATTERY_COST_ANALYZE = 3 / FUEL_CAPACITY_ROVER  # 3 fuel units
 BATTERY_COST_SCAN = 2 / FUEL_CAPACITY_DRONE  # 2 fuel units
 BATTERY_COST_NOTIFY = 2 / FUEL_CAPACITY_ROVER  # 2 fuel units (radio notification)
 CHARGE_RATE = 0.20
 MAX_MOVE_DISTANCE = 3
 MAX_MOVE_DISTANCE_DRONE = 6
+MAX_MOVE_DISTANCE_HAULER = 2
 
 AGENT_STARTS = {(0, 0)}
 
@@ -90,6 +103,90 @@ MEMORY_MAX = 8
 
 # --- Inventory ---
 MAX_INVENTORY_ROVER = 3  # rover can carry at most 3 veins
+MAX_INVENTORY_HAULER = 6
+HAULER_REVEAL_RADIUS = 2
+
+ICE_PROBABILITY = 0.008
+ICE_MOUNTAIN_RADIUS = 3
+ICE_QUANTITY_RANGE = (20, 100)
+ICE_GRADES = ["thin", "moderate", "thick", "glacial"]
+ICE_WEIGHTS = [200, 90, 30, 10]
+ICE_QUANTITY_RANGES = {
+    "thin": (5, 30),
+    "moderate": (31, 100),
+    "thick": (101, 250),
+    "glacial": (251, 500),
+}
+BATTERY_COST_GATHER_ICE = 4 / FUEL_CAPACITY_ROVER
+MAX_ICE_INVENTORY = 3
+
+ICE_TO_WATER_RATIO = 2
+BATTERY_COST_RECYCLE = 3 / FUEL_CAPACITY_ROVER
+BATTERY_COST_PROCESS_ICE = BATTERY_COST_RECYCLE
+
+GAS_PER_ERUPTION = 5
+GAS_PRODUCTION_RATE = GAS_PER_ERUPTION
+BATTERY_COST_BUILD_GAS_PLANT = 10 / FUEL_CAPACITY_ROVER
+BATTERY_COST_COLLECT_GAS = 2 / FUEL_CAPACITY_ROVER
+BATTERY_COST_PROCESS_ICE = 3 / FUEL_CAPACITY_ROVER
+MAX_GAS_STORAGE = 100.0
+BATTERY_COST_LOAD = 2 / FUEL_CAPACITY_HAULER
+BATTERY_COST_UNLOAD = 1 / FUEL_CAPACITY_HAULER
+BATTERY_COST_PICKUP = 1 / FUEL_CAPACITY_HAULER
+BATTERY_COST_DELIVER = 1 / FUEL_CAPACITY_HAULER
+
+BATTERY_COST_UPGRADE = 5 / FUEL_CAPACITY_ROVER
+UPGRADE_COSTS = {
+    "charge_speed": {"water": 20, "gas": 10},
+    "storage": {"water": 30, "gas": 15, "basalt": 100},
+    "radar": {"water": 15, "gas": 20},
+}
+UPGRADES = {
+    "charge_mk2": {
+        "water": 50,
+        "gas": 20,
+        "description": "Double station charge rate",
+        "max_level": 1,
+    },
+    "extended_fuel": {
+        "water": 30,
+        "gas": 10,
+        "description": "Increase all rover fuel capacity by 100",
+        "max_level": 2,
+    },
+    "enhanced_scanner": {
+        "water": 20,
+        "gas": 15,
+        "description": "Increase rover reveal radius by 1",
+        "max_level": 2,
+    },
+    "repair_bay": {
+        "water": 40,
+        "gas": 30,
+        "description": "Auto-repair rovers to full battery at station",
+        "max_level": 1,
+    },
+}
+UPGRADE_MAX_LEVEL = 3
+
+BATTERY_COST_HARVEST_ICE = BATTERY_COST_GATHER_ICE
+ICE_GATHER_BATTERY_COST = BATTERY_COST_GATHER_ICE
+BATTERY_COST_RECYCLE_ICE = BATTERY_COST_RECYCLE
+BATTERY_COST_PROCESS_ICE = BATTERY_COST_RECYCLE_ICE
+WATER_RECYCLE_BATTERY_COST = BATTERY_COST_RECYCLE
+GAS_PLANT_BUILD_COST = BATTERY_COST_BUILD_GAS_PLANT
+GAS_COLLECT_BATTERY_COST = BATTERY_COST_COLLECT_GAS
+GAS_PER_ERUPTION = 20
+BATTERY_COST_UPGRADE_BASE = BATTERY_COST_UPGRADE
+MAX_UPGRADE_LEVEL = UPGRADE_MAX_LEVEL
+UPGRADE_BASALT_COST = 1
+GAS_PRODUCTION_PER_ERUPTION = GAS_PRODUCTION_RATE
+
+ICE_TO_WATER_RATIO = 1
+BATTERY_COST_HARVEST_ICE = 4 / FUEL_CAPACITY_ROVER
+BATTERY_COST_RECYCLE_ICE = 3 / FUEL_CAPACITY_ROVER
+BATTERY_COST_BUILD_GAS_PLANT = 10 / FUEL_CAPACITY_ROVER
+GAS_PRODUCTION_PER_ERUPTION = 50
 
 # --- Solar panels ---
 SOLAR_BATTERY_CAPACITY = 0.25
@@ -120,6 +217,20 @@ STRUCTURE_TYPES = [
         "contents": {"capacity_bonus": 0.20, "recharge_rate": 0.01, "recharge_interval": 5},
     },
     {
+        "type": "water_recycler",
+        "category": "building",
+        "description": "Converts 3 ice into 1 unit of potable water",
+        "contents": {"conversion_rate": 3},
+        "abandoned_spawn": False,
+    },
+    {
+        "type": "water_processor",
+        "category": "building",
+        "description": "A water processing plant that converts ice into purified water",
+        "contents": {"processing_rate": 1.0, "water_stored": 0},
+        "abandoned_spawn": False,
+    },
+    {
         "type": "broken_hauler",
         "category": "vehicle",
         "description": "A broken vehicle hauler once used to transport materials across the surface",
@@ -131,10 +242,18 @@ STRUCTURE_TYPES = [
         "description": "A broken construction manipulator used to build buildings and infrastructure",
         "contents": {"salvageable_parts": ["arm", "actuator", "controller"]},
     },
+    {
+        "type": "gas_plant",
+        "category": "building",
+        "description": "A geyser-mounted plant that stores gas produced on eruptions",
+        "contents": {"gas_stored": 0, "produced_per_eruption": 1},
+        "abandoned_spawn": False,
+    },
 ]
 STRUCTURE_SPAWN_RADIUS = 10  # max Manhattan distance from base (0,0)
 BATTERY_COST_INVESTIGATE = 2 / FUEL_CAPACITY_ROVER  # 2 fuel units
 BATTERY_COST_USE_REFINERY = 5 / FUEL_CAPACITY_ROVER  # 5 fuel units
+BATTERY_COST_RECYCLE_ICE = 3 / FUEL_CAPACITY_ROVER  # 3 fuel units
 
 # --- Obstacle generation ---
 MOUNTAIN_PROBABILITY = 0.004  # ~0.4% per tile (halved to reduce agent confusion)
@@ -177,7 +296,40 @@ def _spawn_abandoned_structures(rng=None):
         occupied.add(tuple(s["position"]))
 
     structures = []
+
+    def _clear_position(x: int, y: int):
+        stone = next((s for s in WORLD.get("stones", []) if s.get("position") == [x, y]), None)
+        if stone is not None:
+            WORLD["stones"].remove(stone)
+            _stone_index.pop((x, y), None)
+
+        obstacle = is_obstacle_at(x, y)
+        if obstacle is not None:
+            WORLD["obstacles"].remove(obstacle)
+            _obstacle_index.pop((x, y), None)
+
     for template in STRUCTURE_TYPES:
+        if template["type"] == "water_recycler":
+            x, y = 1, 0
+            _clear_position(x, y)
+            occupied.add((x, y))
+            structures.append(
+                {
+                    "type": template["type"],
+                    "category": template["category"],
+                    "position": [x, y],
+                    "explored": True,
+                    "active": True,
+                    "upgrade_level": 1,
+                    "description": template["description"],
+                    "contents": dict(template["contents"]),
+                }
+            )
+            continue
+
+        if not template.get("abandoned_spawn", True):
+            continue
+
         # Find a free position within spawn radius
         for _ in range(200):  # safety limit
             x = r.randint(-STRUCTURE_SPAWN_RADIUS, STRUCTURE_SPAWN_RADIUS)
@@ -194,6 +346,7 @@ def _spawn_abandoned_structures(rng=None):
                     "position": [x, y],
                     "explored": False,
                     "active": False,
+                    "upgrade_level": 1,
                     "description": template["description"],
                     "contents": dict(template["contents"]),
                 }
@@ -296,11 +449,9 @@ def _ensure_chunk(cx, cy):
             }
         )
 
-    # Register stones in the global list
     WORLD.setdefault("stones", []).extend(stones)
     _index_stones(stones)
 
-    # Obstacles: mountains (impassable) and geysers (periodic eruptions)
     obstacles = []
     for dy in range(CHUNK_SIZE):
         for dx in range(CHUNK_SIZE):
@@ -308,11 +459,20 @@ def _ensure_chunk(cx, cy):
             if (wx, wy) in occupied:
                 continue
             if is_origin and abs(wx) <= 1 and abs(wy) <= 1:
-                continue  # keep origin area clear for agents
+                continue
             r = rng.random()
             if r < MOUNTAIN_PROBABILITY:
                 occupied.add((wx, wy))
-                obstacles.append({"position": [wx, wy], "kind": "mountain", "state": "idle"})
+                has_ice = rng.random() < ICE_DEPOSIT_PROBABILITY
+                ice_qty = rng.randint(*ICE_QUANTITY_RANGE) if has_ice else 0
+                obstacles.append(
+                    {
+                        "position": [wx, wy],
+                        "kind": "mountain",
+                        "state": "idle",
+                        "ice_deposit": ice_qty,
+                    }
+                )
             elif r < MOUNTAIN_PROBABILITY + GEYSER_PROBABILITY:
                 occupied.add((wx, wy))
                 obstacles.append(
@@ -324,13 +484,50 @@ def _ensure_chunk(cx, cy):
                     }
                 )
 
+    ice_deposits = []
+    for obs in obstacles:
+        if obs["kind"] == "mountain":
+            mx, my = obs["position"]
+            for _ in range(rng.randint(1, 3)):
+                for _attempt in range(20):
+                    ix = mx + rng.randint(-ICE_MOUNTAIN_RADIUS, ICE_MOUNTAIN_RADIUS)
+                    iy = my + rng.randint(-ICE_MOUNTAIN_RADIUS, ICE_MOUNTAIN_RADIUS)
+                    if (ix, iy) not in occupied and abs(ix - mx) + abs(
+                        iy - my
+                    ) <= ICE_MOUNTAIN_RADIUS:
+                        if rng.random() >= ICE_PROBABILITY:
+                            continue
+                        occupied.add((ix, iy))
+                        qty = rng.randint(*ICE_QUANTITY_RANGE)
+                        ice_deposits.append(
+                            {
+                                "position": [ix, iy],
+                                "quantity": qty,
+                                "_true_quantity": qty,
+                                "discovered": False,
+                            }
+                        )
+                        break
+
     WORLD.setdefault("obstacles", []).extend(obstacles)
     _index_obstacles(obstacles)
+    WORLD.setdefault("ice_deposits", []).extend(ice_deposits)
+    _index_ice(ice_deposits)
 
-    chunk_data = {"generated": True, "stone_count": len(stones), "obstacle_count": len(obstacles)}
+    chunk_data = {
+        "generated": True,
+        "stone_count": len(stones),
+        "obstacle_count": len(obstacles),
+        "ice_count": len(ice_deposits),
+    }
     chunks[key] = chunk_data
     logger.info(
-        "Generated chunk (%d,%d) with %d stones, %d obstacles", cx, cy, len(stones), len(obstacles)
+        "Generated chunk (%d,%d) with %d stones, %d ice deposits, %d obstacles",
+        cx,
+        cy,
+        len(stones),
+        len(ice_deposits),
+        len(obstacles),
     )
     return chunk_data
 
@@ -374,9 +571,26 @@ def _cells_in_radius(cx, cy, radius):
     return cells
 
 
+def _get_upgrade_level(upgrade_name: str) -> int:
+    upgrades = WORLD.get("station_upgrades", {})
+    return int(upgrades.get(upgrade_name, 0))
+
+
+def _effective_fuel_capacity(agent: dict) -> int:
+    if agent.get("type") != "rover":
+        return FUEL_CAPACITY_ROVER
+    bonus = 100 * _get_upgrade_level("extended_fuel")
+    return FUEL_CAPACITY_ROVER + bonus
+
+
 def _reveal_radius_for(agent):
     """Return the reveal radius for an agent based on its type."""
-    return DRONE_REVEAL_RADIUS if agent.get("type") == "drone" else ROVER_REVEAL_RADIUS
+    agent_type = agent.get("type")
+    if agent_type == "drone":
+        return DRONE_REVEAL_RADIUS
+    if agent_type == "hauler":
+        return HAULER_REVEAL_RADIUS
+    return ROVER_REVEAL_RADIUS + _get_upgrade_level("enhanced_scanner")
 
 
 def _init_revealed(cx, cy, radius=ROVER_REVEAL_RADIUS):
@@ -429,6 +643,12 @@ def _drone_tools_for_ui():
     return _tools_for_ui(DRONE_TOOLS)
 
 
+def _hauler_tools_for_ui():
+    from .agent import HAULER_TOOLS
+
+    return _tools_for_ui(HAULER_TOOLS)
+
+
 def _make_drone(start_x, start_y):
     return {
         "position": [start_x, start_y],
@@ -462,6 +682,23 @@ def _make_rover(start_x, start_y):
     }
 
 
+def _make_hauler(start_x, start_y):
+    return {
+        "position": [start_x, start_y],
+        "battery": 1.0,
+        "mission": {"objective": "Transport materials between field and station", "plan": []},
+        "visited": [[start_x, start_y]],
+        "revealed": _init_revealed(start_x, start_y, HAULER_REVEAL_RADIUS),
+        "inventory": [],
+        "memory": [],
+        "strategic_memory": [],
+        "tasks": [],
+        "type": "hauler",
+        "tools": None,
+        "inventory_capacity": MAX_INVENTORY_HAULER,
+    }
+
+
 def _build_initial_world():
     if settings.world_seed:
         random.seed(settings.world_seed)
@@ -479,6 +716,7 @@ def _build_initial_world():
             "rover-mistral": _make_rover(0, 0),
             "rover-2": _make_rover(0, 0),
             "drone-mistral": _make_drone(0, 0),
+            "hauler-1": _make_hauler(0, 0),
             "rover-large": _make_rover(0, 0),
             "rover-medium": _make_rover(0, 0),
             "rover-codestral": _make_rover(0, 0),
@@ -486,12 +724,26 @@ def _build_initial_world():
             "rover-magistral": _make_rover(0, 0),
         },
         "stones": [],
+        "ice_deposits": [],
         "obstacles": [],
         "chunks": {},
         "solar_panels": [],
         "drone_scans": [],
         "structures": [],
+        "resources": {"water": 0, "gas": 0},
+        "gas_plants": [],
+        "base_upgrades": [],
+        "station_upgrades": {},
+        "base_effects": {
+            "charge_speed_bonus": 0.0,
+            "storage_bonus": 0,
+            "radar_bonus": 0,
+            "basalt_spent": 0,
+        },
         "delivered_items": [],
+        "station_resources": {"water": 0, "gas": 0, "parts": []},
+        "cargo_drops": [],
+        "ground_items": [],
         "tick": 0,
         "generation_id": 0,
         "bounds": {"min_x": -3, "max_x": 3, "min_y": -3, "max_y": 3},
@@ -500,6 +752,8 @@ def _build_initial_world():
             "target_type": "basalt_vein",
             "target_quantity": TARGET_QUANTITY,
             "collected_quantity": 0,
+            "water_collected": 0,
+            "gas_collected": 0,
         },
         "storm": storm_mod.make_storm_state(),
     }
@@ -553,6 +807,9 @@ def _unindex_stone(stone: dict) -> None:
 _obstacle_index: dict[tuple[int, int], dict] = {}
 _obstacle_index_source: list | None = None
 
+_ice_index: dict[tuple[int, int], dict] = {}
+_ice_index_source: list | None = None
+
 
 def _rebuild_obstacle_index() -> None:
     """Rebuild the obstacle spatial index from the current obstacles list."""
@@ -574,6 +831,31 @@ def _index_obstacles(obstacles: list[dict]) -> None:
     """Add newly generated obstacles to the spatial index."""
     for o in obstacles:
         _obstacle_index[tuple(o["position"])] = o
+
+
+def _rebuild_ice_index() -> None:
+    global _ice_index_source
+    deposits = WORLD.get("ice_deposits", [])
+    _ice_index.clear()
+    for d in deposits:
+        _ice_index[tuple(d["position"])] = d
+    _ice_index_source = deposits
+
+
+def _ensure_ice_index() -> None:
+    if WORLD.get("ice_deposits") is not _ice_index_source:
+        _rebuild_ice_index()
+
+
+def _index_ice(deposits: list[dict]) -> None:
+    global _ice_index_source
+    for d in deposits:
+        _ice_index[tuple(d["position"])] = d
+    _ice_index_source = WORLD.get("ice_deposits")
+
+
+def _unindex_ice(deposit: dict) -> None:
+    _ice_index.pop(tuple(deposit["position"]), None)
 
 
 def is_obstacle_at(x: int, y: int) -> dict | None:
@@ -716,6 +998,7 @@ def reset_world():
     gen = WORLD.get("generation_id", 0) + 1
     fresh = _build_initial_world()
     fresh["generation_id"] = gen
+    fresh["ground_items"] = []
     WORLD.clear()
     WORLD.update(fresh)
     _stone_index.clear()
@@ -724,6 +1007,9 @@ def reset_world():
     _obstacle_index.clear()
     global _obstacle_index_source
     _obstacle_index_source = None
+    _ice_index.clear()
+    global _ice_index_source
+    _ice_index_source = None
     AGENT_MESSAGES.clear()
     _init_world_chunks()
     storm_mod.schedule_next_storm(WORLD)
@@ -758,30 +1044,55 @@ def update_geysers():
             if obs["state"] != "erupting":
                 # Transition to erupting — apply damage to agents on this tile
                 gx, gy = obs["position"]
-                for aid, agent in WORLD["agents"].items():
-                    if agent.get("type") == "station":
-                        continue
-                    ax, ay = agent["position"]
-                    if ax == gx and ay == gy:
-                        old_bat = agent["battery"]
-                        agent["battery"] = max(0.0, old_bat - BATTERY_COST_GEYSER)
-                        events.append(
-                            {
-                                "type": "geyser_eruption",
-                                "position": [gx, gy],
-                                "agent_id": aid,
-                                "battery_before": old_bat,
-                                "battery_after": agent["battery"],
-                            }
+                gas_plant = _find_structure_at(gx, gy)
+                has_plant = obs.get("has_gas_plant") or (
+                    gas_plant and gas_plant.get("type") == "gas_plant" and gas_plant.get("active")
+                )
+                if has_plant:
+                    station_resources = WORLD.setdefault(
+                        "station_resources", {"water": 0, "gas": 0, "refined_basalt": 0}
+                    )
+                    station_resources["gas"] = int(station_resources.get("gas", 0)) + int(
+                        GAS_PRODUCTION_PER_ERUPTION
+                    )
+                    if gas_plant:
+                        contents = gas_plant.setdefault("contents", {})
+                        contents["produced_total"] = int(contents.get("produced_total", 0)) + int(
+                            GAS_PRODUCTION_PER_ERUPTION
                         )
-                        logger.info(
-                            "Geyser eruption at (%d,%d) hit %s: %.0f%% -> %.0f%%",
-                            gx,
-                            gy,
-                            aid,
-                            old_bat * 100,
-                            agent["battery"] * 100,
-                        )
+                    events.append(
+                        {
+                            "type": "gas_produced",
+                            "position": [gx, gy],
+                            "amount": int(GAS_PRODUCTION_PER_ERUPTION),
+                            "station_gas": station_resources["gas"],
+                        }
+                    )
+                else:
+                    for aid, agent in WORLD["agents"].items():
+                        if agent.get("type") == "station":
+                            continue
+                        ax, ay = agent["position"]
+                        if ax == gx and ay == gy:
+                            old_bat = agent["battery"]
+                            agent["battery"] = max(0.0, old_bat - BATTERY_COST_GEYSER)
+                            events.append(
+                                {
+                                    "type": "geyser_eruption",
+                                    "position": [gx, gy],
+                                    "agent_id": aid,
+                                    "battery_before": old_bat,
+                                    "battery_after": agent["battery"],
+                                }
+                            )
+                            logger.info(
+                                "Geyser eruption at (%d,%d) hit %s: %.0f%% -> %.0f%%",
+                                gx,
+                                gy,
+                                aid,
+                                old_bat * 100,
+                                agent["battery"] * 100,
+                            )
             obs["state"] = "erupting"
         obs["_cycle_tick"] = ct
     return events
@@ -805,13 +1116,22 @@ def check_ground(agent_id):
     return {"stone": None}
 
 
+def _inventory_capacity(agent):
+    return MAX_INVENTORY_ROVER + int(agent.get("inventory_capacity_bonus", 0))
+
+
 def move_agent(agent_id, x, y):
     """Move an agent to target (x, y). Must be a straight cardinal line, respecting per-agent max distance."""
     agent = WORLD["agents"].get(agent_id)
     if agent is None:
         return {"ok": False, "error": f"Unknown agent: {agent_id}"}
 
-    max_dist = MAX_MOVE_DISTANCE_DRONE if agent.get("type") == "drone" else MAX_MOVE_DISTANCE
+    if agent.get("type") == "drone":
+        max_dist = MAX_MOVE_DISTANCE_DRONE
+    elif agent.get("type") == "hauler":
+        max_dist = MAX_MOVE_DISTANCE_HAULER
+    else:
+        max_dist = MAX_MOVE_DISTANCE
 
     ox, oy = agent["position"]
     dx, dy = x - ox, y - oy
@@ -855,6 +1175,7 @@ def execute_action(agent_id, action_name, params):
         return {"ok": False, "error": f"Unknown agent: {agent_id}"}
 
     is_drone = agent.get("type") == "drone"
+    is_hauler = agent.get("type") == "hauler"
 
     if action_name == "move":
         direction = params.get("direction")
@@ -871,8 +1192,15 @@ def execute_action(agent_id, action_name, params):
                 "storm_blocked": True,
             }
 
-        max_dist = MAX_MOVE_DISTANCE_DRONE if is_drone else MAX_MOVE_DISTANCE
-        move_cost = BATTERY_COST_MOVE_DRONE if is_drone else BATTERY_COST_MOVE
+        if is_drone:
+            max_dist = MAX_MOVE_DISTANCE_DRONE
+            move_cost = BATTERY_COST_MOVE_DRONE
+        elif is_hauler:
+            max_dist = MAX_MOVE_DISTANCE_HAULER
+            move_cost = BATTERY_COST_MOVE_HAULER
+        else:
+            max_dist = MAX_MOVE_DISTANCE
+            move_cost = 1 / _effective_fuel_capacity(agent)
         distance = max(1, min(max_dist, int(params.get("distance", 1))))
 
         # Apply storm battery multiplier
@@ -914,6 +1242,8 @@ def execute_action(agent_id, action_name, params):
     elif action_name == "analyze":
         if is_drone:
             return {"ok": False, "error": "Drones cannot analyze veins"}
+        if is_hauler:
+            return {"ok": False, "error": "Haulers cannot analyze veins"}
         result = _execute_analyze(agent_id, agent)
         if result["ok"]:
             record_memory(
@@ -923,13 +1253,72 @@ def execute_action(agent_id, action_name, params):
     elif action_name == "dig":
         if is_drone:
             return {"ok": False, "error": "Drones cannot dig"}
+        if is_hauler:
+            return {"ok": False, "error": "Haulers cannot dig"}
         result = _execute_dig(agent_id, agent)
         if result["ok"]:
             record_memory(
                 agent_id,
                 f"Dug and collected {result['stone']['grade']} vein (qty={result['stone']['quantity']}) at ({result['position'][0]},{result['position'][1]}), inventory={result['inventory_count']}",
             )
+    elif action_name in ("gather_ice", "harvest_ice"):
+        if is_drone:
+            return {"ok": False, "error": "Drones cannot gather ice"}
+        if is_hauler:
+            return {"ok": False, "error": "Haulers cannot gather ice"}
+        result = _execute_gather_ice(agent_id, agent)
+        if result["ok"]:
+            record_memory(
+                agent_id,
+                f"Gathered ice at ({result['position'][0]},{result['position'][1]}), inventory={result['inventory_count']}",
+            )
+    elif action_name in ("process_ice", "recycle_ice"):
+        if is_drone:
+            return {"ok": False, "error": "Drones cannot process ice"}
+        if is_hauler:
+            return {"ok": False, "error": "Haulers cannot process ice"}
+        result = _execute_recycle_ice(agent_id, agent)
+        if result["ok"]:
+            record_memory(
+                agent_id,
+                f"Recycled {result['ice_used']} ice into {result['water_quantity']} water at recycler",
+            )
+    elif action_name == "build_gas_plant":
+        if is_drone:
+            return {"ok": False, "error": "Drones cannot build gas plants"}
+        if is_hauler:
+            return {"ok": False, "error": "Haulers cannot build gas plants"}
+        result = _execute_build_gas_plant(agent_id, agent, params)
+        if result["ok"]:
+            gp = result["geyser_position"]
+            record_memory(agent_id, f"Built gas plant at geyser ({gp[0]},{gp[1]})")
+    elif action_name == "collect_gas":
+        if is_drone:
+            return {"ok": False, "error": "Drones cannot collect gas"}
+        if is_hauler:
+            return {"ok": False, "error": "Haulers cannot collect gas"}
+        result = _execute_collect_gas(agent_id, agent)
+        if result["ok"]:
+            gp = result["source"]
+            record_memory(
+                agent_id,
+                f"Collected gas qty={result['gas_collected']} from gas plant ({gp[0]},{gp[1]})",
+            )
+    elif action_name == "upgrade_base":
+        if is_drone:
+            return {"ok": False, "error": "Drones cannot upgrade base"}
+        if is_hauler:
+            return {"ok": False, "error": "Haulers cannot upgrade base"}
+        result = _execute_upgrade_base(agent_id, agent, params)
+        if result["ok"]:
+            record_memory(
+                agent_id,
+                f"Upgraded base {result['upgrade']} to level {result['new_level']} "
+                f"(water -{result['cost']['water']}, gas -{result['cost']['gas']})",
+            )
     elif action_name == "scan":
+        if is_hauler:
+            return {"ok": False, "error": "Haulers cannot scan"}
         result = _execute_scan(agent_id, agent)
         if result["ok"]:
             record_memory(
@@ -939,23 +1328,74 @@ def execute_action(agent_id, action_name, params):
     elif action_name == "deploy_solar_panel":
         if is_drone:
             return {"ok": False, "error": "Drones cannot deploy solar panels"}
+        if is_hauler:
+            return {"ok": False, "error": "Haulers cannot deploy solar panels"}
         result = _execute_deploy_solar_panel(agent_id)
     elif action_name == "use_solar_battery":
         if is_drone:
             return {"ok": False, "error": "Drones cannot use solar batteries"}
+        if is_hauler:
+            return {"ok": False, "error": "Haulers cannot use solar batteries"}
         result = _execute_use_solar_battery(agent_id)
     elif action_name == "notify":
         result = _execute_notify(agent_id, agent, params)
         if result["ok"]:
             record_memory(agent_id, f"Notified station: {result['message']}")
+    elif action_name == "drop_item":
+        if is_drone:
+            return {"ok": False, "error": "Drones cannot drop inventory items"}
+        if is_hauler:
+            return {"ok": False, "error": "Haulers cannot drop inventory items"}
+        result = _execute_drop_item(agent_id, agent, params)
+        if result["ok"]:
+            dropped = result["item"]
+            pos = result["position"]
+            record_memory(
+                agent_id,
+                f"Dropped {dropped['type']} qty={dropped['quantity']} at ({pos[0]},{pos[1]})",
+            )
+    elif action_name == "pickup_cargo":
+        if not is_hauler:
+            return {"ok": False, "error": "Only haulers can pick up cargo"}
+        result = _execute_pickup_cargo(agent_id, agent)
+        if result["ok"]:
+            record_memory(
+                agent_id,
+                f"Picked up {result['picked_up_count']} cargo item(s), inventory={result['inventory_count']}",
+            )
     elif action_name == "investigate_structure":
         if is_drone:
             return {"ok": False, "error": "Drones cannot investigate structures"}
+        if is_hauler:
+            return {"ok": False, "error": "Haulers cannot investigate structures"}
         result = _execute_investigate_structure(agent_id, agent, params)
     elif action_name == "use_refinery":
         if is_drone:
             return {"ok": False, "error": "Drones cannot use the refinery"}
+        if is_hauler:
+            return {"ok": False, "error": "Haulers cannot use the refinery"}
         result = _execute_use_refinery(agent_id, agent)
+    elif action_name == "upgrade_building":
+        if is_drone:
+            return {"ok": False, "error": "Drones cannot upgrade buildings"}
+        if is_hauler:
+            return {"ok": False, "error": "Haulers cannot upgrade buildings"}
+        result = _execute_upgrade_building(agent_id, agent, params)
+    elif action_name in ("load_from_rover", "load_cargo"):
+        if not is_hauler:
+            return {"ok": False, "error": "Only haulers can load from rover"}
+        result = _execute_load_cargo(agent_id, agent, params)
+        if result["ok"]:
+            record_memory(
+                agent_id,
+                f"Loaded {result.get('loaded_count', 0)} cargo item(s), inventory={result.get('inventory_count', 0)}",
+            )
+    elif action_name in ("unload_at_station", "unload_cargo"):
+        if not is_hauler:
+            return {"ok": False, "error": "Only haulers can unload at station"}
+        result = _execute_unload_cargo(agent_id, agent)
+        if result["ok"]:
+            record_memory(agent_id, f"Unloaded {result.get('unloaded_count', 0)} items at station")
     else:
         return {"ok": False, "error": f"Unknown action: {action_name}"}
 
@@ -976,10 +1416,112 @@ def _find_stone_at(x, y):
     return _stone_index.get((x, y))
 
 
+def _find_ice_at(x, y):
+    _ensure_ice_index()
+    deposit = _ice_index.get((x, y))
+    if deposit is None:
+        return None
+    if deposit.get("gathered"):
+        return None
+    if deposit.get("quantity", 0) <= 0:
+        return None
+    return deposit
+
+
+def _execute_drop_item(agent_id, agent, params):
+    inventory = agent.get("inventory", [])
+    if not inventory:
+        return {"ok": False, "error": "No inventory items to drop"}
+
+    index = params.get("index", 0)
+    if not isinstance(index, int):
+        return {"ok": False, "error": "index must be an integer"}
+    if index < 0 or index >= len(inventory):
+        return {"ok": False, "error": f"Invalid inventory index: {index}"}
+
+    item = inventory.pop(index)
+    item_type = item.get("type", "unknown")
+    quantity = int(item.get("quantity", 0))
+    x, y = agent["position"]
+
+    WORLD.setdefault("ground_items", []).append(
+        {
+            "type": item_type,
+            "quantity": quantity,
+            "position": [x, y],
+            "dropped_by": agent_id,
+            "tick": WORLD.get("tick", 0),
+        }
+    )
+
+    return {
+        "ok": True,
+        "position": [x, y],
+        "item": {"type": item_type, "quantity": quantity},
+        "inventory_count": len(inventory),
+    }
+
+
+def _execute_pickup_cargo(agent_id, agent):
+    storm_mult = storm_mod.get_battery_multiplier(WORLD)
+    cost = BATTERY_COST_PICKUP * storm_mult
+    if agent["battery"] < cost:
+        return {"ok": False, "error": "Not enough battery to pick up cargo"}
+
+    inventory = agent.setdefault("inventory", [])
+    capacity = MAX_INVENTORY_HAULER
+    if len(inventory) >= capacity:
+        return {"ok": False, "error": f"Inventory full (max {capacity} items)"}
+
+    x, y = agent["position"]
+    ground_items = WORLD.setdefault("ground_items", [])
+    at_position = [
+        item
+        for item in ground_items
+        if item.get("position") == [x, y] and int(item.get("quantity", 0)) > 0
+    ]
+    if not at_position:
+        return {"ok": False, "error": "No cargo items on the ground at current position"}
+
+    picked_up = []
+    remaining_ground = []
+    used_slots = len(inventory)
+
+    for item in ground_items:
+        if item.get("position") != [x, y] or int(item.get("quantity", 0)) <= 0:
+            remaining_ground.append(item)
+            continue
+        if used_slots >= capacity:
+            remaining_ground.append(item)
+            continue
+
+        cargo_item = {
+            "type": item.get("type", "unknown"),
+            "quantity": int(item.get("quantity", 0)),
+        }
+        inventory.append(cargo_item)
+        picked_up.append(cargo_item)
+        used_slots += 1
+
+    WORLD["ground_items"] = remaining_ground
+    if not picked_up:
+        return {"ok": False, "error": f"Inventory full (max {capacity} items)"}
+
+    agent["battery"] = max(0.0, agent["battery"] - cost)
+    return {
+        "ok": True,
+        "position": [x, y],
+        "picked_up_items": picked_up,
+        "picked_up_count": len(picked_up),
+        "inventory_count": len(inventory),
+        "battery": agent["battery"],
+    }
+
+
 def _execute_analyze(agent_id, agent):
     """Analyze an unknown vein at the current tile to reveal its type, grade, and quantity."""
     storm_mult = storm_mod.get_battery_multiplier(WORLD)
-    cost = BATTERY_COST_ANALYZE * storm_mult
+    cost = (3 / _effective_fuel_capacity(agent)) * storm_mult
     if agent["battery"] < cost:
         return {"ok": False, "error": "Not enough battery to analyze"}
 
@@ -1046,10 +1588,11 @@ def _execute_scan(agent_id, agent):
 
 def _execute_dig(agent_id, agent):
     """Dig and collect an analyzed vein at current tile into inventory."""
-    if len(agent.get("inventory", [])) >= MAX_INVENTORY_ROVER:
-        return {"ok": False, "error": "Inventory full (max 3 veins)"}
+    capacity = _inventory_capacity(agent)
+    if len(agent.get("inventory", [])) >= capacity:
+        return {"ok": False, "error": f"Inventory full (max {capacity} items)"}
     storm_mult = storm_mod.get_battery_multiplier(WORLD)
-    cost = BATTERY_COST_DIG * storm_mult
+    cost = (6 / _effective_fuel_capacity(agent)) * storm_mult
     if agent["battery"] < cost:
         return {"ok": False, "error": "Not enough battery to dig"}
 
@@ -1091,6 +1634,177 @@ def _execute_dig(agent_id, agent):
     }
 
 
+def _execute_gather_ice(agent_id, agent):
+    capacity = _inventory_capacity(agent)
+    if len(agent.get("inventory", [])) >= capacity:
+        return {"ok": False, "error": f"Inventory full (max {capacity} items)"}
+
+    storm_mult = storm_mod.get_battery_multiplier(WORLD)
+    cost = BATTERY_COST_GATHER_ICE * storm_mult
+    if agent["battery"] < cost:
+        return {"ok": False, "error": "Not enough battery to gather ice"}
+
+    x, y = agent["position"]
+    stone = _find_stone_at(x, y)
+    if stone is None or stone.get("type") != "ice":
+        return {"ok": False, "error": f"No ice deposit at ({x}, {y})"}
+
+    agent["battery"] = max(0.0, agent["battery"] - cost)
+    inventory = agent.setdefault("inventory", [])
+    inventory.append({"type": "ice", "grade": "n/a", "quantity": 1})
+    WORLD["stones"].remove(stone)
+    _unindex_stone(stone)
+    logger.info("Agent %s gathered ice at (%d,%d)", agent_id, x, y)
+
+    return {
+        "ok": True,
+        "position": [x, y],
+        "stone": {"type": "ice", "grade": "n/a", "quantity": 1},
+        "inventory_count": len(inventory),
+    }
+
+
+def _execute_recycle_ice(agent_id, agent):
+    storm_mult = storm_mod.get_battery_multiplier(WORLD)
+    cost = WATER_RECYCLE_BATTERY_COST * storm_mult
+    if agent["battery"] < cost:
+        return {"ok": False, "error": "Not enough battery to recycle ice"}
+
+    x, y = agent["position"]
+    recycler = None
+    for structure in WORLD.get("structures", []):
+        if structure.get("type") != "water_recycler":
+            continue
+        sx, sy = structure["position"]
+        if abs(sx - x) + abs(sy - y) <= 1 and structure.get("active"):
+            recycler = structure
+            break
+
+    if recycler is None:
+        return {
+            "ok": False,
+            "error": "No active water recycler within reach (must investigate first and be adjacent)",
+        }
+
+    inventory = agent.get("inventory", [])
+    ice_index = next((i for i, item in enumerate(inventory) if item.get("type") == "ice"), -1)
+    if ice_index < 0:
+        return {"ok": False, "error": "No ice in inventory to recycle"}
+
+    ice_item = inventory.pop(ice_index)
+    conversion_rate = int(recycler.get("contents", {}).get("conversion_rate", 2))
+    water_quantity = int(ice_item.get("quantity", 0)) * conversion_rate
+    inventory.append({"type": "water", "quantity": water_quantity})
+    agent["battery"] = max(0.0, agent["battery"] - cost)
+
+    return {
+        "ok": True,
+        "water_quantity": water_quantity,
+        "inventory_count": len(inventory),
+    }
+
+
+def _execute_process_ice(agent_id, agent):
+    """Alias for _execute_recycle_ice."""
+    return _execute_recycle_ice(agent_id, agent)
+
+
+def _execute_build_gas_plant(agent_id, agent, params=None):
+    del params
+    storm_mult = storm_mod.get_battery_multiplier(WORLD)
+    cost = GAS_PLANT_BUILD_COST * storm_mult
+    if agent["battery"] < cost:
+        return {"ok": False, "error": "Not enough battery to build gas plant"}
+
+    x, y = agent["position"]
+    geyser = None
+    for obs in WORLD.get("obstacles", []):
+        if obs.get("kind") != "geyser":
+            continue
+        gx, gy = obs["position"]
+        if abs(gx - x) + abs(gy - y) <= 1:
+            geyser = obs
+            break
+
+    if geyser is None:
+        return {"ok": False, "error": "No adjacent geyser within reach"}
+    if geyser.get("gas_plant"):
+        return {"ok": False, "error": "Gas plant already exists on this geyser"}
+
+    gas_plant = {"gas_stored": 0, "max_gas": 100, "built_by": agent_id}
+    geyser["gas_plant"] = gas_plant
+    agent["battery"] = max(0.0, agent["battery"] - cost)
+
+    return {
+        "ok": True,
+        "geyser_position": list(geyser["position"]),
+        "gas_plant": {
+            "geyser_position": list(geyser["position"]),
+            **gas_plant,
+        },
+    }
+
+
+def _execute_upgrade_base(agent_id, agent, params=None):
+    station = WORLD["agents"].get("station")
+    if station is None:
+        return {"ok": False, "error": "No station in world"}
+    if agent["position"] != [0, 0] or agent["position"] != station["position"]:
+        return {"ok": False, "error": "Must be at station (0,0) to upgrade base"}
+
+    params = params or {}
+    upgrade_name = params.get("upgrade")
+    if upgrade_name not in UPGRADES:
+        return {"ok": False, "error": f"Unknown upgrade: {upgrade_name}"}
+
+    cfg = UPGRADES[upgrade_name]
+    current_level = _get_upgrade_level(upgrade_name)
+    max_level = int(cfg["max_level"])
+    if current_level >= max_level:
+        return {
+            "ok": False,
+            "error": f"{upgrade_name} already at max level ({max_level})",
+            "upgrade": upgrade_name,
+            "level": current_level,
+        }
+
+    station_resources = WORLD.setdefault("station_resources", {"water": 0, "gas": 0, "parts": []})
+    station_resources.setdefault("parts", [])
+    water_cost = int(cfg["water"])
+    gas_cost = int(cfg["gas"])
+    available_water = int(station_resources.get("water", 0))
+    available_gas = int(station_resources.get("gas", 0))
+    if available_water < water_cost or available_gas < gas_cost:
+        return {
+            "ok": False,
+            "error": (
+                "Insufficient station resources "
+                f"(need {water_cost} water/{gas_cost} gas, have {available_water} water/{available_gas} gas)"
+            ),
+            "upgrade": upgrade_name,
+            "cost": {"water": water_cost, "gas": gas_cost},
+        }
+
+    station_resources["water"] = available_water - water_cost
+    station_resources["gas"] = available_gas - gas_cost
+    upgrades = WORLD.setdefault("station_upgrades", {})
+    new_level = current_level + 1
+    upgrades[upgrade_name] = new_level
+
+    return {
+        "ok": True,
+        "upgrade": upgrade_name,
+        "new_level": new_level,
+        "max_level": max_level,
+        "description": cfg["description"],
+        "cost": {"water": water_cost, "gas": gas_cost},
+        "station_resources": {
+            "water": station_resources["water"],
+            "gas": station_resources["gas"],
+        },
+    }
+
+
 def _execute_notify(agent_id, agent, params):
     """Send a radio notification to station. Costs 2 fuel."""
     storm_mult = storm_mod.get_battery_multiplier(WORLD)
@@ -1121,7 +1835,10 @@ def _execute_charge(agent_id, agent):
         return {"ok": False, "error": "Battery already full"}
 
     old_battery = agent["battery"]
-    agent["battery"] = min(1.0, agent["battery"] + CHARGE_RATE)
+    base_charge_rate = CHARGE_RATE * (2 if _get_upgrade_level("charge_mk2") > 0 else 1)
+    effects = WORLD.get("base_effects", {})
+    charge_rate = base_charge_rate + float(effects.get("charge_speed_bonus", 0.0))
+    agent["battery"] = min(1.0, agent["battery"] + charge_rate)
     logger.info(
         "Agent %s charged %.0f%% -> %.0f%%", agent_id, old_battery * 100, agent["battery"] * 100
     )
@@ -1130,6 +1847,7 @@ def _execute_charge(agent_id, agent):
         "agent_id": agent_id,
         "battery_before": old_battery,
         "battery_after": agent["battery"],
+        "charge_rate": charge_rate,
     }
 
 
@@ -1182,25 +1900,65 @@ def check_mission_status():
     station_pos = station["position"] if station else [0, 0]
     collected_qty = 0
     delivered_qty = 0
+    delivered_water = 0
+    delivered_gas = 0
 
     # Count previously delivered items
     for item in WORLD.get("delivered_items", []):
         if item["type"] == mission["target_type"]:
             delivered_qty += item.get("quantity", 0)
+        elif item.get("type") == "water":
+            delivered_water += item.get("quantity", 0)
+        elif item.get("type") == "gas":
+            delivered_gas += item.get("quantity", 0)
 
-    # Auto-deliver: rovers at station deposit inventory automatically
     delivery_events = []
     for agent in WORLD["agents"].values():
-        if agent.get("type") != "rover":
+        if agent.get("type") not in ("rover", "hauler"):
             continue
         inventory = agent.get("inventory", [])
+        if (
+            agent.get("type") == "rover"
+            and agent["position"] == station_pos
+            and _get_upgrade_level("repair_bay") > 0
+        ):
+            agent["battery"] = 1.0
         if agent["position"] == station_pos and inventory:
             delivered_count = 0
+            delivered_items = []
+            delivered_ice = 0
+            gas_gained = 0
             for stone in inventory:
                 if stone["type"] == mission["target_type"]:
                     delivered_qty += stone.get("quantity", 0)
                     delivered_count += 1
-            WORLD.setdefault("delivered_items", []).extend(inventory)
+                    delivered_items.append(stone)
+                elif stone.get("type") == "water":
+                    delivered_water += stone.get("quantity", 0)
+                    delivered_items.append(stone)
+                elif stone.get("type") == "gas":
+                    gas_qty = stone.get("quantity", 0)
+                    delivered_gas += gas_qty
+                    gas_gained += gas_qty
+                    delivered_items.append(stone)
+                elif stone.get("type") == "ice":
+                    delivered_ice += int(stone.get("quantity", 0))
+
+            water_gained = delivered_ice
+            if water_gained > 0 or gas_gained > 0:
+                station_resources = WORLD.setdefault(
+                    "station_resources", {"water": 0, "gas": 0, "parts": []}
+                )
+                station_resources.setdefault("parts", [])
+                if water_gained > 0:
+                    station_resources["water"] = (
+                        int(station_resources.get("water", 0)) + water_gained
+                    )
+                    delivered_water += water_gained
+                if gas_gained > 0:
+                    station_resources["gas"] = int(station_resources.get("gas", 0)) + gas_gained
+
+            WORLD.setdefault("delivered_items", []).extend(delivered_items)
             agent_id = next((k for k, v in WORLD["agents"].items() if v is agent), "?")
             logger.info(
                 "Auto-delivered %d items from %s at station",
@@ -1222,6 +1980,8 @@ def check_mission_status():
 
     mission["collected_quantity"] = delivered_qty
     mission["in_transit_quantity"] = collected_qty
+    mission["water_collected"] = delivered_water
+    mission["gas_collected"] = delivered_gas
 
     # Success: enough total basalt quantity delivered to station
     if delivered_qty >= mission["target_quantity"]:
@@ -1235,6 +1995,8 @@ def check_mission_status():
             "status": "success",
             "collected_quantity": collected_qty,
             "delivered_quantity": delivered_qty,
+            "water_collected": delivered_water,
+            "gas_collected": delivered_gas,
             "deliveries": delivery_events,
         }
 
@@ -1260,6 +2022,8 @@ def check_mission_status():
             "status": "running",
             "delivered_quantity": delivered_qty,
             "in_transit_quantity": collected_qty,
+            "water_collected": delivered_water,
+            "gas_collected": delivered_gas,
             "deliveries": delivery_events,
         }
 
@@ -1274,7 +2038,7 @@ def abort_mission(reason="Manual abort from mission control"):
     mission["status"] = "aborted"
     # Override each agent's mission objective so it shows in UI
     for agent in WORLD["agents"].values():
-        if agent.get("type") in ("rover", "drone"):
+        if agent.get("type") in ("rover", "drone", "hauler"):
             agent["mission"]["objective"] = "ABORTED — return to station"
     logger.info("Mission ABORTED: %s", reason)
     return {"status": "aborted", "reason": reason}
@@ -1287,7 +2051,7 @@ def all_agents_at_station():
         return True
     sp = station["position"]
     for agent in WORLD["agents"].values():
-        if agent.get("type") not in ("rover", "drone"):
+        if agent.get("type") not in ("rover", "drone", "hauler"):
             continue
         if agent["position"] != sp:
             return False
@@ -1439,6 +2203,36 @@ def _execute_investigate_structure(agent_id, agent, params):
     agent["battery"] = max(0.0, agent["battery"] - BATTERY_COST_INVESTIGATE)
     target["explored"] = True
     target["active"] = True
+    repair_info = None
+
+    inventory = agent.get("inventory", [])
+    if target["type"] == "broken_hauler" and len(inventory) >= 2:
+        del inventory[:2]
+        agent["inventory_capacity_bonus"] = int(agent.get("inventory_capacity_bonus", 0)) + 2
+        target["repaired"] = True
+        repair_info = {
+            "type": "broken_hauler",
+            "consumed_items": 2,
+            "inventory_capacity_bonus": agent["inventory_capacity_bonus"],
+        }
+    elif target["type"] == "broken_manipulator" and len(inventory) >= 1:
+        del inventory[:1]
+        target["repaired"] = True
+        repair_info = {
+            "type": "broken_manipulator",
+            "consumed_items": 1,
+            "repaired": True,
+        }
+
+    salvaged_parts = []
+    if target["type"] in ("broken_hauler", "broken_manipulator"):
+        salvaged_parts = list(target.get("contents", {}).get("salvageable_parts", []))
+        if salvaged_parts:
+            station_resources = WORLD.setdefault(
+                "station_resources", {"water": 0, "gas": 0, "parts": []}
+            )
+            parts_store = station_resources.setdefault("parts", [])
+            parts_store.extend(salvaged_parts)
     logger.info(
         "Agent %s investigated %s at (%d,%d)",
         agent_id,
@@ -1450,15 +2244,30 @@ def _execute_investigate_structure(agent_id, agent, params):
         agent_id,
         f"Investigated {target['type'].replace('_', ' ')} at ({target['position'][0]},{target['position'][1]}): {target['description']}",
     )
+    if repair_info:
+        if repair_info["type"] == "broken_hauler":
+            record_memory(
+                agent_id,
+                "Repaired broken hauler: consumed 2 inventory items and gained +2 inventory capacity",
+            )
+        else:
+            record_memory(
+                agent_id,
+                "Repaired broken manipulator: consumed 1 inventory item and unlocked future building",
+            )
     return {
         "ok": True,
         "structure": {
             "type": target["type"],
             "category": target["category"],
             "position": target["position"],
+            "upgrade_level": target.get("upgrade_level", 1),
             "description": target["description"],
             "contents": target["contents"],
+            "repaired": target.get("repaired", False),
         },
+        "repair": repair_info,
+        "salvaged_parts": salvaged_parts,
     }
 
 
@@ -1516,6 +2325,242 @@ def _execute_use_refinery(agent_id, agent):
     }
 
 
+def _apply_upgrade_bonuses(structure):
+    level = max(1, min(int(structure.get("upgrade_level", 1)), MAX_UPGRADE_LEVEL))
+    base_contents = structure.get("_base_contents")
+    if base_contents is None:
+        base_contents = dict(structure.get("contents", {}))
+        structure["_base_contents"] = dict(base_contents)
+
+    contents = dict(base_contents)
+    multiplier = 1.5 ** (level - 1)
+
+    if structure.get("type") == "refinery":
+        base_capacity = base_contents.get("processing_capacity", 50)
+        contents["processing_capacity"] = int(round(base_capacity * multiplier))
+    elif structure.get("type") == "solar_panel_structure":
+        base_rate = base_contents.get("charge_rate", 0.01)
+        base_radius = base_contents.get("charge_radius", 1)
+        contents["charge_rate"] = round(base_rate * multiplier, 5)
+        contents["charge_radius"] = base_radius + (level - 1)
+    elif structure.get("type") == "accumulator":
+        base_rate = base_contents.get("recharge_rate", 0.01)
+        base_interval = base_contents.get("recharge_interval", 5)
+        contents["recharge_rate"] = round(base_rate * multiplier, 5)
+        contents["recharge_interval"] = max(1, base_interval - (level - 1))
+
+    structure["contents"] = contents
+
+
+def _execute_upgrade_building(agent_id, agent, params):
+    if agent["battery"] < BATTERY_COST_UPGRADE:
+        return {"ok": False, "error": "Not enough battery to upgrade"}
+
+    x, y = agent["position"]
+    target = None
+    for s in WORLD.get("structures", []):
+        sx, sy = s["position"]
+        if abs(sx - x) + abs(sy - y) <= 1 and s.get("active"):
+            target = s
+            break
+
+    if target is None:
+        return {"ok": False, "error": "No active structure within reach"}
+
+    current_level = target.get("upgrade_level", 1)
+    if current_level >= MAX_UPGRADE_LEVEL:
+        return {"ok": False, "error": f"Structure already at max level ({MAX_UPGRADE_LEVEL})"}
+
+    inventory = agent.get("inventory", [])
+    basalt_items = [i for i in inventory if i.get("type") == "basalt_vein"]
+    if len(basalt_items) < UPGRADE_BASALT_COST:
+        return {
+            "ok": False,
+            "error": f"Need {UPGRADE_BASALT_COST} basalt in inventory to upgrade",
+        }
+
+    for _ in range(UPGRADE_BASALT_COST):
+        for i, item in enumerate(inventory):
+            if item.get("type") == "basalt_vein":
+                inventory.pop(i)
+                break
+
+    agent["battery"] = max(0.0, agent["battery"] - BATTERY_COST_UPGRADE)
+    target["upgrade_level"] = current_level + 1
+    _apply_upgrade_bonuses(target)
+
+    logger.info(
+        "Agent %s upgraded %s at (%d,%d) to level %d",
+        agent_id,
+        target["type"],
+        target["position"][0],
+        target["position"][1],
+        target["upgrade_level"],
+    )
+    record_memory(
+        agent_id,
+        f"Upgraded {target['type'].replace('_', ' ')} to level {target['upgrade_level']}",
+    )
+    return {
+        "ok": True,
+        "structure_type": target["type"],
+        "new_level": target["upgrade_level"],
+        "position": target["position"],
+    }
+
+
+def _execute_collect_gas(agent_id, agent):
+    storm_mult = storm_mod.get_battery_multiplier(WORLD)
+    cost = BATTERY_COST_COLLECT_GAS * storm_mult
+    if agent["battery"] < cost:
+        return {"ok": False, "error": "Not enough battery to collect gas"}
+
+    x, y = agent["position"]
+    target = None
+    for plant in WORLD.get("gas_plants", []):
+        px, py = plant["position"]
+        if abs(px - x) + abs(py - y) <= 1:
+            target = plant
+            break
+
+    if target is None:
+        return {"ok": False, "error": "No adjacent gas plant within reach"}
+
+    gas_qty = float(target.get("gas_stored", 0.0))
+    if gas_qty <= 0:
+        return {"ok": False, "error": "Gas plant has no stored gas to collect"}
+
+    target["gas_stored"] = 0.0
+    agent["battery"] = max(0.0, agent["battery"] - cost)
+    inventory = agent.setdefault("inventory", [])
+    inventory.append({"type": "gas", "quantity": gas_qty})
+
+    return {
+        "ok": True,
+        "source": list(target["position"]),
+        "gas_collected": gas_qty,
+        "inventory_count": len(inventory),
+    }
+
+
+def _execute_pick_up_from(agent_id, agent, params):
+    if agent.get("type") != "hauler":
+        return {"ok": False, "error": "Only haulers can pick up from rovers"}
+
+    rover_id = params.get("rover_id") if isinstance(params, dict) else None
+    if not rover_id:
+        return {"ok": False, "error": "Missing rover_id"}
+
+    rover = WORLD["agents"].get(rover_id)
+    if rover is None or rover.get("type") != "rover":
+        return {"ok": False, "error": f"Unknown rover: {rover_id}"}
+
+    if rover.get("position") != agent.get("position"):
+        return {"ok": False, "error": "Hauler must be at the same position as target rover"}
+
+    hauler_inventory = agent.setdefault("inventory", [])
+    rover_inventory = rover.setdefault("inventory", [])
+    free_slots = max(0, MAX_INVENTORY_HAULER - len(hauler_inventory))
+    if free_slots <= 0:
+        return {"ok": False, "error": "Hauler inventory full"}
+    if not rover_inventory:
+        return {"ok": False, "error": "Target rover has no inventory to pick up"}
+
+    moved = rover_inventory[:free_slots]
+    del rover_inventory[: len(moved)]
+    hauler_inventory.extend(moved)
+
+    return {
+        "ok": True,
+        "rover_id": rover_id,
+        "picked_up_count": len(moved),
+        "hauler_inventory_count": len(hauler_inventory),
+        "rover_inventory_count": len(rover_inventory),
+    }
+
+
+def _execute_load_cargo(agent_id, agent):
+    if agent.get("type") != "hauler":
+        return {"ok": False, "error": "Only haulers can load cargo"}
+
+    if agent["battery"] < BATTERY_COST_LOAD:
+        return {"ok": False, "error": "Not enough battery to load cargo"}
+
+    pos = list(agent.get("position", [0, 0]))
+    inventory = agent.setdefault("inventory", [])
+    if len(inventory) >= MAX_INVENTORY_HAULER:
+        return {"ok": False, "error": "Hauler inventory full"}
+
+    drops = WORLD.setdefault("cargo_drops", [])
+    drop = next((d for d in drops if d.get("position") == pos and d.get("items")), None)
+    if drop is None:
+        return {"ok": False, "error": "No cargo drop at current position"}
+
+    free_slots = MAX_INVENTORY_HAULER - len(inventory)
+    loaded_items = list(drop["items"][:free_slots])
+    inventory.extend(loaded_items)
+    drop["items"] = drop["items"][free_slots:]
+    if not drop["items"]:
+        drops.remove(drop)
+
+    agent["battery"] = max(0.0, agent["battery"] - BATTERY_COST_LOAD)
+    return {
+        "ok": True,
+        "position": pos,
+        "loaded_items": loaded_items,
+        "loaded_count": len(loaded_items),
+        "inventory_count": len(inventory),
+    }
+
+
+def _execute_unload_cargo(agent_id, agent):
+    if agent.get("type") != "hauler":
+        return {"ok": False, "error": "Only haulers can unload cargo"}
+
+    if agent["battery"] < BATTERY_COST_UNLOAD:
+        return {"ok": False, "error": "Not enough battery to unload cargo"}
+
+    inventory = agent.setdefault("inventory", [])
+    if not inventory:
+        return {"ok": False, "error": "No cargo to unload"}
+
+    pos = list(agent.get("position", [0, 0]))
+    station = WORLD["agents"].get("station")
+    station_pos = station["position"] if station else [0, 0]
+
+    unloaded = list(inventory)
+    auto_delivered = 0
+    drop_count = 0
+    if pos == station_pos:
+        WORLD.setdefault("delivered_items", []).extend(unloaded)
+        auto_delivered = len(unloaded)
+    else:
+        drops = WORLD.setdefault("cargo_drops", [])
+        drop = next((d for d in drops if d.get("position") == pos), None)
+        if drop is None:
+            drop = {"position": pos, "items": []}
+            drops.append(drop)
+        drop.setdefault("items", []).extend(unloaded)
+        drop_count = len(drop["items"])
+
+    inventory.clear()
+    agent["battery"] = max(0.0, agent["battery"] - BATTERY_COST_UNLOAD)
+
+    delivered_target_quantity = sum(
+        item.get("quantity", 0)
+        for item in unloaded
+        if item.get("type") == WORLD["mission"].get("target_type", "basalt_vein")
+    )
+    return {
+        "ok": True,
+        "position": pos,
+        "unloaded_count": len(unloaded),
+        "delivered_target_quantity": delivered_target_quantity,
+        "auto_delivered": auto_delivered,
+        "drop_count": drop_count,
+    }
+
+
 def apply_structure_passive_effects():
     """Apply passive effects from active structures. Called each simulation tick.
 
@@ -1560,11 +2605,12 @@ def apply_structure_passive_effects():
             if tick % interval != 0:
                 continue
             charge = structure["contents"].get("recharge_rate", 0.01)
+            radius = structure["contents"].get("recharge_radius", 2)
             for agent in WORLD["agents"].values():
                 if agent.get("type") not in ("rover", "drone"):
                     continue
                 ax, ay = agent["position"]
-                if abs(ax - sx) + abs(ay - sy) <= 2:
+                if abs(ax - sx) + abs(ay - sy) <= radius:
                     old = agent["battery"]
                     agent["battery"] = min(1.0, agent["battery"] + charge)
                     if agent["battery"] > old:
@@ -1577,6 +2623,10 @@ def apply_structure_passive_effects():
                             old * 100,
                             agent["battery"] * 100,
                         )
+
+
+def update_gas_plants():
+    return 0
 
 
 def update_tasks(agent_id):
@@ -1605,6 +2655,8 @@ def update_tasks(agent_id):
         return
     if agent.get("type") == "drone":
         _update_drone_tasks(agent_id, agent)
+    elif agent.get("type") == "hauler":
+        _update_hauler_tasks(agent_id, agent)
     else:
         _update_rover_tasks(agent_id, agent)
 
@@ -1665,11 +2717,17 @@ def _update_rover_tasks(agent_id, agent):
     tasks = []
 
     inv_count = len(inventory)
+    inv_capacity = _inventory_capacity(agent)
     station = WORLD["agents"].get("station")
     sp = station["position"] if station else [0, 0]
 
+    has_ice = any(i.get("type") == "ice" for i in inventory)
+    has_material = any(i.get("type") in ("basalt_vein", "materials") for i in inventory)
+    if [x, y] == sp and has_ice and has_material:
+        tasks.append("Upgrade base at station using 1 ice + 1 material")
+
     # Inventory full → top priority: return to station to deposit
-    if inv_count >= MAX_INVENTORY_ROVER:
+    if inv_count >= inv_capacity:
         dist = abs(x - sp[0]) + abs(y - sp[1])
         if dist > 0:
             hint = direction_hint(sp[0] - x, sp[1] - y)
@@ -1682,9 +2740,11 @@ def _update_rover_tasks(agent_id, agent):
     # Vein at current tile → analyze or dig (priority order)
     stone_here = _find_stone_at(x, y)
     if stone_here:
-        if not stone_here.get("analyzed"):
+        if stone_here.get("type") == "ice":
+            tasks.append(f"Gather ice deposit at current tile ({x},{y})")
+        elif not stone_here.get("analyzed"):
             tasks.append(f"Analyze unknown vein at current tile ({x},{y})")
-        elif inv_count < MAX_INVENTORY_ROVER:
+        elif inv_count < inv_capacity:
             tasks.append(
                 f"Dig {stone_here['grade']} vein (qty={stone_here['quantity']}) at current tile ({x},{y})"
             )
@@ -1699,6 +2759,8 @@ def _update_rover_tasks(agent_id, agent):
             if stone["type"] == "unknown":
                 # Unknown veins get top priority (might be high-grade)
                 priority = 0
+            elif stone["type"] == "ice":
+                priority = 1
             else:
                 # Analyzed veins: prioritize higher grades (lower priority number = better)
                 grade = stone.get("grade", "low")
@@ -1714,6 +2776,8 @@ def _update_rover_tasks(agent_id, agent):
         hint = direction_hint(sx - x, sy - y)
         if stone["type"] == "unknown":
             label = "unknown vein"
+        elif stone["type"] == "ice":
+            label = "ice deposit"
         else:
             label = f"{stone.get('grade', '?')} vein (qty={stone.get('quantity', 0)})"
         tasks.append(f"Navigate to {label} at ({sx},{sy}) — {hint}, {dist} tiles")
@@ -1743,6 +2807,17 @@ def _update_rover_tasks(agent_id, agent):
                 )
                 if basalt_in_inv:
                     tasks.append(f"Use Refinery at ({sp[0]},{sp[1]}) to refine basalt")
+            if structure.get("active") and structure.get("upgrade_level", 1) < MAX_UPGRADE_LEVEL:
+                current_level = structure.get("upgrade_level", 1)
+                basalt_count = sum(1 for item in inventory if item.get("type") == "basalt_vein")
+                if basalt_count >= UPGRADE_BASALT_COST:
+                    tasks.append(
+                        f"Upgrade {label} at ({sp[0]},{sp[1]}) from level {current_level} to {current_level + 1}"
+                    )
+                else:
+                    tasks.append(
+                        f"Collect basalt, then upgrade {label} at ({sp[0]},{sp[1]}) from level {current_level}"
+                    )
 
     # Visible unexplored structures on revealed tiles — suggest navigation
     for structure in WORLD.get("structures", []):
@@ -1758,6 +2833,60 @@ def _update_rover_tasks(agent_id, agent):
         tasks.append("Explore unvisited tiles to find veins")
 
     agent["tasks"] = tasks
+
+
+def _update_hauler_tasks(agent_id, agent):
+    x, y = agent["position"]
+    cargo = agent.get("inventory", [])
+    station = WORLD["agents"].get("station")
+    station_pos = station["position"] if station else [0, 0]
+
+    if len(cargo) >= MAX_INVENTORY_HAULER:
+        dist = abs(station_pos[0] - x) + abs(station_pos[1] - y)
+        if dist > 0:
+            hint = direction_hint(station_pos[0] - x, station_pos[1] - y)
+            agent["tasks"] = [
+                f"RETURN TO STATION at ({station_pos[0]},{station_pos[1]}) — {hint}, {dist} tiles"
+            ]
+            return
+
+    if [x, y] == station_pos and cargo:
+        agent["tasks"] = ["Unload cargo at station"]
+        return
+
+    best = None
+    best_dist = float("inf")
+    for rid, rover in WORLD["agents"].items():
+        if rover.get("type") != "rover":
+            continue
+        rover_inv = rover.get("inventory", [])
+        if len(rover_inv) < 2:
+            continue
+        rx, ry = rover["position"]
+        dist = abs(rx - x) + abs(ry - y)
+        if dist < best_dist:
+            best_dist = dist
+            best = (rid, rx, ry, len(rover_inv))
+
+    if best is not None:
+        rid, rx, ry, inv_count = best
+        if best_dist <= 1:
+            agent["tasks"] = [f"Load cargo from nearby rover {rid} ({inv_count} items ready)"]
+            return
+        hint = direction_hint(rx - x, ry - y)
+        agent["tasks"] = [
+            f"Navigate to rover {rid} at ({rx},{ry}) for pickup — {hint}, {best_dist} tiles"
+        ]
+        return
+
+    dist = abs(station_pos[0] - x) + abs(station_pos[1] - y)
+    if dist == 0:
+        agent["tasks"] = ["Stand by at station awaiting pickup requests"]
+        return
+    hint = direction_hint(station_pos[0] - x, station_pos[1] - y)
+    agent["tasks"] = [
+        f"No loaded rovers found — return to station at ({station_pos[0]},{station_pos[1]}) — {hint}, {dist} tiles"
+    ]
 
 
 def best_drone_hotspot(rx, ry, revealed_set):
@@ -1799,7 +2928,7 @@ def observe_rover(agent_id):
     unvisited_dirs = []
     for name, (dx, dy) in DIRECTIONS.items():
         nx, ny = x + dx, y + dy
-        if 0 <= nx < GRID_W and 0 <= ny < GRID_H and (nx, ny) not in visited_set:
+        if (nx, ny) not in visited_set:
             unvisited_dirs.append(name)
 
     # Vein at current tile
@@ -1846,6 +2975,18 @@ def observe_rover(agent_id):
                 label += f" qty={qty_info}"
             visible_stones.append(f"{label} ({status}) at ({sp[0]},{sp[1]}) — {hint}, {dist} tiles")
 
+    visible_ice_deposits = []
+    for deposit in WORLD.get("ice_deposits", []):
+        dp = tuple(deposit["position"])
+        if dp in revealed_set and list(dp) != [x, y]:
+            dist = abs(dp[0] - x) + abs(dp[1] - y)
+            hint = direction_hint(dp[0] - x, dp[1] - y)
+            grade = deposit.get("grade", "unknown")
+            qty = int(deposit.get("quantity", 0))
+            visible_ice_deposits.append(
+                f"ice {grade} qty={qty} at ({dp[0]},{dp[1]}) — {hint}, {dist} tiles"
+            )
+
     # Visible structures on revealed tiles
     visible_structures = []
     for structure in WORLD.get("structures", []):
@@ -1855,12 +2996,27 @@ def observe_rover(agent_id):
             hint = direction_hint(sp[0] - x, sp[1] - y)
             status = "explored" if structure.get("explored") else "unexplored"
             label = structure["type"].replace("_", " ").title()
+            upgrade_level = structure.get("upgrade_level", 1)
+            upgrade_hint = ""
+            if structure.get("active") and upgrade_level < MAX_UPGRADE_LEVEL:
+                upgrade_hint = f", upgrade available to level {upgrade_level + 1}"
             visible_structures.append(
-                f"{label} ({status}) at ({sp[0]},{sp[1]}) — {hint}, {dist} tiles"
+                f"{label} ({status}, level {upgrade_level}{upgrade_hint}) at ({sp[0]},{sp[1]}) — {hint}, {dist} tiles"
             )
 
     # Mission info
     world_mission = WORLD.get("mission", {})
+    available_upgrades = [
+        {
+            "name": upgrade_name,
+            "level": _get_upgrade_level(upgrade_name),
+            "max_level": int(cfg["max_level"]),
+            "cost_water": int(cfg["water"]),
+            "cost_gas": int(cfg["gas"]),
+            "description": str(cfg["description"]),
+        }
+        for upgrade_name, cfg in UPGRADES.items()
+    ]
 
     # Nearby obstacles on revealed tiles
     _ensure_obstacle_index()
@@ -1896,14 +3052,71 @@ def observe_rover(agent_id):
             target_type=world_mission.get("target_type", "basalt_vein"),
             target_quantity=world_mission.get("target_quantity", TARGET_QUANTITY),
             collected_quantity=world_mission.get("collected_quantity", 0),
+            available_upgrades=available_upgrades,
         ),
         computed=RoverComputed(
             unvisited_dirs=unvisited_dirs,
             stone_line=stone_line,
             stone_here=stone_here,
             visible_stones=visible_stones,
+            visible_ice_deposits=visible_ice_deposits,
             visible_structures=visible_structures,
             nearby_obstacles=nearby_obstacles,
+        ),
+    )
+
+
+def observe_hauler(agent_id):
+    agent = WORLD["agents"][agent_id]
+    x, y = agent["position"]
+    station_agent = WORLD["agents"].get("station")
+    station_pos = station_agent["position"] if station_agent else [0, 0]
+
+    nearby_rovers = []
+    pending_pickups = []
+    for rid, rover in WORLD["agents"].items():
+        if rover.get("type") != "rover":
+            continue
+        rx, ry = rover["position"]
+        dist = abs(rx - x) + abs(ry - y)
+        if dist > 12:
+            continue
+        hint = direction_hint(rx - x, ry - y)
+        inv_count = len(rover.get("inventory", []))
+        nearby_rovers.append(
+            f"{rid} at ({rx},{ry}) — {hint}, {dist} tiles, inventory={inv_count}/{MAX_INVENTORY_ROVER}"
+        )
+        if inv_count >= MAX_INVENTORY_ROVER:
+            pending_pickups.append(f"{rid} at ({rx},{ry}) has full inventory")
+
+    station_inventory = []
+    for item in WORLD.get("delivered_items", [])[-5:]:
+        station_inventory.append(f"{item.get('type', 'unknown')} qty={item.get('quantity', 0)}")
+
+    mission = WORLD.get("mission", {})
+    return HaulerContext(
+        agent=HaulerAgentState(
+            position=list(agent.get("position", [0, 0])),
+            battery=float(agent.get("battery", 0.0)),
+            mission=AgentMission(**agent.get("mission", {"objective": "", "plan": []})),
+            inventory=[InventoryItem(**i) for i in agent.get("inventory", [])],
+            memory=list(agent.get("memory", [])),
+            tasks=list(agent.get("tasks", [])),
+            visited=list(agent.get("visited", [])),
+            visited_count=len(agent.get("visited", [])),
+        ),
+        world=HaulerWorldView(
+            grid_w=GRID_W,
+            grid_h=GRID_H,
+            station_position=list(station_pos),
+            target_type=mission.get("target_type", "basalt_vein"),
+            target_quantity=mission.get("target_quantity", TARGET_QUANTITY),
+            collected_quantity=mission.get("collected_quantity", 0),
+        ),
+        computed=HaulerComputed(
+            nearby_rovers=nearby_rovers,
+            station_inventory=station_inventory,
+            pending_pickups=pending_pickups,
         ),
     )
 
@@ -1938,6 +3151,7 @@ def observe_station():
 
     station_agent = WORLD["agents"].get("station", {})
     mission = WORLD.get("mission", {})
+    station_resources = WORLD.get("station_resources", {"water": 0, "gas": 0, "parts": []})
     return StationContext(
         grid_w=GRID_W,
         grid_h=GRID_H,
@@ -1948,6 +3162,7 @@ def observe_station():
         mission_status=mission.get("status", "in_progress"),
         collected_quantity=mission.get("collected_quantity", 0),
         target_quantity=mission.get("target_quantity", TARGET_QUANTITY),
+        station_resources=station_resources,
     )
 
 
@@ -1957,6 +3172,8 @@ def _ensure_agent_tools():
         if agent.get("tools") is None:
             if agent.get("type") == "drone":
                 agent["tools"] = _drone_tools_for_ui()
+            elif agent.get("type") == "hauler":
+                agent["tools"] = _hauler_tools_for_ui()
             elif agent.get("type") == "rover":
                 agent["tools"] = _rover_tools_for_ui()
 
@@ -1981,6 +3198,11 @@ def get_snapshot():
             s.pop("_true_quantity", None)
             visible.append(s)
     snap["stones"] = visible
+    visible_ice = []
+    for d in snap.get("ice_deposits", []):
+        if tuple(d["position"]) in revealed:
+            visible_ice.append(d)
+    snap["ice_deposits"] = visible_ice
     # Filter structures to only those on revealed cells
     visible_structures = []
     for s in snap.get("structures", []):
@@ -1994,11 +3216,16 @@ def get_snapshot():
             cleaned = {k: v for k, v in o.items() if not k.startswith("_")}
             visible_obstacles.append(cleaned)
     snap["obstacles"] = visible_obstacles
+    visible_ground_items = []
+    for item in snap.get("ground_items", []):
+        if tuple(item.get("position", [])) in revealed:
+            visible_ground_items.append(item)
+    snap["ground_items"] = visible_ground_items
     # Include agent messages for UI visibility
     snap["agent_messages"] = copy.deepcopy(AGENT_MESSAGES)
     # Ensure bounds are present
     if "bounds" not in snap:
-        snap["bounds"] = {"min_x": 0, "max_x": GRID_W - 1, "min_y": 0, "max_y": GRID_H - 1}
+        snap["bounds"] = {"min_x": 0, "max_x": 0, "min_y": 0, "max_y": 0}
     # Add storm info for UI
     snap["storm"] = storm_mod.get_storm_info(WORLD)
     # Add elapsed time from host (if available)

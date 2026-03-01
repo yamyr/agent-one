@@ -18,6 +18,16 @@ dist/
 
 # Env
 .env
+.env.*
+.env.local
 
 # Test logs
 test_surrealdb.log
+
+# Secrets & Certs
+*.pem
+*.key
+*.p12
+
+# Training data
+training_data/

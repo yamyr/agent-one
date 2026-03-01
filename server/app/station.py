@@ -80,6 +80,14 @@ SYSTEM_PROMPT = (
     "AGENT TYPES:\n"
     "- Rovers: ground units that explore, analyze veins, dig basalt, and deliver to station.\n"
     "- Drones: aerial scouts that fly fast and scan for basalt deposits. They cannot dig.\n"
+    "- Haulers: heavy transport vehicles that collect cargo from rovers and bring it to station.\n"
+    "  Haulers carry up to 6 items (rovers carry only 3). Assign haulers to collect from rovers\n"
+    "  that have full inventories so rovers can keep exploring without returning to station.\n"
+    "\n"
+    "RESOURCES:\n"
+    "- Water: produced by recycling ice at station. Used for base upgrades.\n"
+    "- Gas: produced by gas plants on geysers. Used for base upgrades.\n"
+    "- Base upgrades: charge_speed (faster recharging), storage (higher mission target), radar (wider reveal).\n"
     "\n"
     "The mission goal is to collect basalt from veins. Each vein has a grade "
     "(low/medium/high/rich/pristine) that determines basalt quantity.\n"
@@ -92,6 +100,11 @@ SYSTEM_PROMPT = (
     "- When you have multiple drones, send each to a DIFFERENT sector of the map.\n"
     "- Divide the grid into quadrants or sectors and assign one drone per sector.\n"
     "- This maximizes scan coverage and avoids redundant overlapping scans.\n"
+    "\n"
+    "HAULER COORDINATION:\n"
+    "- Assign haulers to patrol near rovers that are furthest from station.\n"
+    "- When a rover's inventory is full (3 items), direct the hauler to collect from it.\n"
+    "- This keeps rovers exploring instead of returning to station to deliver.\n"
 )
 
 
@@ -104,9 +117,20 @@ def _build_world_summary(context: StationContext):
         lines.append(
             f"Mission status: {context.mission_status} ({context.collected_quantity}/{context.target_quantity})"
         )
+    # Resource totals
+    if hasattr(context, 'water_collected') or hasattr(context, 'gas_collected'):
+        water = getattr(context, 'water_collected', 0)
+        gas = getattr(context, 'gas_collected', 0)
+        if water > 0 or gas > 0:
+            lines.append(f"Resources: water={water}, gas={gas}")
     for rover in context.rovers:
         x, y = rover.position
-        label = "drone" if rover.agent_type == "drone" else "rover"
+        if rover.agent_type == "drone":
+            label = "drone"
+        elif rover.agent_type == "hauler":
+            label = "hauler"
+        else:
+            label = "rover"
         lines.append(
             f"  {rover.id} ({label}): pos=({x},{y}) battery={rover.battery:.0%} "
             f'mission="{rover.mission.objective}" visited={rover.visited_count}'
@@ -211,7 +235,11 @@ class StationAgent:
                 )
         except Exception as e:
             logger.exception("Station LLM API failed: %s", e)
-            return {"thinking": None, "actions": [], "context_text": ctx_text}
+            return {
+                "thinking": f"LLM error: {type(e).__name__}: {e}",
+                "actions": [],
+                "context_text": "",
+            }
 
         from .training import collector
 

@@ -18,6 +18,81 @@
 
 ## Phase 9: Polish
 - [x] T025: Full build verification
-- [x] T026: Changelog updated
-- [x] T027: This file updated
-- [x] T028: PR created
+
+---
+
+# Implementation Plan: New Features & Polish (Round 4)
+
+**Status: IN PROGRESS**
+**Branch: `feature/ice-water-gas-hauler`**
+
+## Priority 1: Security Audit ✅
+- [x] Scan for leaked secrets, API keys, sensitive info
+- [x] Result: NO leaked secrets found. All API keys use env vars properly.
+- [x] `.env` is gitignored, README has placeholder values only
+
+## Priority 1b: Harden .gitignore
+- [ ] Add `.env.*`, `*.pem`, `*.key`, `training_data/` patterns
+
+## Priority 2: Research & Design Review ✅
+- [x] Investigate closed issues — all 50 resolved with merged PRs
+- [x] Investigate open issues — #131 (observe_rover boundary), #93 (station error handling)
+- [x] ROADMAP gaps identified: allocate_power, PowerBudgetWarning, confidence bars, scripted timeline, UiRequest::Confirm
+
+## Priority 2b: Fix Critical Bug #131
+- [ ] Remove GRID_W/GRID_H boundary check in `observe_rover()` at world.py line 1802
+
+## Priority 3a: Rover Upgrades — Base, Buildings, Ice
+- [ ] Add `ice_deposit` as a new resource type in world generation (spawns in outer chunks)
+- [ ] Add `gather_ice` rover action: picks up ice at current tile (costs 4 fuel)
+- [ ] Add `upgrade_base` rover action: deposit materials at station to improve station capabilities
+- [ ] Enhance building exploration: make broken_hauler and broken_manipulator functional
+  - broken_hauler: repairable, adds +2 inventory capacity to repairing rover
+  - broken_manipulator: repairable, enables building new structures
+
+## Priority 3b: Ice → Water Recycling
+- [ ] Add `water_recycler` structure type (buildable at station)
+- [ ] Add `recycle_ice` action: converts ice into water at the recycler (3 ice → 1 water)
+- [ ] Water serves as secondary mission resource
+- [ ] Track water in mission state alongside basalt
+
+## Priority 3c: Gas Plants on Geysers
+- [ ] Add `build_gas_plant` rover action: constructs gas plant ON a geyser tile
+- [ ] Gas plant converts geyser eruptions into collectible gas (no longer damages agents)
+- [ ] Add `gas` as resource type, tracked in mission
+- [ ] Gas plants are permanent structures with passive gas production each tick
+
+## Priority 3d: Hauler Agent
+- [ ] Create `HaulerAgent` reasoner and `HaulerLoop` (BaseAgent subclass)
+- [ ] Hauler tools: `move` (max 5 tiles), `load` (transfer items from rover), `unload` (deposit at station)
+- [ ] Hauler has larger inventory (max 8 items) but cannot dig/analyze
+- [ ] Add hauler to world init, config, and UI
+- [ ] Hauler system prompt: optimized for logistics
+
+## Priority 3e: Pydantic Refactor
+- [ ] Use discriminated unions for message types
+- [ ] Add model_validators for world state consistency
+- [ ] Type resources with Pydantic models (ResourceType enum, ResourceDeposit model)
+
+## Priority 4: Attribution
+- [ ] Configure git to attribute commits to 'yamyr'
+- [ ] Ensure all new commits use proper co-author trailer
+
+---
+
+# Task Plan: Rover-Driven Base Upgrade System
+
+## Scope
+- [ ] Add station upgrade definitions and execution flow in `server/app/world.py`
+- [ ] Apply upgrade effects to charge rate, rover fuel capacity, reveal radius, and repair behavior
+- [ ] Track salvaged vehicle parts in `WORLD["station_resources"]["parts"]`
+- [ ] Expose upgrade tool and upgrade status/cost visibility in rover LLM context (`server/app/agent.py`)
+- [ ] Add typed upgrade metadata to rover world models (`server/app/models.py`)
+
+## Validation
+- [ ] Update/extend tests for new upgrade contract and salvage behavior
+- [ ] Run diagnostics on changed files
+- [ ] Run server test suite and confirm pass
+
+## Review Notes
+- [ ] Document what changed and key edge cases covered

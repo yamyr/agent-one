@@ -11,6 +11,7 @@ from rich.logging import RichHandler
 from .agent import (
     RoverMistralLoop,
     DroneMistralLoop,
+    HaulerMistralLoop,
     RoverHuggingFaceLoop,
     DroneHuggingFaceLoop,
     StationLoop,
@@ -51,6 +52,9 @@ AGENT_MAP = {
         agent_id="rover-2", interval=settings.llm_turn_interval_seconds
     ),
     "drone-mistral": lambda: DroneMistralLoop(interval=settings.drone_turn_interval_seconds),
+    "hauler-mistral": lambda: HaulerMistralLoop(
+        agent_id="hauler-mistral", interval=settings.llm_turn_interval_seconds
+    ),
     "rover-huggingface": lambda: RoverHuggingFaceLoop(
         agent_id="rover-huggingface", interval=settings.llm_turn_interval_seconds
     ),

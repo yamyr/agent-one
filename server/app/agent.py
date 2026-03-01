@@ -20,16 +20,36 @@ from .broadcast import broadcaster
 from .config import settings
 from .protocol import make_message
 from .world import World, world as default_world
-from .world import DIRECTIONS, MAX_MOVE_DISTANCE, MAX_MOVE_DISTANCE_DRONE
-from .world import FUEL_CAPACITY_ROVER, FUEL_CAPACITY_DRONE, DRONE_REVEAL_RADIUS
-from .world import BATTERY_COST_MOVE, BATTERY_COST_MOVE_DRONE, BATTERY_COST_DIG
+from .world import DIRECTIONS, MAX_MOVE_DISTANCE, MAX_MOVE_DISTANCE_DRONE, MAX_MOVE_DISTANCE_HAULER
+from .world import (
+    FUEL_CAPACITY_ROVER,
+    FUEL_CAPACITY_DRONE,
+    FUEL_CAPACITY_HAULER,
+    DRONE_REVEAL_RADIUS,
+    UPGRADES,
+)
+from .world import (
+    BATTERY_COST_MOVE,
+    BATTERY_COST_MOVE_DRONE,
+    BATTERY_COST_MOVE_HAULER,
+    BATTERY_COST_DIG,
+    BATTERY_COST_COLLECT_GAS,
+)
 from .world import BATTERY_COST_ANALYZE, BATTERY_COST_SCAN, BATTERY_COST_NOTIFY
-from .world import MAX_INVENTORY_ROVER
+from .world import BATTERY_COST_GATHER_ICE
+from .world import MAX_INVENTORY_ROVER, MAX_INVENTORY_HAULER
 from .world import BATTERY_COST_INVESTIGATE, BATTERY_COST_USE_REFINERY
-from .world import check_ground, direction_hint, best_drone_hotspot, observe_rover
+from .world import check_ground, direction_hint, best_drone_hotspot, observe_rover, observe_hauler
 from .world import get_drone_intel_for_rover, get_unread_messages, send_agent_message
 from .world import set_agent_model
-from .world import execute_action, get_snapshot, charge_agent, next_tick, update_geysers
+from .world import (
+    execute_action,
+    get_snapshot,
+    charge_agent,
+    next_tick,
+    update_geysers,
+    update_tasks,
+)
 from .world import check_storm_tick, get_storm_info
 from .world import is_obstacle_at
 from .station import StationAgent
@@ -213,6 +233,99 @@ USE_REFINERY_TOOL = {
     },
 }
 
+GATHER_ICE_TOOL = {
+    "type": "function",
+    "function": {
+        "name": "gather_ice",
+        "description": f"Gather ice at current tile and store it in inventory as type 'ice'. No analyze required. Costs 4 fuel units (~{BATTERY_COST_GATHER_ICE:.2%} battery).",
+        "parameters": {"type": "object", "properties": {}},
+    },
+}
+
+HARVEST_ICE_TOOL = {
+    "type": "function",
+    "function": {
+        "name": "harvest_ice",
+        "description": "Harvest ice at current tile. Ice deposits appear near ice mountains. Costs 4 fuel units. Ice can be delivered to station for water recycling.",
+        "parameters": {"type": "object", "properties": {}},
+    },
+}
+
+RECYCLE_ICE_TOOL = {
+    "type": "function",
+    "function": {
+        "name": "recycle_ice",
+        "description": "Recycle all ice in your inventory into water at the station. Must be at station. Each ice unit produces 2 water units. Costs 3 fuel units.",
+        "parameters": {"type": "object", "properties": {}},
+    },
+}
+
+BUILD_GAS_PLANT_TOOL = {
+    "type": "function",
+    "function": {
+        "name": "build_gas_plant",
+        "description": "Build a gas plant on your tile while on/adjacent to an idle geyser. The plant captures eruptions to produce gas. Costs 8 fuel units.",
+        "parameters": {"type": "object", "properties": {}},
+    },
+}
+
+COLLECT_GAS_TOOL = {
+    "type": "function",
+    "function": {
+        "name": "collect_gas",
+        "description": f"Collect all stored gas from an adjacent gas plant into inventory. Costs ~{BATTERY_COST_COLLECT_GAS:.2%} battery.",
+        "parameters": {"type": "object", "properties": {}},
+    },
+}
+
+UPGRADE_BASE_TOOL = {
+    "type": "function",
+    "function": {
+        "name": "upgrade_base",
+        "description": "Spend water and gas to upgrade the station. Must be at station (0,0). Available upgrades: charge_mk2 (50w/20g - double charge rate), extended_fuel (30w/10g - +100 fuel capacity), enhanced_scanner (20w/15g - +1 reveal radius), repair_bay (40w/30g - auto full repair at station).",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "upgrade": {
+                    "type": "string",
+                    "enum": ["charge_mk2", "extended_fuel", "enhanced_scanner", "repair_bay"],
+                    "description": "The upgrade to purchase.",
+                },
+            },
+            "required": ["upgrade"],
+        },
+    },
+}
+
+UPGRADE_BUILDING_TOOL = {
+    "type": "function",
+    "function": {
+        "name": "upgrade_building",
+        "description": "Upgrade an adjacent active building to improve its stats. Costs battery and basalt from inventory. Max 3 upgrade levels.",
+        "parameters": {"type": "object", "properties": {}},
+    },
+}
+
+DROP_ITEM_TOOL = {
+    "type": "function",
+    "function": {
+        "name": "drop_item",
+        "description": "Drop an inventory item on the ground for haulers to collect.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "index": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "description": "0-based index of item in inventory to drop.",
+                }
+            },
+            "required": ["index"],
+        },
+    },
+}
+
+
 ROVER_TOOLS = [
     MOVE_TOOL,
     ANALYZE_TOOL,
@@ -222,6 +335,61 @@ ROVER_TOOLS = [
     NOTIFY_TOOL,
     INVESTIGATE_STRUCTURE_TOOL,
     USE_REFINERY_TOOL,
+    GATHER_ICE_TOOL,
+    RECYCLE_ICE_TOOL,
+    BUILD_GAS_PLANT_TOOL,
+    COLLECT_GAS_TOOL,
+    UPGRADE_BASE_TOOL,
+    UPGRADE_BUILDING_TOOL,
+    DROP_ITEM_TOOL,
+]
+
+HAULER_MOVE_TOOL = {
+    "type": "function",
+    "function": {
+        "name": "move",
+        "description": f"Move the hauler 1-{MAX_MOVE_DISTANCE_HAULER} tiles in a cardinal direction. Costs 1 fuel unit per tile. Haulers are slower but have bigger fuel tanks.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "direction": {
+                    "type": "string",
+                    "enum": ["north", "south", "east", "west"],
+                },
+                "distance": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": MAX_MOVE_DISTANCE_HAULER,
+                },
+            },
+            "required": ["direction"],
+        },
+    },
+}
+
+LOAD_CARGO_TOOL = {
+    "type": "function",
+    "function": {
+        "name": "load_cargo",
+        "description": "Load materials at current position into cargo. Picks up ice deposits, or collects items left by rovers. Costs 2 fuel units.",
+        "parameters": {"type": "object", "properties": {}},
+    },
+}
+
+UNLOAD_CARGO_TOOL = {
+    "type": "function",
+    "function": {
+        "name": "unload_cargo",
+        "description": "Unload all cargo at current position. At station, items are delivered to storage. Costs 1 fuel unit.",
+        "parameters": {"type": "object", "properties": {}},
+    },
+}
+
+HAULER_TOOLS = [
+    HAULER_MOVE_TOOL,
+    LOAD_CARGO_TOOL,
+    UNLOAD_CARGO_TOOL,
+    NOTIFY_TOOL,
 ]
 
 
@@ -274,6 +442,8 @@ class MistralRoverReasoner:
         if stone_info:
             if stone_info["type"] == "unknown":
                 stone_line = "unknown vein (needs analyze to reveal grade and quantity)"
+            elif stone_info["type"] == "ice":
+                stone_line = "ice deposit (ready to gather with gather_ice)"
             else:
                 stone_line = f"{stone_info.get('grade', '?')} vein, qty={stone_info.get('quantity', 0)} (analyzed — needs dig)"
         else:
@@ -283,6 +453,12 @@ class MistralRoverReasoner:
         world_mission = self._world.get_mission()
         target_quantity = world_mission.get("target_quantity", 100)
         inventory_full = len(inventory) >= MAX_INVENTORY_ROVER
+        station_resources = self._world.state.get(
+            "station_resources", {"water": 0, "gas": 0, "parts": []}
+        )
+        station_water = int(station_resources.get("water", 0))
+        station_gas = int(station_resources.get("gas", 0))
+        station_upgrades = self._world.state.get("station_upgrades", {})
 
         parts = []
 
@@ -336,7 +512,16 @@ class MistralRoverReasoner:
             "- ICE MOUNTAINS: Impassable terrain. You cannot move onto a mountain tile.\n"
             "  If a move is blocked by a mountain, choose a different direction.\n"
             "- AIR GEYSERS: Cycle through idle → warning → erupting. Avoid erupting geysers.\n"
-            "  Standing on an erupting geyser drains 10% battery. Move away from warning geysers.".format(
+            "  Standing on an erupting geyser drains 10% battery. Move away from warning geysers.\n"
+            "\n"
+            "RESOURCES:\n"
+            "- ICE DEPOSITS: Found near mountains. Use gather_ice on the same tile to collect ice.\n"
+            "- Gather ice when found, deliver to station for auto-conversion (2 ice -> 1 water).\n"
+            "- GAS PLANTS: Use build_gas_plant on an adjacent geyser when station has enough water.\n"
+            "- Collect gas with collect_gas from adjacent gas plants, then deliver to station.\n"
+            "- BASE UPGRADES: At station, use upgrade_base to spend water/gas on upgrades.\n"
+            "- BUILDING UPGRADES: Use upgrade_building when adjacent to an active building to improve its level.\n"
+            "- Hauler agents transport materials — notify station if your inventory is full and you can't return.".format(
                 sx=station_pos[0], sy=station_pos[1]
             )
         )
@@ -376,6 +561,28 @@ class MistralRoverReasoner:
             )
             + f"\nSolar panels remaining: {agent.get('solar_panels_remaining', 0)}"
             + ("\n⚠️ BATTERY CRITICAL — return to station now!" if battery_critical else "")
+        )
+
+        parts.append("\n== Station Upgrades ==")
+        parts.append(f"Station resources: water={station_water}, gas={station_gas}")
+        purchased_upgrades = []
+        for upgrade_name, config in UPGRADES.items():
+            level = int(station_upgrades.get(upgrade_name, 0))
+            max_level = int(config["max_level"])
+            affordable = station_water >= int(config["water"]) and station_gas >= int(config["gas"])
+            if level > 0:
+                purchased_upgrades.append(f"{upgrade_name} {level}/{max_level}")
+            status = (
+                "MAXED"
+                if level >= max_level
+                else ("affordable" if affordable else "not affordable")
+            )
+            parts.append(
+                f"- {upgrade_name}: level {level}/{max_level}, cost {config['water']}w/{config['gas']}g, {status} — {config['description']}"
+            )
+        parts.append(
+            "Purchased upgrades: "
+            + (", ".join(purchased_upgrades) if purchased_upgrades else "none")
         )
 
         # Nearby solar panels
@@ -587,6 +794,13 @@ class MistralRoverReasoner:
                     "notify",
                     "investigate_structure",
                     "use_refinery",
+                    "gather_ice",
+                    "harvest_ice",
+                    "recycle_ice",
+                    "build_gas_plant",
+                    "upgrade_base",
+                    "collect_gas",
+                    "upgrade_building",
                 ):
                     action = {"name": name, "params": args}
                 else:
@@ -636,6 +850,391 @@ class MistralRoverReasoner:
             "thinking": thinking,
             "action": {"name": "move", "params": {"direction": direction}},
         }
+
+
+class HaulerAgent:
+    """Hauler reasoner that decides via Mistral LLM."""
+
+    def __init__(
+        self, agent_id="hauler-mistral", model="mistral-small-latest", world: World | None = None
+    ):
+        self.agent_id = agent_id
+        self.model = model
+        self._client = None
+        self._world = world or default_world
+
+    def _get_client(self):
+        if self._client is None:
+            if not settings.mistral_api_key:
+                raise RuntimeError("MISTRAL_API_KEY not set")
+            self._client = Mistral(api_key=settings.mistral_api_key)
+        return self._client
+
+    def _build_context(self):
+        agent = self._world.get_agent(self.agent_id)
+        x, y = agent["position"]
+        battery = agent["battery"]
+        inventory = agent.get("inventory", [])
+        memory = agent.get("memory", [])
+
+        station = self._world.get_agents().get("station")
+        station_pos = station["position"] if station else [0, 0]
+        dist_to_station = abs(x - station_pos[0]) + abs(y - station_pos[1])
+        moves_on_battery = int(battery / BATTERY_COST_MOVE_HAULER)
+
+        resources = self._world.state.get("resources", {})
+        water_total = int(resources.get("water", 0))
+        gas_total = int(resources.get("gas", 0))
+        cargo_drops = self._world.state.get("cargo_drops", [])
+
+        rover_status = []
+        rovers_with_items = []
+        for rid, rover in self._world.get_agents().items():
+            if rover.get("type") != "rover":
+                continue
+            rx, ry = rover["position"]
+            inv = rover.get("inventory", [])
+            inv_count = len(inv)
+            distance = abs(rx - x) + abs(ry - y)
+            rover_status.append((distance, rid, rx, ry, inv_count))
+            if inv_count > 0:
+                rovers_with_items.append((distance, rid, rx, ry, inv_count))
+
+        rover_status.sort(key=lambda item: item[0])
+        rovers_with_items.sort(key=lambda item: item[0])
+
+        parts = []
+        parts.append(
+            (
+                "You are {agent_id}, an autonomous Mars hauler vehicle.\n"
+                "Your job: transport inventory items from field rovers to the station at ({sx},{sy}).\n"
+                "\n"
+                "WORKFLOW:\n"
+                "1. Check which rovers have items in their inventory (listed under Nearby Rovers).\n"
+                "2. Move toward the nearest rover with items.\n"
+                "3. When at the same position as a rover, use load_cargo to take their items.\n"
+                "4. You can also use load_cargo to collect ice deposits at your current tile.\n"
+                "5. When your inventory has items, return to station and use unload_cargo.\n"
+                "\n"
+                "RULES:\n"
+                "- Battery is your lifeline. Move costs 1 fuel unit/tile.\n"
+                "- Station is at ({sx},{sy}). Return there when battery is low.\n"
+                "- You can carry up to {max_inventory} items (much more than a rover's 3).\n"
+                "- ALWAYS keep enough battery to return to station.\n"
+                "- Coordinate with station using notify after major pickup or delivery updates.\n"
+                "- If no rovers have items, patrol near active rovers and stay ready for pickup."
+            ).format(
+                agent_id=self.agent_id,
+                sx=station_pos[0],
+                sy=station_pos[1],
+                max_inventory=MAX_INVENTORY_HAULER,
+            )
+        )
+
+        parts.append(
+            f"\n== State ==\n"
+            f"Position: ({x}, {y})\n"
+            f"Battery: {battery:.0%} ({moves_on_battery} moves remaining, {FUEL_CAPACITY_HAULER} fuel capacity)\n"
+            f"Distance to station: {dist_to_station} tiles\n"
+            f"Inventory: {len(inventory)}/{MAX_INVENTORY_HAULER} items\n"
+            f"Move range: up to {MAX_MOVE_DISTANCE_HAULER} tiles per move"
+        )
+
+        parts.append(
+            f"\n== Mission Resources ==\nWater total: {water_total}\nGas total: {gas_total}"
+        )
+
+        parts.append("\n== Cargo Drops ==")
+        nearby_drops = []
+        for drop in cargo_drops:
+            pos = drop.get("position", [0, 0])
+            items = drop.get("items", [])
+            if not items:
+                continue
+            dx = abs(pos[0] - x) + abs(pos[1] - y)
+            nearby_drops.append((dx, pos, len(items)))
+        nearby_drops.sort(key=lambda item: item[0])
+        if nearby_drops:
+            for distance, pos, item_count in nearby_drops[:8]:
+                parts.append(
+                    f"- Drop at ({pos[0]},{pos[1]}) with {item_count} items, distance {distance}"
+                )
+        else:
+            parts.append("- none")
+
+        parts.append("\n== Nearby Rovers ==")
+        if rover_status:
+            for distance, rid, rx, ry, inv_count in rover_status:
+                marker = "*" if inv_count > 0 else "-"
+                parts.append(
+                    f"{marker} {rid} at ({rx},{ry}) - inventory {inv_count}/{MAX_INVENTORY_ROVER}, distance {distance}"
+                )
+        else:
+            parts.append("- none")
+
+        parts.append("\n== Rovers With Cargo ==")
+        if rovers_with_items:
+            for distance, rid, rx, ry, inv_count in rovers_with_items:
+                parts.append(
+                    f"- {rid} at ({rx},{ry}) carrying {inv_count} items, distance {distance}"
+                )
+        else:
+            parts.append("- none")
+
+        if memory:
+            parts.append("\n== Recent actions ==")
+            for entry in memory[-5:]:
+                parts.append(f"- {entry}")
+
+        parts.append(STRUCTURED_REASONING_PROMPT)
+        return "\n".join(parts)
+
+    def run_turn(self):
+        try:
+            client = self._get_client()
+            context = self._build_context()
+            self._world.set_agent_last_context(self.agent_id, context)
+
+            messages = [
+                {"role": "system", "content": context},
+                {
+                    "role": "user",
+                    "content": "Observe your surroundings and decide your next action.",
+                },
+            ]
+
+            logger.info("Calling Mistral (%s) for %s", self.model, self.agent_id)
+            effective_model = settings.fine_tuned_agent_model or self.model
+            response = client.chat.complete(
+                model=effective_model,
+                messages=messages,
+                tools=HAULER_TOOLS,
+            )
+
+            choice = response.choices[0]
+            thinking = choice.message.content or None
+            action = None
+
+            if choice.message.tool_calls:
+                tc = choice.message.tool_calls[0]
+                name = tc.function.name
+                args = (
+                    json.loads(tc.function.arguments)
+                    if isinstance(tc.function.arguments, str)
+                    else tc.function.arguments
+                )
+                if name in ("move", "load_cargo", "unload_cargo", "notify"):
+                    action = {"name": name, "params": args}
+                else:
+                    logger.warning("%s called unknown tool %r, ignoring", self.agent_id, name)
+
+            if action is None:
+                raise RuntimeError(
+                    f"{self.agent_id} returned no valid tool action (thinking={thinking!r})"
+                )
+
+            if thinking:
+                logger.info("Hauler thinking: %s", thinking)
+
+            return {"thinking": thinking, "action": action}
+        except (SDKError, ConnectionError, TimeoutError) as exc:
+            logger.exception("Hauler LLM turn failed for %s, using fallback", self.agent_id)
+            return self._fallback_turn(f"LLM unavailable ({type(exc).__name__})")
+
+    def _fallback_turn(self, reason):
+        agent = self._world.get_agent(self.agent_id)
+        x, y = agent["position"]
+        inventory = agent.get("inventory", [])
+        station = self._world.get_agents().get("station")
+        station_pos = station["position"] if station else [0, 0]
+
+        if inventory and [x, y] != station_pos:
+            dx, dy = station_pos[0] - x, station_pos[1] - y
+            if abs(dx) >= abs(dy):
+                direction = "east" if dx > 0 else "west"
+                distance = max(1, min(abs(dx), MAX_MOVE_DISTANCE_HAULER))
+            else:
+                direction = "north" if dy > 0 else "south"
+                distance = max(1, min(abs(dy), MAX_MOVE_DISTANCE_HAULER))
+            return {
+                "thinking": f"LLM fallback: {reason}. Returning to station with cargo.",
+                "action": {
+                    "name": "move",
+                    "params": {"direction": direction, "distance": distance},
+                },
+            }
+
+        if inventory and [x, y] == station_pos:
+            return {
+                "thinking": f"LLM fallback: {reason}. At station with cargo, unloading now.",
+                "action": {"name": "unload_cargo", "params": {}},
+            }
+
+        return {
+            "thinking": f"LLM fallback: {reason}. Attempting cargo pickup at current position.",
+            "action": {"name": "load_cargo", "params": {}},
+        }
+
+
+class HaulerReasoner:
+    def __init__(
+        self,
+        agent_id: str = "hauler-1",
+        model: str = "mistral-small-latest",
+        world: World | None = None,
+    ):
+        self.agent_id = agent_id
+        self.model = model
+        self._client = None
+        self._world = world or default_world
+
+    def _get_client(self):
+        if self._client is None:
+            if not settings.mistral_api_key:
+                raise RuntimeError("MISTRAL_API_KEY not set")
+            self._client = Mistral(api_key=settings.mistral_api_key)
+        return self._client
+
+    def _build_context(self):
+        ctx = observe_hauler(self.agent_id)
+        x, y = ctx.agent.position
+        station_x, station_y = ctx.world.station_position
+        parts = [
+            (
+                f"You are {self.agent_id}, an autonomous Mars hauler. "
+                "Your job is to collect cargo dropped by rovers and deliver it to the station."
+            ),
+            (
+                "Rules: Pick up cargo, deliver to station. You CANNOT dig or analyze veins. "
+                "Prioritize picking up items closest to you. When inventory is full, return to station."
+            ),
+            (
+                "\n== State ==\n"
+                f"Position: ({x}, {y})\n"
+                f"Battery: {ctx.agent.battery:.0%}\n"
+                f"Inventory: {len(ctx.agent.inventory)}/{MAX_INVENTORY_HAULER} slots"
+                + (
+                    " ("
+                    + ", ".join(f"{item.type} qty={item.quantity}" for item in ctx.agent.inventory)
+                    + ")"
+                    if ctx.agent.inventory
+                    else ""
+                )
+            ),
+            (
+                "\n== Station ==\n"
+                f"Position: ({station_x}, {station_y})\n"
+                f"Distance: {ctx.computed.distance_to_station} tiles ({ctx.computed.station_direction})"
+            ),
+            "\n== Ground Items ==",
+        ]
+
+        if ctx.computed.visible_ground_items:
+            for item in ctx.computed.visible_ground_items:
+                gx, gy = item.position
+                dist = abs(gx - x) + abs(gy - y)
+                hint = direction_hint(gx - x, gy - y)
+                parts.append(
+                    f"- {item.type} qty={item.quantity} at ({gx},{gy}) — {hint}, {dist} tiles"
+                )
+        else:
+            parts.append("- none visible")
+
+        if ctx.agent.tasks:
+            parts.append("\n== Current Task ==")
+            parts.append(ctx.agent.tasks[0])
+
+        parts.append(STRUCTURED_REASONING_PROMPT)
+        return "\n".join(parts)
+
+    def run_turn(self):
+        try:
+            client = self._get_client()
+            context = self._build_context()
+            self._world.set_agent_last_context(self.agent_id, context)
+
+            response = client.chat.complete(
+                model=settings.fine_tuned_agent_model or self.model,
+                messages=[
+                    {"role": "system", "content": context},
+                    {"role": "user", "content": "Choose your next action."},
+                ],
+                tools=HAULER_TOOLS,
+            )
+            choice = response.choices[0]
+            thinking = choice.message.content or None
+            action = None
+            if choice.message.tool_calls:
+                tc = choice.message.tool_calls[0]
+                name = tc.function.name
+                args = (
+                    json.loads(tc.function.arguments)
+                    if isinstance(tc.function.arguments, str)
+                    else tc.function.arguments
+                )
+                if name in ("move", "pickup_cargo", "notify"):
+                    action = {"name": name, "params": args}
+
+            if action is None:
+                raise RuntimeError(
+                    f"{self.agent_id} returned no valid tool action (thinking={thinking!r})"
+                )
+            return {"thinking": thinking, "action": action}
+        except (SDKError, ConnectionError, TimeoutError) as exc:
+            logger.exception("Hauler LLM turn failed for %s, using fallback", self.agent_id)
+            return self._fallback_turn(f"LLM unavailable ({type(exc).__name__})")
+
+    def _fallback_turn(self, reason):
+        ctx = observe_hauler(self.agent_id)
+        x, y = ctx.agent.position
+        station_x, station_y = ctx.world.station_position
+
+        if ctx.agent.inventory and [x, y] != [station_x, station_y]:
+            dx, dy = station_x - x, station_y - y
+            if abs(dx) >= abs(dy):
+                direction = "east" if dx > 0 else "west"
+                distance = max(1, min(abs(dx), MAX_MOVE_DISTANCE_HAULER))
+            else:
+                direction = "north" if dy > 0 else "south"
+                distance = max(1, min(abs(dy), MAX_MOVE_DISTANCE_HAULER))
+            return {
+                "thinking": f"LLM fallback: {reason}. Returning to station with cargo.",
+                "action": {
+                    "name": "move",
+                    "params": {"direction": direction, "distance": distance},
+                },
+            }
+
+        if ctx.computed.visible_ground_items:
+            item = ctx.computed.visible_ground_items[0]
+            gx, gy = item.position
+            if [gx, gy] == [x, y]:
+                return {
+                    "thinking": f"LLM fallback: {reason}. Picking up ground cargo now.",
+                    "action": {"name": "pickup_cargo", "params": {}},
+                }
+            dx, dy = gx - x, gy - y
+            if abs(dx) >= abs(dy):
+                direction = "east" if dx > 0 else "west"
+                distance = max(1, min(abs(dx), MAX_MOVE_DISTANCE_HAULER))
+            else:
+                direction = "north" if dy > 0 else "south"
+                distance = max(1, min(abs(dy), MAX_MOVE_DISTANCE_HAULER))
+            return {
+                "thinking": f"LLM fallback: {reason}. Moving toward nearest visible cargo.",
+                "action": {
+                    "name": "move",
+                    "params": {"direction": direction, "distance": distance},
+                },
+            }
+
+        return {
+            "thinking": f"LLM fallback: {reason}. No visible cargo; reporting idle status.",
+            "action": {"name": "notify", "params": {"message": "No visible cargo; patrolling."}},
+        }
+
+
+MistralHaulerReasoner = HaulerReasoner
 
 
 # Backward-compat aliases
@@ -697,6 +1296,15 @@ class HuggingFaceRoverReasoner(MistralRoverReasoner):
                     "deploy_solar_panel",
                     "use_solar_battery",
                     "notify",
+                    "gather_ice",
+                    "harvest_ice",
+                    "recycle_ice",
+                    "build_gas_plant",
+                    "collect_gas",
+                    "upgrade_base",
+                    "investigate_structure",
+                    "use_refinery",
+                    "upgrade_building",
                 ):
                     action = {"name": name, "params": args}
                 else:
@@ -1253,6 +1861,8 @@ class RoverLoop(BaseAgent):
             ]
         self._world.set_pending_commands(self.agent_id, pending if pending else None)
 
+        update_tasks(self.agent_id)
+
         # If aborted and already at station, stop this agent's loop
         rover = self._world.get_agents().get(self.agent_id)
         station_agent = self._world.get_agents().get("station")
@@ -1751,6 +2361,102 @@ class DroneMistralLoop(DroneLoop):
         set_agent_model(self.agent_id, self._reasoner.model)
 
 
+class HaulerLoop(BaseAgent):
+    """Generic hauler tick: reason -> execute -> broadcast."""
+
+    _reasoner: HaulerAgent
+
+    async def tick(self, host) -> None:
+        mission_status = self._world.get_mission()["status"]
+
+        # Inject pending commands
+        pending = host.drain_inbox(self.agent_id)
+        if mission_status == "aborted":
+            pending = [
+                {"name": "recall", "payload": {"reason": "Mission aborted — return to station"}}
+            ]
+        self._world.set_pending_commands(self.agent_id, pending if pending else None)
+
+        # If aborted and at station, stop
+        hauler = self._world.get_agents().get(self.agent_id)
+        station_agent = self._world.get_agents().get("station")
+        if (
+            mission_status == "aborted"
+            and hauler
+            and station_agent
+            and hauler["position"] == station_agent["position"]
+        ):
+            logger.info("Agent %s at station — abort complete", self.agent_id)
+            return
+
+        turn = await asyncio.to_thread(self._reasoner.run_turn)
+        next_tick()
+
+        messages = []
+        if turn["thinking"]:
+            messages.append(
+                make_message(
+                    source=self.agent_id,
+                    type="event",
+                    name="thinking",
+                    payload={
+                        "text": turn["thinking"],
+                        "structured": _parse_structured_thinking(turn["thinking"]),
+                    },
+                )
+            )
+
+        if turn["action"]:
+            result = execute_action(
+                self.agent_id,
+                turn["action"]["name"],
+                turn["action"]["params"],
+            )
+            if result["ok"]:
+                messages.append(
+                    make_message(
+                        source=self.agent_id,
+                        type="action",
+                        name=turn["action"]["name"],
+                        payload=result,
+                    )
+                )
+
+                if turn["action"]["name"] == "notify" and result.get("message"):
+                    pos = result["position"]
+                    station_state = self._world.get_agents().get("station")
+                    if station_state:
+                        mem = station_state.setdefault("memory", [])
+                        mem.append(
+                            f"Radio from {self.agent_id} at ({pos[0]},{pos[1]}): {result['message']}"
+                        )
+
+        for msg in messages:
+            await host.broadcast(msg.to_dict())
+
+        await broadcaster.send(make_message("world", "event", "state", get_snapshot()).to_dict())
+
+        # Auto-charge hauler at station
+        station_agent = self._world.get_agents().get("station")
+        hauler = self._world.get_agents().get(self.agent_id)
+        if (
+            hauler
+            and station_agent
+            and hauler["position"] == station_agent["position"]
+            and hauler["battery"] < 1.0
+        ):
+            charge_result = charge_agent(self.agent_id)
+            if charge_result["ok"]:
+                await host.broadcast(
+                    make_message(
+                        source="station",
+                        type="action",
+                        name="charge_agent",
+                        payload=charge_result,
+                    ).to_dict()
+                )
+
+
 class RoverHuggingFaceLoop(RoverLoop):
     """Rover loop wired to HuggingFaceRoverReasoner."""
 
@@ -1887,3 +2593,20 @@ class StationLoop(BaseAgent):
             training_logger.log_world_snapshot(current_tick, get_snapshot())
         except Exception:
             logger.warning("Training turn logging failed for station", exc_info=True)
+
+
+class HaulerMistralLoop(HaulerLoop):
+    """Hauler loop wired to HaulerAgent."""
+
+    def __init__(
+        self,
+        agent_id: str = "hauler-1",
+        interval: float = settings.hauler_turn_interval_seconds,
+        world: World | None = None,
+    ):
+        super().__init__(agent_id=agent_id, interval=interval, world=world)
+        self._reasoner = HaulerAgent(agent_id=self.agent_id, world=self._world)
+        set_agent_model(self.agent_id, self._reasoner.model)
+
+
+HaulerReasoner = HaulerAgent
