@@ -143,7 +143,9 @@ ROVER_TOOLS = [
 class MistralRoverReasoner:
     """Rover reasoner that decides via Mistral LLM. Returns action dict, does not execute."""
 
-    def __init__(self, agent_id="rover-mistral", model="mistral-small-latest", world: World | None = None):
+    def __init__(
+        self, agent_id="rover-mistral", model="mistral-small-latest", world: World | None = None
+    ):
         self.agent_id = agent_id
         self.model = model
         self._client = None
@@ -245,11 +247,7 @@ class MistralRoverReasoner:
             f"Objective: {mission['objective']}\n"
             f"Target: collect {target_quantity} units of basalt and deliver to station.\n"
             f"Your inventory: {len(inventory)}/{MAX_INVENTORY_ROVER} veins"
-            + (
-                "\n🏁 INVENTORY FULL — RETURN TO STATION NOW TO DELIVER!"
-                if inventory_full
-                else ""
-            )
+            + ("\n🏁 INVENTORY FULL — RETURN TO STATION NOW TO DELIVER!" if inventory_full else "")
         )
 
         tasks = agent.get("tasks", [])
@@ -277,11 +275,7 @@ class MistralRoverReasoner:
                 else ""
             )
             + f"\nSolar panels remaining: {agent.get('solar_panels_remaining', 0)}"
-            + (
-                "\n⚠️ BATTERY CRITICAL — return to station now!"
-                if battery_critical
-                else ""
-            )
+            + ("\n⚠️ BATTERY CRITICAL — return to station now!" if battery_critical else "")
         )
 
         # Nearby solar panels
@@ -305,7 +299,9 @@ class MistralRoverReasoner:
                 status = "explored/active" if structure["explored"] else "unexplored"
                 label = structure["type"].replace("_", " ").title()
                 cat = structure.get("category", "unknown")
-                nearby_structures.append(f"  - {label} ({cat}, {status}) at ({sx},{sy}), {sd} tiles")
+                nearby_structures.append(
+                    f"  - {label} ({cat}, {status}) at ({sx},{sy}), {sd} tiles"
+                )
         if nearby_structures:
             parts.append("Nearby structures (buildings/vehicles — block movement):")
             parts.extend(nearby_structures)
@@ -497,7 +493,9 @@ DRONE_TOOLS = [DRONE_MOVE_TOOL, SCAN_TOOL, NOTIFY_TOOL]
 class DroneAgent:
     """Drone scout agent powered by Mistral LLM. Moves fast, scans for basalt vein deposits."""
 
-    def __init__(self, agent_id="drone-mistral", model="mistral-small-latest", world: World | None = None):
+    def __init__(
+        self, agent_id="drone-mistral", model="mistral-small-latest", world: World | None = None
+    ):
         self.agent_id = agent_id
         self.model = model
         self._client = None
@@ -968,9 +966,10 @@ class DroneLoop(BaseAgent):
 
         # During abort, force recall so drone heads to station
         if mission_status == "aborted":
-            self._world.set_pending_commands(self.agent_id, [
-                {"name": "recall", "payload": {"reason": "Mission aborted — return to station"}}
-            ])
+            self._world.set_pending_commands(
+                self.agent_id,
+                [{"name": "recall", "payload": {"reason": "Mission aborted — return to station"}}],
+            )
 
         turn = await asyncio.to_thread(self._reasoner.run_turn)
         next_tick()

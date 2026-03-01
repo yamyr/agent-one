@@ -16,10 +16,16 @@ from app.world import observe_rover, observe_station
 from app.world import VEIN_GRADES, VEIN_WEIGHTS, VEIN_QUANTITY_RANGES, TARGET_QUANTITY
 from app.world import MAX_INVENTORY_ROVER
 from app.models import RoverContext, StationContext, StoneInfo
-from app.world import (_spawn_abandoned_structures, _find_structure_at,
-                       _get_structure_positions, apply_structure_passive_effects,
-                       STRUCTURE_TYPES, STRUCTURE_SPAWN_RADIUS,
-                       BATTERY_COST_INVESTIGATE, BATTERY_COST_USE_REFINERY)
+from app.world import (
+    _spawn_abandoned_structures,
+    _find_structure_at,
+    _get_structure_positions,
+    apply_structure_passive_effects,
+    STRUCTURE_TYPES,
+    STRUCTURE_SPAWN_RADIUS,
+    BATTERY_COST_INVESTIGATE,
+    BATTERY_COST_USE_REFINERY,
+)
 
 
 def _make_vein(pos, grade="high", quantity=200, analyzed=False):
@@ -143,7 +149,9 @@ class TestExecuteAction(unittest.TestCase):
     def test_execute_move_drains_battery(self):
         result = execute_action("rover-mistral", "move", {"direction": "east"})
         self.assertTrue(result["ok"])
-        self.assertAlmostEqual(world.state["agents"]["rover-mistral"]["battery"], 1.0 - BATTERY_COST_MOVE)
+        self.assertAlmostEqual(
+            world.state["agents"]["rover-mistral"]["battery"], 1.0 - BATTERY_COST_MOVE
+        )
 
     def test_execute_move_negative_ok(self):
         """Infinite grid: moving to negative coords succeeds."""
@@ -481,7 +489,9 @@ class TestDig(unittest.TestCase):
 
     def test_dig_drains_battery(self):
         execute_action("rover-mistral", "dig", {})
-        self.assertAlmostEqual(world.state["agents"]["rover-mistral"]["battery"], 1.0 - BATTERY_COST_DIG)
+        self.assertAlmostEqual(
+            world.state["agents"]["rover-mistral"]["battery"], 1.0 - BATTERY_COST_DIG
+        )
 
     def test_dig_no_stone(self):
         world.state["stones"] = []
@@ -494,7 +504,9 @@ class TestDig(unittest.TestCase):
         result = execute_action("rover-mistral", "dig", {})
         self.assertFalse(result["ok"])
         self.assertIn("Not enough battery", result["error"])
-        self.assertAlmostEqual(world.state["agents"]["rover-mistral"]["battery"], BATTERY_COST_DIG * 0.5)
+        self.assertAlmostEqual(
+            world.state["agents"]["rover-mistral"]["battery"], BATTERY_COST_DIG * 0.5
+        )
 
     def test_dig_failed_no_drain(self):
         world.state["stones"] = []
@@ -614,7 +626,9 @@ class TestCharge(unittest.TestCase):
         charge_rover("rover-mistral")
         self.assertAlmostEqual(world.state["agents"]["rover-mistral"]["battery"], 0.1 + CHARGE_RATE)
         charge_rover("rover-mistral")
-        self.assertAlmostEqual(world.state["agents"]["rover-mistral"]["battery"], 0.1 + 2 * CHARGE_RATE)
+        self.assertAlmostEqual(
+            world.state["agents"]["rover-mistral"]["battery"], 0.1 + 2 * CHARGE_RATE
+        )
 
     def test_charge_rover_unknown_agent(self):
         result = charge_rover("rover-99")
@@ -649,16 +663,18 @@ class TestFogOfWar(unittest.TestCase):
         ]
         # Give drone an empty revealed so it doesn't interfere
         if "drone-mistral" in world.state["agents"]:
-            self._original_drone_revealed = world.state["agents"]["drone-mistral"].get("revealed", [])
+            self._original_drone_revealed = world.state["agents"]["drone-mistral"].get(
+                "revealed", []
+            )
             world.state["agents"]["drone-mistral"]["revealed"] = []
         self._original_stones = world.state.get("stones", [])
 
     def tearDown(self):
         world.state["stones"] = self._original_stones
         # Restore rover-mistral revealed
-        world.state["agents"]["rover-mistral"]["revealed"] = world.state["agents"]["rover-mistral"].get(
-            "revealed", []
-        )
+        world.state["agents"]["rover-mistral"]["revealed"] = world.state["agents"][
+            "rover-mistral"
+        ].get("revealed", [])
         if "drone-mistral" in world.state["agents"]:
             world.state["agents"]["drone-mistral"]["revealed"] = self._original_drone_revealed
 
@@ -1497,7 +1513,9 @@ class TestNotify(unittest.TestCase):
         )
 
     def test_notify_drone_success(self):
-        result = execute_action("drone-mistral", "notify", {"message": "High concentration detected"})
+        result = execute_action(
+            "drone-mistral", "notify", {"message": "High concentration detected"}
+        )
         self.assertTrue(result["ok"])
         self.assertEqual(result["position"], [3, 3])
         self.assertEqual(result["message"], "High concentration detected")
@@ -1560,7 +1578,9 @@ class TestWorldSetters(unittest.TestCase):
 
     def test_set_pending_commands_set_and_clear(self):
         set_pending_commands("rover-mistral", [{"name": "recall"}])
-        self.assertEqual(world.state["agents"]["rover-mistral"]["pending_commands"], [{"name": "recall"}])
+        self.assertEqual(
+            world.state["agents"]["rover-mistral"]["pending_commands"], [{"name": "recall"}]
+        )
         set_pending_commands("rover-mistral", None)
         self.assertNotIn("pending_commands", world.state["agents"]["rover-mistral"])
 
@@ -1569,6 +1589,7 @@ class TestWorldClass(unittest.TestCase):
     def test_singleton_wraps_module_world(self):
         """Module-level `world` singleton is the canonical instance."""
         from app.world import world as w
+
         self.assertIs(w.state, world.state)
 
     def test_get_agent(self):
@@ -1592,7 +1613,9 @@ class TestWorldClass(unittest.TestCase):
         self.assertEqual(world.state["agents"]["rover-mistral"]["last_context"], "ctx-via-class")
 
         world.set_pending_commands("rover-mistral", [{"name": "test"}])
-        self.assertEqual(world.state["agents"]["rover-mistral"]["pending_commands"], [{"name": "test"}])
+        self.assertEqual(
+            world.state["agents"]["rover-mistral"]["pending_commands"], [{"name": "test"}]
+        )
         world.set_pending_commands("rover-mistral", None)
         self.assertNotIn("pending_commands", world.state["agents"]["rover-mistral"])
 
@@ -1602,6 +1625,7 @@ class TestWorldClass(unittest.TestCase):
     def test_fresh_instance_independent(self):
         """A World() with no args gets its own state, independent of the singleton."""
         from app.world import World
+
         w2 = World()
         w2.set_agent_model("rover-mistral", "independent-model")
         self.assertNotEqual(
@@ -1647,7 +1671,13 @@ class TestSpawnStructures(unittest.TestCase):
         result = _spawn_abandoned_structures(rng)
         self.assertEqual(len(result), 5)
         types_spawned = {s["type"] for s in result}
-        expected = {"refinery", "solar_panel_structure", "accumulator", "broken_hauler", "broken_manipulator"}
+        expected = {
+            "refinery",
+            "solar_panel_structure",
+            "accumulator",
+            "broken_hauler",
+            "broken_manipulator",
+        }
         self.assertEqual(types_spawned, expected)
 
     def test_within_spawn_radius(self):
@@ -1657,8 +1687,11 @@ class TestSpawnStructures(unittest.TestCase):
         for s in result:
             x, y = s["position"]
             dist = abs(x) + abs(y)  # Manhattan from (0,0)
-            self.assertLessEqual(dist, STRUCTURE_SPAWN_RADIUS,
-                f"{s['type']} at ({x},{y}) has Manhattan distance {dist} > {STRUCTURE_SPAWN_RADIUS}")
+            self.assertLessEqual(
+                dist,
+                STRUCTURE_SPAWN_RADIUS,
+                f"{s['type']} at ({x},{y}) has Manhattan distance {dist} > {STRUCTURE_SPAWN_RADIUS}",
+            )
 
     def test_no_structure_at_station(self):
         world.state["structures"] = []
@@ -1672,7 +1705,9 @@ class TestSpawnStructures(unittest.TestCase):
         rng = random.Random(123)
         result = _spawn_abandoned_structures(rng)
         positions = [tuple(s["position"]) for s in result]
-        self.assertEqual(len(positions), len(set(positions)), "Structures should not share positions")
+        self.assertEqual(
+            len(positions), len(set(positions)), "Structures should not share positions"
+        )
 
     def test_structure_shape(self):
         world.state["structures"] = []
@@ -1710,7 +1745,8 @@ class TestStructureObstacles(unittest.TestCase):
         self._orig_structures = world.state.get("structures", [])[:]
         world.state["agents"]["rover-mistral"]["battery"] = 1.0
         world.state["agents"]["rover-mistral"]["mission"] = {
-            "objective": "Test", "plan": [],
+            "objective": "Test",
+            "plan": [],
         }
 
     def tearDown(self):
@@ -1833,7 +1869,9 @@ class TestUseRefinery(unittest.TestCase):
         world.state["mission"] = self._orig_mission
 
     def test_refine_basalt(self):
-        world.state["structures"] = [_make_structure("refinery", pos=(5, 6), explored=True, active=True)]
+        world.state["structures"] = [
+            _make_structure("refinery", pos=(5, 6), explored=True, active=True)
+        ]
         world.state["agents"]["rover-mistral"]["inventory"] = [
             {"type": "basalt_vein", "grade": "high", "quantity": 200}
         ]
@@ -1844,7 +1882,9 @@ class TestUseRefinery(unittest.TestCase):
         self.assertEqual(result["bonus"], 100)
 
     def test_refine_marks_item_refined(self):
-        world.state["structures"] = [_make_structure("refinery", pos=(5, 6), explored=True, active=True)]
+        world.state["structures"] = [
+            _make_structure("refinery", pos=(5, 6), explored=True, active=True)
+        ]
         world.state["agents"]["rover-mistral"]["inventory"] = [
             {"type": "basalt_vein", "grade": "medium", "quantity": 100}
         ]
@@ -1854,14 +1894,18 @@ class TestUseRefinery(unittest.TestCase):
         self.assertEqual(item["quantity"], 150)  # 100 + 50%
 
     def test_refine_no_basalt(self):
-        world.state["structures"] = [_make_structure("refinery", pos=(5, 6), explored=True, active=True)]
+        world.state["structures"] = [
+            _make_structure("refinery", pos=(5, 6), explored=True, active=True)
+        ]
         world.state["agents"]["rover-mistral"]["inventory"] = []
         result = execute_action("rover-mistral", "use_refinery", {})
         self.assertFalse(result["ok"])
         self.assertIn("basalt", result["error"].lower())
 
     def test_refine_not_active_refinery(self):
-        world.state["structures"] = [_make_structure("refinery", pos=(5, 6), explored=False, active=False)]
+        world.state["structures"] = [
+            _make_structure("refinery", pos=(5, 6), explored=False, active=False)
+        ]
         world.state["agents"]["rover-mistral"]["inventory"] = [
             {"type": "basalt_vein", "grade": "high", "quantity": 200}
         ]
@@ -1870,7 +1914,9 @@ class TestUseRefinery(unittest.TestCase):
         self.assertIn("refinery", result["error"].lower())
 
     def test_refine_too_far(self):
-        world.state["structures"] = [_make_structure("refinery", pos=(8, 5), explored=True, active=True)]
+        world.state["structures"] = [
+            _make_structure("refinery", pos=(8, 5), explored=True, active=True)
+        ]
         world.state["agents"]["rover-mistral"]["inventory"] = [
             {"type": "basalt_vein", "grade": "high", "quantity": 200}
         ]
@@ -1878,7 +1924,9 @@ class TestUseRefinery(unittest.TestCase):
         self.assertFalse(result["ok"])
 
     def test_refine_battery_cost(self):
-        world.state["structures"] = [_make_structure("refinery", pos=(5, 6), explored=True, active=True)]
+        world.state["structures"] = [
+            _make_structure("refinery", pos=(5, 6), explored=True, active=True)
+        ]
         world.state["agents"]["rover-mistral"]["inventory"] = [
             {"type": "basalt_vein", "grade": "high", "quantity": 200}
         ]
@@ -1888,7 +1936,9 @@ class TestUseRefinery(unittest.TestCase):
         self.assertAlmostEqual(before - after, BATTERY_COST_USE_REFINERY, places=5)
 
     def test_refine_low_battery(self):
-        world.state["structures"] = [_make_structure("refinery", pos=(5, 6), explored=True, active=True)]
+        world.state["structures"] = [
+            _make_structure("refinery", pos=(5, 6), explored=True, active=True)
+        ]
         world.state["agents"]["rover-mistral"]["inventory"] = [
             {"type": "basalt_vein", "grade": "high", "quantity": 200}
         ]

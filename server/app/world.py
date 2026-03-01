@@ -7,7 +7,7 @@ import random
 
 from .config import settings
 from .models import RoverAgentState, RoverWorldView, RoverComputed, RoverContext
-from .models import AgentMission, InventoryItem, StoneInfo, StructureInfo
+from .models import AgentMission, InventoryItem, StoneInfo
 from .models import RoverSummary, StationContext
 
 logger = logging.getLogger(__name__)
@@ -121,6 +121,7 @@ STRUCTURE_SPAWN_RADIUS = 10  # max Manhattan distance from base (0,0)
 BATTERY_COST_INVESTIGATE = 2 / FUEL_CAPACITY_ROVER  # 2 fuel units
 BATTERY_COST_USE_REFINERY = 5 / FUEL_CAPACITY_ROVER  # 5 fuel units
 
+
 def _random_free_pos(occupied, rng=None, cx=0, cy=0):
     """Pick a random position within a chunk area not in `occupied`."""
     r = rng or random
@@ -155,18 +156,24 @@ def _spawn_abandoned_structures(rng=None):
             if (x, y) in occupied:
                 continue
             occupied.add((x, y))
-            structures.append({
-                "type": template["type"],
-                "category": template["category"],
-                "position": [x, y],
-                "explored": False,
-                "active": False,
-                "description": template["description"],
-                "contents": dict(template["contents"]),
-            })
+            structures.append(
+                {
+                    "type": template["type"],
+                    "category": template["category"],
+                    "position": [x, y],
+                    "explored": False,
+                    "active": False,
+                    "description": template["description"],
+                    "contents": dict(template["contents"]),
+                }
+            )
             break
     WORLD.setdefault("structures", []).extend(structures)
-    logger.info("Spawned %d abandoned structures within %d tiles of base", len(structures), STRUCTURE_SPAWN_RADIUS)
+    logger.info(
+        "Spawned %d abandoned structures within %d tiles of base",
+        len(structures),
+        STRUCTURE_SPAWN_RADIUS,
+    )
     return structures
 
 
@@ -181,6 +188,7 @@ def _find_structure_at(x, y):
 def _get_structure_positions():
     """Return set of (x, y) tuples for all structure positions."""
     return {tuple(s["position"]) for s in WORLD.get("structures", [])}
+
 
 # --------------- Chunk-based procedural generation ---------------
 
@@ -342,16 +350,21 @@ def _update_bounds(x, y):
 
 def _tools_for_ui(tool_schemas):
     """Extract {name, description} from Mistral tool schemas for the UI."""
-    return [{"name": t["function"]["name"], "description": t["function"]["description"]} for t in tool_schemas]
+    return [
+        {"name": t["function"]["name"], "description": t["function"]["description"]}
+        for t in tool_schemas
+    ]
 
 
 def _rover_tools_for_ui():
     from .agent import ROVER_TOOLS
+
     return _tools_for_ui(ROVER_TOOLS)
 
 
 def _drone_tools_for_ui():
     from .agent import DRONE_TOOLS
+
     return _tools_for_ui(DRONE_TOOLS)
 
 
@@ -427,6 +440,7 @@ def _init_world_chunks():
             _ensure_chunk(cx, cy)
     # Spawn abandoned structures near base after chunks exist
     _spawn_abandoned_structures()
+
 
 WORLD = _build_initial_world()
 _init_world_chunks()
@@ -944,14 +958,20 @@ def _execute_investigate_structure(agent_id, agent, params):
         return {"ok": False, "error": "No structure within reach (must be adjacent, 1 tile)"}
 
     if target["explored"]:
-        return {"ok": False, "error": f"{target['type'].replace('_', ' ').title()} already investigated"}
+        return {
+            "ok": False,
+            "error": f"{target['type'].replace('_', ' ').title()} already investigated",
+        }
 
     agent["battery"] = max(0.0, agent["battery"] - BATTERY_COST_INVESTIGATE)
     target["explored"] = True
     target["active"] = True
     logger.info(
         "Agent %s investigated %s at (%d,%d)",
-        agent_id, target["type"], target["position"][0], target["position"][1],
+        agent_id,
+        target["type"],
+        target["position"][0],
+        target["position"][1],
     )
     record_memory(
         agent_id,
@@ -986,7 +1006,10 @@ def _execute_use_refinery(agent_id, agent):
             break
 
     if refinery is None:
-        return {"ok": False, "error": "No active refinery within reach (must investigate first and be adjacent)"}
+        return {
+            "ok": False,
+            "error": "No active refinery within reach (must investigate first and be adjacent)",
+        }
 
     inventory = agent.get("inventory", [])
     basalt_items = [i for i in inventory if i.get("type") == "basalt_vein"]
@@ -1003,7 +1026,10 @@ def _execute_use_refinery(agent_id, agent):
     agent["battery"] = max(0.0, agent["battery"] - BATTERY_COST_USE_REFINERY)
     logger.info(
         "Agent %s refined basalt at refinery: %d -> %d (bonus +%d)",
-        agent_id, original_qty, item["quantity"], bonus,
+        agent_id,
+        original_qty,
+        item["quantity"],
+        bonus,
     )
     record_memory(
         agent_id,
@@ -1047,7 +1073,12 @@ def apply_structure_passive_effects():
                     if agent["battery"] > old:
                         logger.debug(
                             "Solar panel structure at (%d,%d) charged agent at (%d,%d): %.0f%% -> %.0f%%",
-                            sx, sy, ax, ay, old * 100, agent["battery"] * 100,
+                            sx,
+                            sy,
+                            ax,
+                            ay,
+                            old * 100,
+                            agent["battery"] * 100,
                         )
 
         elif structure["type"] == "accumulator":
@@ -1066,8 +1097,14 @@ def apply_structure_passive_effects():
                     if agent["battery"] > old:
                         logger.debug(
                             "Accumulator at (%d,%d) recharged agent at (%d,%d): %.0f%% -> %.0f%%",
-                            sx, sy, ax, ay, old * 100, agent["battery"] * 100,
+                            sx,
+                            sy,
+                            ax,
+                            ay,
+                            old * 100,
+                            agent["battery"] * 100,
                         )
+
 
 def check_mission_status():
     """Update mission collected_quantity and detect success/failure.
@@ -1330,7 +1367,9 @@ def _update_rover_tasks(agent_id, agent):
             if not structure.get("explored"):
                 tasks.append(f"Investigate {label} at ({sp[0]},{sp[1]})")
             elif structure["type"] == "refinery" and structure.get("active"):
-                basalt_in_inv = any(i.get("type") == "basalt_vein" and not i.get("refined") for i in inventory)
+                basalt_in_inv = any(
+                    i.get("type") == "basalt_vein" and not i.get("refined") for i in inventory
+                )
                 if basalt_in_inv:
                     tasks.append(f"Use Refinery at ({sp[0]},{sp[1]}) to refine basalt")
 
@@ -1445,7 +1484,9 @@ def observe_rover(agent_id):
             hint = direction_hint(sp[0] - x, sp[1] - y)
             status = "explored" if structure.get("explored") else "unexplored"
             label = structure["type"].replace("_", " ").title()
-            visible_structures.append(f"{label} ({status}) at ({sp[0]},{sp[1]}) — {hint}, {dist} tiles")
+            visible_structures.append(
+                f"{label} ({status}) at ({sp[0]},{sp[1]}) — {hint}, {dist} tiles"
+            )
 
     # Mission info
     world_mission = WORLD.get("mission", {})

@@ -21,6 +21,7 @@ class StoneInfo(BaseModel):
     quantity: int = 0
     analyzed: bool = False
 
+
 class StructureInfo(BaseModel):
     type: str
     category: str
