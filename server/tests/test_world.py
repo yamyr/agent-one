@@ -1297,6 +1297,7 @@ class TestObserveRover(unittest.TestCase):
         for d in ["north", "south", "east", "west"]:
             self.assertIn(d, ctx.computed.unvisited_dirs, f"{d} missing at (-5,-10)")
 
+
 class TestObserveStation(unittest.TestCase):
     def setUp(self):
         world.state["agents"]["rover-mistral"]["position"] = [3, 4]
