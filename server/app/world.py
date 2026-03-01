@@ -1729,35 +1729,53 @@ def _execute_build_gas_plant(agent_id, agent, params=None):
 
 
 def _execute_upgrade_base(agent_id, agent, params=None):
+    """Upgrade the station using station_resources (water + gas)."""
     station = WORLD["agents"].get("station")
     if station is None:
         return {"ok": False, "error": "No station in world"}
     if agent["position"] != station["position"]:
         return {"ok": False, "error": "Must be at station to upgrade base"}
 
-    inventory = agent.get("inventory", [])
-    ice_idx = next((i for i, item in enumerate(inventory) if item.get("type") == "ice"), None)
-    material_idx = next(
-        (i for i, item in enumerate(inventory) if item.get("type") in ("basalt_vein", "materials")),
-        None,
+    params = params or {}
+    upgrade_name = params.get("upgrade")
+    if upgrade_name not in UPGRADES:
+        return {"ok": False, "error": f"Unknown upgrade: {upgrade_name}"}
+
+    cfg = UPGRADES[upgrade_name]
+    current_level = _get_upgrade_level(upgrade_name)
+    max_level = cfg.get("max_level", UPGRADE_MAX_LEVEL)
+    if current_level >= max_level:
+        return {"ok": False, "error": f"{upgrade_name} already at max level {max_level}"}
+
+    station_resources = WORLD.setdefault("station_resources", {"water": 0, "gas": 0, "parts": []})
+    water_cost = int(cfg.get("water", 0))
+    gas_cost = int(cfg.get("gas", 0))
+    if int(station_resources.get("water", 0)) < water_cost:
+        return {"ok": False, "error": f"Not enough water (need {water_cost})"}
+    if int(station_resources.get("gas", 0)) < gas_cost:
+        return {"ok": False, "error": f"Not enough gas (need {gas_cost})"}
+
+    station_resources["water"] = int(station_resources.get("water", 0)) - water_cost
+    station_resources["gas"] = int(station_resources.get("gas", 0)) - gas_cost
+
+    upgrades = WORLD.setdefault("station_upgrades", {})
+    new_level = current_level + 1
+    upgrades[upgrade_name] = new_level
+
+    logger.info(
+        "Base upgrade %s -> level %d (cost: %dw/%dg)",
+        upgrade_name,
+        new_level,
+        water_cost,
+        gas_cost,
     )
-    if ice_idx is None or material_idx is None:
-        return {"ok": False, "error": "Need at least one ice item and one material item"}
-
-    for idx in sorted([ice_idx, material_idx], reverse=True):
-        del inventory[idx]
-
-    upgrades = WORLD.setdefault("station_upgrades", {"charge_bonus": 0.0, "upgrade_count": 0})
-    upgrades["upgrade_count"] = int(upgrades.get("upgrade_count", 0)) + 1
-    upgrades["charge_bonus"] = float(upgrades.get("charge_bonus", 0.0)) + 0.05
-    new_charge_rate = CHARGE_RATE * (1.0 + float(upgrades["charge_bonus"]))
 
     return {
         "ok": True,
-        "upgrade_count": upgrades["upgrade_count"],
-        "charge_bonus": upgrades["charge_bonus"],
-        "new_charge_rate": new_charge_rate,
-        "inventory_count": len(inventory),
+        "upgrade": upgrade_name,
+        "new_level": new_level,
+        "cost": {"water": water_cost, "gas": gas_cost},
+        "description": cfg.get("description", ""),
     }
 
 
@@ -1804,6 +1822,8 @@ def _execute_charge(agent_id, agent):
         "battery_after": agent["battery"],
         "charge_rate": charge_rate,
     }
+
+
 def charge_agent(agent_id):
     """Station-initiated charge: recharge any non-station agent co-located with the station."""
     agent = WORLD["agents"].get(agent_id)

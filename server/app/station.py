@@ -118,9 +118,9 @@ def _build_world_summary(context: StationContext):
             f"Mission status: {context.mission_status} ({context.collected_quantity}/{context.target_quantity})"
         )
     # Resource totals
-    if hasattr(context, 'water_collected') or hasattr(context, 'gas_collected'):
-        water = getattr(context, 'water_collected', 0)
-        gas = getattr(context, 'gas_collected', 0)
+    if hasattr(context, "water_collected") or hasattr(context, "gas_collected"):
+        water = getattr(context, "water_collected", 0)
+        gas = getattr(context, "gas_collected", 0)
         if water > 0 or gas > 0:
             lines.append(f"Resources: water={water}, gas={gas}")
     for rover in context.rovers:

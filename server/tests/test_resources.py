@@ -11,7 +11,6 @@ from app.world import (
     _execute_recycle_ice,
     _execute_upgrade_base,
 )
-from app.world import FUEL_CAPACITY_ROVER
 
 
 def _reset_agent(agent_id="rover-mistral", pos=None, battery=1.0):
@@ -283,7 +282,7 @@ class TestGasProduction(unittest.TestCase):
 
     def test_gas_not_produced_on_idle_geyser(self):
         """Gas plant does NOT produce gas when geyser is idle."""
-        geyser = _place_geyser([10, 10], state="idle")
+        _place_geyser([10, 10], state="idle")
         geyser_idx = len(WORLD["obstacles"]) - 1
         WORLD["gas_plants"].append(
             {
