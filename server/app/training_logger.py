@@ -7,6 +7,7 @@ All writes are fire-and-forget (logged errors, never blocks simulation).
 from __future__ import annotations
 
 import logging
+import json
 import uuid
 from datetime import datetime, timezone
 from typing import Any
@@ -483,7 +484,6 @@ def _extract_count(result) -> int:
 
 def _safe_json_str(obj: Any) -> str:
     """Convert to JSON string, handling non-serializable objects gracefully."""
-    import json
 
     try:
         return json.dumps(obj, ensure_ascii=False, default=str)
