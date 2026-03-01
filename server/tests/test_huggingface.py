@@ -147,7 +147,9 @@ class TestHuggingFaceRoverReasoner(unittest.TestCase):
         agent._client = mock_client
 
         mock_response = MagicMock()
-        mock_client.chat_completion.side_effect = HfHubHTTPError("API error", response=mock_response)
+        mock_client.chat_completion.side_effect = HfHubHTTPError(
+            "API error", response=mock_response
+        )
 
         turn = agent.run_turn()
 
@@ -283,7 +285,9 @@ class TestHuggingFaceDroneAgent(unittest.TestCase):
         agent._client = mock_client
 
         mock_response = MagicMock()
-        mock_client.chat_completion.side_effect = HfHubHTTPError("API error", response=mock_response)
+        mock_client.chat_completion.side_effect = HfHubHTTPError(
+            "API error", response=mock_response
+        )
 
         turn = agent.run_turn()
 
