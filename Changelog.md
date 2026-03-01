@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.4.0](https://github.com/mhack-agent-one/agent-one/compare/v0.3.0...v0.4.0) (2026-03-01)
+
+
+### Features
+
+* add HuggingFace Inference API as alternative LLM provider ([#182](https://github.com/mhack-agent-one/agent-one/issues/182)) ([937e572](https://github.com/mhack-agent-one/agent-one/commit/937e572570abb845804bddd9a17fa5789159deba))
+* add landing page with i18n, routing, and Three.js Mars globe ([#206](https://github.com/mhack-agent-one/agent-one/issues/206)) ([e174c49](https://github.com/mhack-agent-one/agent-one/commit/e174c49f71a644bd00fff42fea5f62532821760b))
+
+
+### Bug Fixes
+
+* address remaining bugs from stale PRs ([#110](https://github.com/mhack-agent-one/agent-one/issues/110), [#152](https://github.com/mhack-agent-one/agent-one/issues/152), [#81](https://github.com/mhack-agent-one/agent-one/issues/81), [#78](https://github.com/mhack-agent-one/agent-one/issues/78)) ([#211](https://github.com/mhack-agent-one/agent-one/issues/211)) ([755e227](https://github.com/mhack-agent-one/agent-one/commit/755e2274b4f3a10e80c0de827066dc75ddc3a005))
+* fix remaining charge_rover references to charge_agent ([#68](https://github.com/mhack-agent-one/agent-one/issues/68)) ([8afa9f3](https://github.com/mhack-agent-one/agent-one/commit/8afa9f3639e180022d93280481659a02dc0f8731))
+* fix remaining charge_rover references to charge_agent ([#68](https://github.com/mhack-agent-one/agent-one/issues/68)) ([a4bbebe](https://github.com/mhack-agent-one/agent-one/commit/a4bbebe0e08d3f65b824c6a76afe5e70f9aab60f))
+* **narrator:** use async streaming to prevent event loop blocking ([#203](https://github.com/mhack-agent-one/agent-one/issues/203)) ([cbe5b7b](https://github.com/mhack-agent-one/agent-one/commit/cbe5b7ba9300b6a4dfd79f4370d81c1381670ae3))
+* **ui:** preserve event log and simulation state on WebSocket reconnect ([#72](https://github.com/mhack-agent-one/agent-one/issues/72)) ([#209](https://github.com/mhack-agent-one/agent-one/issues/209)) ([14e8f0a](https://github.com/mhack-agent-one/agent-one/commit/14e8f0a81ba636ead1c62bc2c7a02cecf9d15979)), closes [#87](https://github.com/mhack-agent-one/agent-one/issues/87)
+* use Settings.drone_turn_interval_seconds instead of hardcoded 2.0 ([#98](https://github.com/mhack-agent-one/agent-one/issues/98)) ([#208](https://github.com/mhack-agent-one/agent-one/issues/208)) ([51f29ea](https://github.com/mhack-agent-one/agent-one/commit/51f29eadf663f8c1887c174ea00e000bb6922dde))
+
 ## [0.3.0](https://github.com/mhack-agent-one/agent-one/compare/v0.2.0...v0.3.0) (2026-03-01)
 
 
