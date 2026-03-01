@@ -124,8 +124,8 @@ Add a **Voice Commander** system that lets a human "Commander" speak voice comma
 - [x] Update `Changelog.md` with voice commander entry
 - [x] Run full test suite (`rut tests/`) — 319 passed
 - [x] Run `lsp_diagnostics` on all modified/new files
-- [ ] Commit with `Co-Authored-By: agent-one team <agent-one@yanok.ai>`
-- [ ] Push and create PR following `.github/PULL_REQUEST_TEMPLATE.md`
+- [x] Commit with `Co-Authored-By: agent-one team <agent-one@yanok.ai>`
+- [x] Push and create PR following `.github/PULL_REQUEST_TEMPLATE.md` — PR #194
 
 ---
 
