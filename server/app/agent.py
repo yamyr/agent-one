@@ -1216,7 +1216,7 @@ class RoverLoop(BaseAgent):
         if current_tick % 20 == 0:
             from .world import summarize_memories, record_strategic_insight
 
-            prompt = summarize_memories(self.rover_id)
+            prompt = summarize_memories(self.agent_id)
             if prompt:
                 try:
                     client = Mistral(api_key=settings.mistral_api_key)
@@ -1227,18 +1227,18 @@ class RoverLoop(BaseAgent):
                         max_tokens=150,
                     )
                     insight_text = resp.choices[0].message.content.strip()
-                    record_strategic_insight(self.rover_id, insight_text, current_tick)
-                    await broadcaster.broadcast(
+                    record_strategic_insight(self.agent_id, insight_text, current_tick)
+                    await broadcaster.send(
                         {
                             "type": "event",
                             "name": "insight",
-                            "source": self.rover_id,
+                            "source": self.agent_id,
                             "payload": {"text": insight_text},
                         }
                     )
-                    logger.info("Strategic insight for %s: %s", self.rover_id, insight_text)
+                    logger.info("Strategic insight for %s: %s", self.agent_id, insight_text)
                 except Exception as exc:
-                    logger.warning("Memory summarization failed for %s: %s", self.rover_id, exc)
+                    logger.warning("Memory summarization failed for %s: %s", self.agent_id, exc)
 
         # Auto-charge rover when it arrives at station
         rover = self._world.get_agents().get(self.agent_id)

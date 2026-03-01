@@ -25,6 +25,7 @@
 
 ### Bug Fixes
 
+* **agent:** fix PR #145 memory summarization crashes — `self.rover_id` → `self.agent_id` (5 places), `broadcaster.broadcast()` → `broadcaster.send()` ([#210](https://github.com/mhack-agent-one/agent-one/issues/210))
 * address remaining bugs from stale PRs ([#110](https://github.com/mhack-agent-one/agent-one/issues/110), [#152](https://github.com/mhack-agent-one/agent-one/issues/152), [#81](https://github.com/mhack-agent-one/agent-one/issues/81), [#78](https://github.com/mhack-agent-one/agent-one/issues/78)) ([#211](https://github.com/mhack-agent-one/agent-one/issues/211)) ([755e227](https://github.com/mhack-agent-one/agent-one/commit/755e2274b4f3a10e80c0de827066dc75ddc3a005))
 * fix remaining charge_rover references to charge_agent ([#68](https://github.com/mhack-agent-one/agent-one/issues/68)) ([8afa9f3](https://github.com/mhack-agent-one/agent-one/commit/8afa9f3639e180022d93280481659a02dc0f8731))
 * fix remaining charge_rover references to charge_agent ([#68](https://github.com/mhack-agent-one/agent-one/issues/68)) ([a4bbebe](https://github.com/mhack-agent-one/agent-one/commit/a4bbebe0e08d3f65b824c6a76afe5e70f9aab60f))
