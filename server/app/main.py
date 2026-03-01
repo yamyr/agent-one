@@ -42,7 +42,7 @@ AGENT_MAP = {
     "rover-mistral": lambda: RoverMistralLoop(
         agent_id="rover-mistral", interval=settings.llm_turn_interval_seconds
     ),
-    "rover-2": lambda: RoverMistralLoop(
+    "rover-2": lambda: RoverHuggingFaceLoop(
         agent_id="rover-2", interval=settings.llm_turn_interval_seconds
     ),
     "drone-mistral": lambda: DroneMistralLoop(interval=settings.drone_turn_interval_seconds),

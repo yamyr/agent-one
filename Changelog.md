@@ -8,6 +8,8 @@
 * **ui:** deposit events shown in EventLog with 📦 icon and toast notifications
 * **agent:** rover prompt now explains auto-delivery and shows delivered/target progress
 * **world:** task planner prioritizes "Return to station" when inventory is full
+* **agent:** re-enable rover-2 powered by HuggingFace Inference API (Qwen/Qwen3-32B) — separate LLM provider from rover-mistral to avoid Mistral rate limits
+* **config:** upgrade default HuggingFace model from Qwen2.5-72B to Qwen3-32B
 
 ### Bug Fixes
 
