@@ -140,6 +140,7 @@ async def voice_command(audio: UploadFile):
     audio_bytes = await audio.read()
     return await voice_commander.handle_voice_command(audio_bytes, audio.filename or "audio.webm")
 
+
 # Serve Vue static files (must be after all API routes)
 _ui_dir = Path(__file__).resolve().parent.parent / "ui_dist"
 if _ui_dir.is_dir():

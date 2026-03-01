@@ -46,4 +46,5 @@ class Settings(BaseSettings):
     voxtral_model: str = "voxtral-mini-latest"
     voice_command_enabled: bool = True
 
+
 settings = Settings()

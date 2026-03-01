@@ -195,9 +195,7 @@ def _build_narration_prompt(events: list[dict], world_summary: str) -> str:
             # Voice command from the cockpit commander
             if name in ("voice_command", "voice_transcription"):
                 text = payload.get("text", "")
-                lines.append(
-                    f'- ⚡ THE COMMANDER SPEAKS: "{text}" — React to this order!'
-                )
+                lines.append(f'- ⚡ THE COMMANDER SPEAKS: "{text}" — React to this order!')
             else:
                 lines.append(f"- {source}: {name} — {payload}")
 
