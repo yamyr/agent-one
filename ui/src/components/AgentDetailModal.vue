@@ -15,12 +15,12 @@ const props = defineProps({
 const emit = defineEmits(['close'])
 
 function position() {
-  if (!props.agent) return '?'
+  if (!props.agent?.position) return '?'
   return `(${props.agent.position[0]}, ${props.agent.position[1]})`
 }
 
 function batteryPct() {
-  if (!props.agent) return '?'
+  if (!props.agent || props.agent.battery == null) return '?'
   return Math.round(props.agent.battery * 100) + '%'
 }
 </script>

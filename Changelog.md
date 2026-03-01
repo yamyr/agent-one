@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+### Bug Fixes
+
+* **ui:** guard AgentDetailModal against null `mission`, `visited`, `position`, and `battery` properties ([#89](https://github.com/mhack-agent-one/agent-one/issues/89))
+  - `position()` and `batteryPct()` now return `'?'` when data is missing instead of crashing
+  - Prevents `Cannot read properties of undefined` runtime errors for station agent or agents between missions
+
+### Testing
+
+* **ui:** add Vitest + @vue/test-utils test infrastructure with 15 tests for AgentDetailModal null safety
+* **ci:** add `npm run test` step to `ui-lint-build` job
+
 ### Documentation
 
 * **roadmap:** update ROADMAP.md milestone checkboxes to reflect current implementation state ([#74](https://github.com/mhack-agent-one/agent-one/issues/74))
