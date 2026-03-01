@@ -9,6 +9,7 @@ RUN npm run build
 # Stage 2: Python backend + built UI
 FROM python:3.14-slim
 WORKDIR /app
+ENV PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1
 
 # Install uv
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
