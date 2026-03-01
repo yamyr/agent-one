@@ -11,13 +11,23 @@ from app.world import AGENT_STARTS
 from app.world import abort_mission, all_agents_at_station
 from app.world import assign_mission, _cells_in_radius, record_memory, MEMORY_MAX
 from app.world import _random_free_pos, CHUNK_SIZE
-from app.world import direction_hint, best_drone_hotspot
+from app.world import direction_hint, best_drone_hotspot, update_tasks
 from app.world import summarize_memories, record_strategic_insight
 from app.world import set_agent_model, set_agent_last_context, set_pending_commands
 from app.world import observe_rover, observe_station
 from app.world import VEIN_GRADES, VEIN_WEIGHTS, VEIN_QUANTITY_RANGES, TARGET_QUANTITY
 from app.world import MAX_INVENTORY_ROVER
 from app.models import RoverContext, StationContext, StoneInfo
+from app.world import (
+    _spawn_abandoned_structures,
+    _find_structure_at,
+    _get_structure_positions,
+    apply_structure_passive_effects,
+    STRUCTURE_TYPES,
+    STRUCTURE_SPAWN_RADIUS,
+    BATTERY_COST_INVESTIGATE,
+    BATTERY_COST_USE_REFINERY,
+)
 
 
 def _make_vein(pos, grade="high", quantity=200, analyzed=False):
@@ -1026,6 +1036,70 @@ class TestDirectionHint(unittest.TestCase):
         self.assertEqual(direction_hint(0, 0), "here")
 
 
+class TestUpdateTasks(unittest.TestCase):
+    def setUp(self):
+        self._orig_pos = world.state["agents"]["rover-mistral"]["position"][:]
+        self._orig_inv = world.state["agents"]["rover-mistral"].get("inventory", [])[:]
+        self._orig_stones = world.state.get("stones", [])[:]
+        self._orig_structures = world.state.get("structures", [])[:]
+        self._orig_tasks = world.state["agents"]["rover-mistral"].get("tasks", [])[:]
+        self._orig_mission = world.state["mission"].copy()
+        world.state["agents"]["rover-mistral"]["position"] = [5, 5]
+        world.state["agents"]["rover-mistral"]["inventory"] = []
+        world.state["agents"]["rover-mistral"]["tasks"] = []
+        world.state["mission"]["status"] = "running"
+        world.state["mission"]["collected_quantity"] = 0
+        world.state["structures"] = []
+
+    def tearDown(self):
+        world.state["agents"]["rover-mistral"]["position"] = self._orig_pos
+        world.state["agents"]["rover-mistral"]["inventory"] = self._orig_inv
+        world.state["stones"] = self._orig_stones
+        world.state["agents"]["rover-mistral"]["tasks"] = self._orig_tasks
+        world.state["mission"] = self._orig_mission
+        world.state["structures"] = self._orig_structures
+
+    def test_explore_when_no_stones(self):
+        world.state["stones"] = []
+        update_tasks("rover-mistral")
+        tasks = world.state["agents"]["rover-mistral"]["tasks"]
+        self.assertEqual(len(tasks), 1)
+        self.assertIn("Explore", tasks[0])
+
+    def test_analyze_when_stone_unanalyzed(self):
+        world.state["stones"] = [_make_vein([5, 5])]
+        update_tasks("rover-mistral")
+        tasks = world.state["agents"]["rover-mistral"]["tasks"]
+        self.assertTrue(any("Analyze" in t for t in tasks))
+
+    def test_dig_when_stone_analyzed(self):
+        world.state["stones"] = [_make_vein([5, 5], grade="high", quantity=200, analyzed=True)]
+        update_tasks("rover-mistral")
+        tasks = world.state["agents"]["rover-mistral"]["tasks"]
+        self.assertTrue(any("Dig" in t for t in tasks))
+
+    def test_navigate_to_known_stone(self):
+        world.state["stones"] = [_make_vein([8, 5])]
+        agent = world.state["agents"]["rover-mistral"]
+        if [8, 5] not in agent.get("revealed", []):
+            agent.setdefault("revealed", []).append([8, 5])
+        update_tasks("rover-mistral")
+        tasks = world.state["agents"]["rover-mistral"]["tasks"]
+        self.assertEqual(len(tasks), 1)
+        self.assertIn("Navigate", tasks[0])
+        self.assertIn("east", tasks[0])
+
+    def test_goal_present_when_carrying_basalt(self):
+        """Tasks should show an actionable goal even when inventory has items."""
+        world.state["agents"]["rover-mistral"]["inventory"] = [
+            {"type": "basalt_vein", "grade": "high", "quantity": 200}
+        ]
+        update_tasks("rover-mistral")
+        tasks = world.state["agents"]["rover-mistral"]["tasks"]
+        self.assertTrue(len(tasks) >= 1)
+        self.assertFalse(any("Inventory" in t for t in tasks))
+
+
 class TestObserveRover(unittest.TestCase):
     def setUp(self):
         agent = world.state["agents"]["rover-mistral"]
@@ -1602,6 +1676,476 @@ class TestWorldClass(unittest.TestCase):
             world.state["agents"]["rover-mistral"].get("model"),
             "independent-model",
         )
+
+
+# ─── Abandoned Structure Tests ───────────────────────────────────────────────
+
+
+def _make_structure(stype="refinery", pos=(3, 3), explored=False, active=False):
+    """Helper to build a structure dict for tests."""
+    cat = "building" if stype in ("refinery", "solar_panel_structure", "accumulator") else "vehicle"
+    contents = {}
+    for t in STRUCTURE_TYPES:
+        if t["type"] == stype:
+            contents = dict(t["contents"])
+            break
+    return {
+        "type": stype,
+        "category": cat,
+        "position": list(pos),
+        "explored": explored,
+        "active": active,
+        "description": f"Test {stype}",
+        "contents": contents,
+    }
+
+
+class TestSpawnStructures(unittest.TestCase):
+    """Test that abandoned structures spawn correctly."""
+
+    def setUp(self):
+        self._orig_structures = world.state.get("structures", [])[:]
+
+    def tearDown(self):
+        world.state["structures"] = self._orig_structures
+
+    def test_spawn_all_five_types(self):
+        world.state["structures"] = []
+        rng = random.Random(42)
+        result = _spawn_abandoned_structures(rng)
+        self.assertEqual(len(result), 5)
+        types_spawned = {s["type"] for s in result}
+        expected = {
+            "refinery",
+            "solar_panel_structure",
+            "accumulator",
+            "broken_hauler",
+            "broken_manipulator",
+        }
+        self.assertEqual(types_spawned, expected)
+
+    def test_within_spawn_radius(self):
+        world.state["structures"] = []
+        rng = random.Random(99)
+        result = _spawn_abandoned_structures(rng)
+        for s in result:
+            x, y = s["position"]
+            dist = abs(x) + abs(y)  # Manhattan from (0,0)
+            self.assertLessEqual(
+                dist,
+                STRUCTURE_SPAWN_RADIUS,
+                f"{s['type']} at ({x},{y}) has Manhattan distance {dist} > {STRUCTURE_SPAWN_RADIUS}",
+            )
+
+    def test_no_structure_at_station(self):
+        world.state["structures"] = []
+        rng = random.Random(7)
+        result = _spawn_abandoned_structures(rng)
+        positions = {tuple(s["position"]) for s in result}
+        self.assertNotIn((0, 0), positions, "No structure should be placed at station (0,0)")
+
+    def test_no_duplicate_positions(self):
+        world.state["structures"] = []
+        rng = random.Random(123)
+        result = _spawn_abandoned_structures(rng)
+        positions = [tuple(s["position"]) for s in result]
+        self.assertEqual(
+            len(positions), len(set(positions)), "Structures should not share positions"
+        )
+
+    def test_structure_shape(self):
+        world.state["structures"] = []
+        rng = random.Random(1)
+        result = _spawn_abandoned_structures(rng)
+        for s in result:
+            self.assertIn("type", s)
+            self.assertIn("category", s)
+            self.assertIn("position", s)
+            self.assertIn("explored", s)
+            self.assertIn("active", s)
+            self.assertIn("description", s)
+            self.assertIn("contents", s)
+            self.assertFalse(s["explored"])
+            self.assertFalse(s["active"])
+            self.assertIsInstance(s["position"], list)
+            self.assertEqual(len(s["position"]), 2)
+
+    def test_categories_correct(self):
+        world.state["structures"] = []
+        rng = random.Random(42)
+        result = _spawn_abandoned_structures(rng)
+        buildings = {s["type"] for s in result if s["category"] == "building"}
+        vehicles = {s["type"] for s in result if s["category"] == "vehicle"}
+        self.assertEqual(buildings, {"refinery", "solar_panel_structure", "accumulator"})
+        self.assertEqual(vehicles, {"broken_hauler", "broken_manipulator"})
+
+
+class TestStructureObstacles(unittest.TestCase):
+    """Test that structures block movement."""
+
+    def setUp(self):
+        self._orig_pos = world.state["agents"]["rover-mistral"]["position"][:]
+        self._orig_battery = world.state["agents"]["rover-mistral"]["battery"]
+        self._orig_structures = world.state.get("structures", [])[:]
+        world.state["agents"]["rover-mistral"]["battery"] = 1.0
+        world.state["agents"]["rover-mistral"]["mission"] = {
+            "objective": "Test",
+            "plan": [],
+        }
+
+    def tearDown(self):
+        world.state["agents"]["rover-mistral"]["position"] = self._orig_pos
+        world.state["agents"]["rover-mistral"]["battery"] = self._orig_battery
+        world.state["structures"] = self._orig_structures
+
+    def test_move_blocked_by_structure(self):
+        world.state["agents"]["rover-mistral"]["position"] = [5, 5]
+        world.state["structures"] = [_make_structure("refinery", pos=(6, 5))]
+        result = move_agent("rover-mistral", 7, 5)  # must pass through (6,5)
+        self.assertFalse(result["ok"])
+        self.assertIn("blocked", result["error"].lower())
+        self.assertIn("refinery", result["error"])
+
+    def test_move_blocked_on_destination(self):
+        world.state["agents"]["rover-mistral"]["position"] = [5, 5]
+        world.state["structures"] = [_make_structure("broken_hauler", pos=(6, 5))]
+        result = move_agent("rover-mistral", 6, 5)
+        self.assertFalse(result["ok"])
+        self.assertIn("blocked", result["error"].lower())
+
+    def test_move_not_blocked_when_structure_off_path(self):
+        world.state["agents"]["rover-mistral"]["position"] = [5, 5]
+        world.state["structures"] = [_make_structure("refinery", pos=(5, 7))]  # not on path
+        result = move_agent("rover-mistral", 7, 5)
+        self.assertTrue(result["ok"])
+
+    def test_move_blocked_along_vertical_path(self):
+        world.state["agents"]["rover-mistral"]["position"] = [0, 0]
+        world.state["structures"] = [_make_structure("accumulator", pos=(0, 2))]
+        result = move_agent("rover-mistral", 0, 3)  # 3 tiles north, blocked at (0,2)
+        self.assertFalse(result["ok"])
+        self.assertIn("blocked", result["error"].lower())
+
+
+class TestInvestigateStructure(unittest.TestCase):
+    """Test the investigate_structure action."""
+
+    def setUp(self):
+        self._orig_pos = world.state["agents"]["rover-mistral"]["position"][:]
+        self._orig_battery = world.state["agents"]["rover-mistral"]["battery"]
+        self._orig_structures = world.state.get("structures", [])[:]
+        self._orig_mission = world.state["mission"].copy()
+        world.state["agents"]["rover-mistral"]["battery"] = 1.0
+        world.state["agents"]["rover-mistral"]["position"] = [5, 5]
+        world.state["mission"]["status"] = "running"
+
+    def tearDown(self):
+        world.state["agents"]["rover-mistral"]["position"] = self._orig_pos
+        world.state["agents"]["rover-mistral"]["battery"] = self._orig_battery
+        world.state["structures"] = self._orig_structures
+        world.state["mission"] = self._orig_mission
+
+    def test_investigate_adjacent(self):
+        world.state["structures"] = [_make_structure("refinery", pos=(5, 6))]
+        result = execute_action("rover-mistral", "investigate_structure", {})
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["structure"]["type"], "refinery")
+        # Structure should now be explored and active
+        self.assertTrue(world.state["structures"][0]["explored"])
+        self.assertTrue(world.state["structures"][0]["active"])
+
+    def test_investigate_same_tile(self):
+        world.state["structures"] = [_make_structure("broken_hauler", pos=(5, 5))]
+        result = execute_action("rover-mistral", "investigate_structure", {})
+        self.assertTrue(result["ok"])  # distance 0 <= 1
+
+    def test_investigate_too_far(self):
+        world.state["structures"] = [_make_structure("refinery", pos=(7, 5))]
+        result = execute_action("rover-mistral", "investigate_structure", {})
+        self.assertFalse(result["ok"])
+        self.assertIn("within reach", result["error"].lower())
+
+    def test_investigate_already_explored(self):
+        world.state["structures"] = [_make_structure("refinery", pos=(5, 6), explored=True)]
+        result = execute_action("rover-mistral", "investigate_structure", {})
+        self.assertFalse(result["ok"])
+        self.assertIn("already", result["error"].lower())
+
+    def test_investigate_battery_cost(self):
+        world.state["structures"] = [_make_structure("accumulator", pos=(5, 6))]
+        before = world.state["agents"]["rover-mistral"]["battery"]
+        execute_action("rover-mistral", "investigate_structure", {})
+        after = world.state["agents"]["rover-mistral"]["battery"]
+        self.assertAlmostEqual(before - after, BATTERY_COST_INVESTIGATE, places=5)
+
+    def test_investigate_low_battery(self):
+        world.state["structures"] = [_make_structure("refinery", pos=(5, 6))]
+        world.state["agents"]["rover-mistral"]["battery"] = 0.0
+        result = execute_action("rover-mistral", "investigate_structure", {})
+        self.assertFalse(result["ok"])
+        self.assertIn("battery", result["error"].lower())
+
+    def test_investigate_drone_rejected(self):
+        world.state["structures"] = [_make_structure("refinery", pos=(0, 0))]
+        result = execute_action("drone-mistral", "investigate_structure", {})
+        self.assertFalse(result["ok"])
+        self.assertIn("drone", result["error"].lower())
+
+
+class TestUseRefinery(unittest.TestCase):
+    """Test the use_refinery action."""
+
+    def setUp(self):
+        self._orig_pos = world.state["agents"]["rover-mistral"]["position"][:]
+        self._orig_battery = world.state["agents"]["rover-mistral"]["battery"]
+        self._orig_inv = world.state["agents"]["rover-mistral"].get("inventory", [])[:]
+        self._orig_structures = world.state.get("structures", [])[:]
+        self._orig_mission = world.state["mission"].copy()
+        world.state["agents"]["rover-mistral"]["battery"] = 1.0
+        world.state["agents"]["rover-mistral"]["position"] = [5, 5]
+        world.state["mission"]["status"] = "running"
+
+    def tearDown(self):
+        world.state["agents"]["rover-mistral"]["position"] = self._orig_pos
+        world.state["agents"]["rover-mistral"]["battery"] = self._orig_battery
+        world.state["agents"]["rover-mistral"]["inventory"] = self._orig_inv
+        world.state["structures"] = self._orig_structures
+        world.state["mission"] = self._orig_mission
+
+    def test_refine_basalt(self):
+        world.state["structures"] = [
+            _make_structure("refinery", pos=(5, 6), explored=True, active=True)
+        ]
+        world.state["agents"]["rover-mistral"]["inventory"] = [
+            {"type": "basalt_vein", "grade": "high", "quantity": 200}
+        ]
+        result = execute_action("rover-mistral", "use_refinery", {})
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["original_quantity"], 200)
+        self.assertEqual(result["refined_quantity"], 300)  # 200 + 50%
+        self.assertEqual(result["bonus"], 100)
+
+    def test_refine_marks_item_refined(self):
+        world.state["structures"] = [
+            _make_structure("refinery", pos=(5, 6), explored=True, active=True)
+        ]
+        world.state["agents"]["rover-mistral"]["inventory"] = [
+            {"type": "basalt_vein", "grade": "medium", "quantity": 100}
+        ]
+        execute_action("rover-mistral", "use_refinery", {})
+        item = world.state["agents"]["rover-mistral"]["inventory"][0]
+        self.assertTrue(item["refined"])
+        self.assertEqual(item["quantity"], 150)  # 100 + 50%
+
+    def test_refine_no_basalt(self):
+        world.state["structures"] = [
+            _make_structure("refinery", pos=(5, 6), explored=True, active=True)
+        ]
+        world.state["agents"]["rover-mistral"]["inventory"] = []
+        result = execute_action("rover-mistral", "use_refinery", {})
+        self.assertFalse(result["ok"])
+        self.assertIn("basalt", result["error"].lower())
+
+    def test_refine_not_active_refinery(self):
+        world.state["structures"] = [
+            _make_structure("refinery", pos=(5, 6), explored=False, active=False)
+        ]
+        world.state["agents"]["rover-mistral"]["inventory"] = [
+            {"type": "basalt_vein", "grade": "high", "quantity": 200}
+        ]
+        result = execute_action("rover-mistral", "use_refinery", {})
+        self.assertFalse(result["ok"])
+        self.assertIn("refinery", result["error"].lower())
+
+    def test_refine_too_far(self):
+        world.state["structures"] = [
+            _make_structure("refinery", pos=(8, 5), explored=True, active=True)
+        ]
+        world.state["agents"]["rover-mistral"]["inventory"] = [
+            {"type": "basalt_vein", "grade": "high", "quantity": 200}
+        ]
+        result = execute_action("rover-mistral", "use_refinery", {})
+        self.assertFalse(result["ok"])
+
+    def test_refine_battery_cost(self):
+        world.state["structures"] = [
+            _make_structure("refinery", pos=(5, 6), explored=True, active=True)
+        ]
+        world.state["agents"]["rover-mistral"]["inventory"] = [
+            {"type": "basalt_vein", "grade": "high", "quantity": 200}
+        ]
+        before = world.state["agents"]["rover-mistral"]["battery"]
+        execute_action("rover-mistral", "use_refinery", {})
+        after = world.state["agents"]["rover-mistral"]["battery"]
+        self.assertAlmostEqual(before - after, BATTERY_COST_USE_REFINERY, places=5)
+
+    def test_refine_low_battery(self):
+        world.state["structures"] = [
+            _make_structure("refinery", pos=(5, 6), explored=True, active=True)
+        ]
+        world.state["agents"]["rover-mistral"]["inventory"] = [
+            {"type": "basalt_vein", "grade": "high", "quantity": 200}
+        ]
+        world.state["agents"]["rover-mistral"]["battery"] = 0.0
+        result = execute_action("rover-mistral", "use_refinery", {})
+        self.assertFalse(result["ok"])
+        self.assertIn("battery", result["error"].lower())
+
+    def test_refine_drone_rejected(self):
+        world.state["structures"] = [_make_structure("refinery", pos=(0, 0))]
+        result = execute_action("drone-mistral", "use_refinery", {})
+        self.assertFalse(result["ok"])
+        self.assertIn("drone", result["error"].lower())
+
+
+class TestStructurePassiveEffects(unittest.TestCase):
+    """Test passive charging from solar panel structures and accumulators."""
+
+    def setUp(self):
+        self._orig_pos = world.state["agents"]["rover-mistral"]["position"][:]
+        self._orig_battery = world.state["agents"]["rover-mistral"]["battery"]
+        self._orig_structures = world.state.get("structures", [])[:]
+        self._orig_tick = world.state["tick"]
+        world.state["agents"]["rover-mistral"]["position"] = [5, 5]
+
+    def tearDown(self):
+        world.state["agents"]["rover-mistral"]["position"] = self._orig_pos
+        world.state["agents"]["rover-mistral"]["battery"] = self._orig_battery
+        world.state["structures"] = self._orig_structures
+        world.state["tick"] = self._orig_tick
+
+    def test_solar_panel_charges_nearby_rover(self):
+        world.state["structures"] = [
+            _make_structure("solar_panel_structure", pos=(5, 6), explored=True, active=True)
+        ]
+        world.state["agents"]["rover-mistral"]["battery"] = 0.50
+        world.state["tick"] = 2  # divisible by charge_interval=2
+        apply_structure_passive_effects()
+        self.assertAlmostEqual(world.state["agents"]["rover-mistral"]["battery"], 0.51, places=5)
+
+    def test_solar_panel_no_charge_odd_tick(self):
+        world.state["structures"] = [
+            _make_structure("solar_panel_structure", pos=(5, 6), explored=True, active=True)
+        ]
+        world.state["agents"]["rover-mistral"]["battery"] = 0.50
+        world.state["tick"] = 3  # not divisible by 2
+        apply_structure_passive_effects()
+        self.assertAlmostEqual(world.state["agents"]["rover-mistral"]["battery"], 0.50, places=5)
+
+    def test_solar_panel_out_of_range(self):
+        world.state["structures"] = [
+            _make_structure("solar_panel_structure", pos=(5, 8), explored=True, active=True)
+        ]
+        world.state["agents"]["rover-mistral"]["battery"] = 0.50
+        world.state["tick"] = 2
+        apply_structure_passive_effects()
+        self.assertAlmostEqual(world.state["agents"]["rover-mistral"]["battery"], 0.50, places=5)
+
+    def test_solar_panel_inactive_no_charge(self):
+        world.state["structures"] = [
+            _make_structure("solar_panel_structure", pos=(5, 6), explored=False, active=False)
+        ]
+        world.state["agents"]["rover-mistral"]["battery"] = 0.50
+        world.state["tick"] = 2
+        apply_structure_passive_effects()
+        self.assertAlmostEqual(world.state["agents"]["rover-mistral"]["battery"], 0.50, places=5)
+
+    def test_accumulator_charges_nearby_rover(self):
+        world.state["structures"] = [
+            _make_structure("accumulator", pos=(5, 6), explored=True, active=True)
+        ]
+        world.state["agents"]["rover-mistral"]["battery"] = 0.50
+        world.state["tick"] = 5  # divisible by recharge_interval=5
+        apply_structure_passive_effects()
+        self.assertAlmostEqual(world.state["agents"]["rover-mistral"]["battery"], 0.51, places=5)
+
+    def test_accumulator_range_2_tiles(self):
+        world.state["structures"] = [
+            _make_structure("accumulator", pos=(5, 7), explored=True, active=True)
+        ]
+        world.state["agents"]["rover-mistral"]["battery"] = 0.50
+        world.state["tick"] = 5
+        apply_structure_passive_effects()
+        self.assertAlmostEqual(world.state["agents"]["rover-mistral"]["battery"], 0.51, places=5)
+
+    def test_accumulator_out_of_range(self):
+        world.state["structures"] = [
+            _make_structure("accumulator", pos=(5, 8), explored=True, active=True)  # dist=3
+        ]
+        world.state["agents"]["rover-mistral"]["battery"] = 0.50
+        world.state["tick"] = 5
+        apply_structure_passive_effects()
+        self.assertAlmostEqual(world.state["agents"]["rover-mistral"]["battery"], 0.50, places=5)
+
+    def test_battery_capped_at_one(self):
+        world.state["structures"] = [
+            _make_structure("solar_panel_structure", pos=(5, 6), explored=True, active=True)
+        ]
+        world.state["agents"]["rover-mistral"]["battery"] = 1.0
+        world.state["tick"] = 2
+        apply_structure_passive_effects()
+        self.assertAlmostEqual(world.state["agents"]["rover-mistral"]["battery"], 1.0, places=5)
+
+
+class TestStructureSnapshot(unittest.TestCase):
+    """Test that get_snapshot filters structures by visibility."""
+
+    def setUp(self):
+        self._orig_structures = world.state.get("structures", [])[:]
+        # Save all agents' revealed sets to fully control fog-of-war
+        self._orig_revealed = {}
+        for aid, agent in world.state["agents"].items():
+            self._orig_revealed[aid] = agent.get("revealed", [])[:]
+
+    def tearDown(self):
+        world.state["structures"] = self._orig_structures
+        for aid, revealed in self._orig_revealed.items():
+            world.state["agents"][aid]["revealed"] = revealed
+
+    def test_snapshot_includes_visible_structures(self):
+        world.state["structures"] = [_make_structure("refinery", pos=(2, 2))]
+        world.state["agents"]["rover-mistral"]["position"] = [2, 2]
+        world.state["agents"]["rover-mistral"]["revealed"] = [[2, 2]]
+        snap = get_snapshot()
+        self.assertEqual(len(snap["structures"]), 1)
+        self.assertEqual(snap["structures"][0]["type"], "refinery")
+
+    def test_snapshot_excludes_unrevealed_structures(self):
+        world.state["structures"] = [_make_structure("refinery", pos=(15, 15))]
+        # Clear all agents' revealed to ensure (15,15) is not visible
+        for agent in world.state["agents"].values():
+            agent["revealed"] = [[0, 0]]
+        snap = get_snapshot()
+        self.assertEqual(len(snap["structures"]), 0)
+
+
+class TestStructureHelpers(unittest.TestCase):
+    """Test _find_structure_at and _get_structure_positions."""
+
+    def setUp(self):
+        self._orig_structures = world.state.get("structures", [])[:]
+
+    def tearDown(self):
+        world.state["structures"] = self._orig_structures
+
+    def test_find_structure_at(self):
+        world.state["structures"] = [_make_structure("refinery", pos=(3, 4))]
+        result = _find_structure_at(3, 4)
+        self.assertIsNotNone(result)
+        self.assertEqual(result["type"], "refinery")
+
+    def test_find_structure_at_missing(self):
+        world.state["structures"] = [_make_structure("refinery", pos=(3, 4))]
+        result = _find_structure_at(5, 5)
+        self.assertIsNone(result)
+
+    def test_get_structure_positions(self):
+        world.state["structures"] = [
+            _make_structure("refinery", pos=(1, 2)),
+            _make_structure("accumulator", pos=(3, 4)),
+        ]
+        positions = _get_structure_positions()
+        self.assertEqual(positions, {(1, 2), (3, 4)})
 
 
 class TestBestDroneHotspot(unittest.TestCase):

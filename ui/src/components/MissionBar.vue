@@ -6,6 +6,10 @@ const props = defineProps({
     type: Object,
     default: null,
   },
+  storm: {
+    type: Object,
+    default: null,
+  },
 })
 
 const emit = defineEmits(['abort'])
@@ -43,6 +47,14 @@ const progressPct = computed(() => Math.min(100, Math.round((collected.value / t
       v-if="mission.in_transit_quantity"
       class="mission-transit"
     >{{ mission.in_transit_quantity }} in transit</span>
+    <span
+      v-if="storm && storm.phase === 'active'"
+      class="storm-badge active"
+    >🌪 STORM {{ Math.round((storm.intensity || 0) * 100) }}%</span>
+    <span
+      v-else-if="storm && storm.phase === 'warning'"
+      class="storm-badge warning"
+    >⚠ STORM INCOMING</span>
     <span
       class="mission-status"
       :class="mission.status"
@@ -158,6 +170,31 @@ const progressPct = computed(() => Math.min(100, Math.round((collected.value / t
 .abort-btn:hover {
   border-color: var(--accent-red);
   color: var(--accent-red-light);
+}
+
+.storm-badge {
+  padding: 0.15rem 0.5rem;
+  border-radius: var(--radius-sm);
+  font-size: 0.65rem;
+  font-weight: bold;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.storm-badge.active {
+  background: rgba(255, 100, 50, 0.2);
+  color: #ff6432;
+  animation: storm-pulse 1.5s ease-in-out infinite;
+}
+
+.storm-badge.warning {
+  background: rgba(255, 200, 50, 0.2);
+  color: #ffc832;
+}
+
+@keyframes storm-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
 }
 
 @media (max-width: 600px) {

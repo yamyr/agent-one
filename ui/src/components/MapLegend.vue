@@ -1,5 +1,5 @@
 <script setup>
-import { AGENT_COLORS, VEIN_COLORS } from '../constants.js'
+import { AGENT_COLORS, VEIN_COLORS, STRUCTURE_COLORS, STRUCTURE_LABELS } from '../constants.js'
 import { usePreferences } from '../composables/usePreferences.js'
 
 const { prefs } = usePreferences()
@@ -103,19 +103,16 @@ function toggle() {
         <div class="legend-section">
           <h4>Structures</h4>
           <div class="legend-grid">
-            <div class="legend-item">
+            <div
+              v-for="(color, type) in STRUCTURE_COLORS"
+              :key="type"
+              class="legend-item"
+            >
               <span
-                class="swatch solar"
-                style="background: #f0c040"
+                class="dot structure"
+                :style="{ background: color }"
               />
-              <span>Solar panel</span>
-            </div>
-            <div class="legend-item">
-              <span
-                class="swatch solar"
-                style="background: #555555"
-              />
-              <span>Depleted</span>
+              <span class="grade-label">{{ STRUCTURE_LABELS[type] || type }}</span>
             </div>
           </div>
         </div>
@@ -243,6 +240,11 @@ h4 {
 
 .dot.agent {
   border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.dot.structure {
+  border-radius: 2px;
+  border: 1px solid rgba(255, 255, 255, 0.15);
 }
 
 .grade-label {

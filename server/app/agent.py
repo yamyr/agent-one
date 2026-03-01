@@ -25,10 +25,12 @@ from .world import FUEL_CAPACITY_ROVER, FUEL_CAPACITY_DRONE, DRONE_REVEAL_RADIUS
 from .world import BATTERY_COST_MOVE, BATTERY_COST_MOVE_DRONE, BATTERY_COST_DIG
 from .world import BATTERY_COST_ANALYZE, BATTERY_COST_SCAN, BATTERY_COST_NOTIFY
 from .world import MAX_INVENTORY_ROVER
+from .world import BATTERY_COST_INVESTIGATE, BATTERY_COST_USE_REFINERY
 from .world import check_ground, direction_hint, best_drone_hotspot, observe_rover
 from .world import get_drone_intel_for_rover, get_unread_messages, send_agent_message
 from .world import set_agent_model
 from .world import execute_action, get_snapshot, charge_agent, next_tick, update_geysers
+from .world import check_storm_tick, get_storm_info
 from .world import is_obstacle_at
 from .station import StationAgent
 from .training_logger import training_logger
@@ -193,6 +195,24 @@ NOTIFY_TOOL = {
     },
 }
 
+INVESTIGATE_STRUCTURE_TOOL = {
+    "type": "function",
+    "function": {
+        "name": "investigate_structure",
+        "description": f"Investigate an adjacent abandoned structure (building or vehicle) to reveal its details and activate it. Must be within 1 tile. Costs ~{BATTERY_COST_INVESTIGATE:.2%} battery.",
+        "parameters": {"type": "object", "properties": {}},
+    },
+}
+
+USE_REFINERY_TOOL = {
+    "type": "function",
+    "function": {
+        "name": "use_refinery",
+        "description": f"Use an active refinery to process basalt from your inventory, gaining +50% bonus quantity. Must be adjacent to an investigated refinery. Costs ~{BATTERY_COST_USE_REFINERY:.2%} battery. Requires basalt in inventory.",
+        "parameters": {"type": "object", "properties": {}},
+    },
+}
+
 ROVER_TOOLS = [
     MOVE_TOOL,
     ANALYZE_TOOL,
@@ -200,6 +220,8 @@ ROVER_TOOLS = [
     DEPLOY_SOLAR_PANEL_TOOL,
     USE_SOLAR_BATTERY_TOOL,
     NOTIFY_TOOL,
+    INVESTIGATE_STRUCTURE_TOOL,
+    USE_REFINERY_TOOL,
 ]
 
 
@@ -299,6 +321,12 @@ class MistralRoverReasoner:
             "- CRITICAL: Once you have collected the target quantity of basalt, STOP exploring and RETURN TO STATION IMMEDIATELY.\n"
             "- Prefer unvisited tiles when exploring. Don't backtrack aimlessly.\n"
             "- Ground is auto-scanned after every move. No need to check manually.\n"
+            "- Abandoned structures (buildings/vehicles) are scattered near the station. They block movement — plan paths around them.\n"
+            "- Use investigate_structure when adjacent (1 tile) to unexplored structures to reveal their contents and activate them.\n"
+            "- Use use_refinery when adjacent to an active refinery with basalt in inventory for +50% bonus material extraction.\n"
+            "- Solar panel structures and accumulators provide passive charging — stay near them when battery is low.\n"
+            "- Follow your current tasks list. It tells you exactly what to do next.\n"
+            "\n"
             f"- MOVEMENT EFFICIENCY: You can move up to {MAX_MOVE_DISTANCE} tiles per move action.\n"
             f"  When heading to a known target, ALWAYS set distance={MAX_MOVE_DISTANCE} (or the remaining distance if closer).\n"
             "  Moving 1 tile at a time wastes turns. Use the full distance.\n"
@@ -355,6 +383,22 @@ class MistralRoverReasoner:
         if nearby_panels:
             parts.append("Nearby solar panels:")
             parts.extend(nearby_panels)
+
+        # Nearby structures
+        nearby_structures = []
+        for structure in self._world.get_structures():
+            sx, sy = structure["position"]
+            sd = abs(sx - x) + abs(sy - y)
+            if sd <= 10:
+                status = "explored/active" if structure["explored"] else "unexplored"
+                label = structure["type"].replace("_", " ").title()
+                cat = structure.get("category", "unknown")
+                nearby_structures.append(
+                    f"  - {label} ({cat}, {status}) at ({sx},{sy}), {sd} tiles"
+                )
+        if nearby_structures:
+            parts.append("Nearby structures (buildings/vehicles — block movement):")
+            parts.extend(nearby_structures)
 
         # Visible veins (on revealed tiles)
         revealed_set = {tuple(c) for c in agent.get("revealed", [])}
@@ -426,6 +470,22 @@ class MistralRoverReasoner:
             for entry in recent:
                 parts.append(f"- {entry}")
 
+        # Storm awareness
+        storm_info = get_storm_info()
+        if storm_info["phase"] != "clear":
+            parts.append("\n== DUST STORM ==")
+            if storm_info["phase"] == "warning":
+                parts.append(
+                    "STATUS: Storm approaching! Prepare to seek shelter or return to base."
+                )
+            elif storm_info["phase"] == "active":
+                parts.append(
+                    f"STATUS: ACTIVE STORM — intensity {storm_info['intensity']:.0%}\n"
+                    f"Battery drain multiplier: {storm_info['battery_multiplier']:.1f}x\n"
+                    f"Move failure chance: {storm_info['move_fail_chance']:.0%}\n"
+                    "CAUTION: Moves may randomly fail. Battery drains faster. "
+                    "Consider returning to station if battery is below 80%."
+                )
         # --- Strategic Insights ---
         sm = agent.get("strategic_memory", [])
         if sm:
@@ -519,6 +579,8 @@ class MistralRoverReasoner:
                     "deploy_solar_panel",
                     "use_solar_battery",
                     "notify",
+                    "investigate_structure",
+                    "use_refinery",
                 ):
                     action = {"name": name, "params": args}
                 else:
@@ -1209,6 +1271,18 @@ class RoverLoop(BaseAgent):
         turn = await asyncio.to_thread(self._reasoner.run_turn)
         llm_ms = int((time.monotonic() - t0) * 1000)
         next_tick()
+
+        # Advance storm lifecycle and broadcast any storm events
+        storm_events = check_storm_tick()
+        for sevt in storm_events:
+            storm_msg = make_message(
+                source="world",
+                type="event",
+                name=sevt["name"],
+                payload=sevt["payload"],
+            )
+            await host.broadcast(storm_msg.to_dict())
+
         geyser_events = update_geysers()
         messages = []
 

@@ -1,5 +1,25 @@
 # Changelog
 
+## [0.5.0](https://github.com/mhack-agent-one/agent-one/compare/v0.4.0...v0.5.0) (2026-03-01)
+
+
+### Features
+
+* add environmental hazards — ice mountains and air geysers ([#220](https://github.com/mhack-agent-one/agent-one/issues/220)) ([f36cbdd](https://github.com/mhack-agent-one/agent-one/commit/f36cbdd9886865c40738a7fafeba45db543283cd))
+* add SurrealDB training data logging for agent decision replay and fine-tuning ([#212](https://github.com/mhack-agent-one/agent-one/issues/212)) ([98b2d75](https://github.com/mhack-agent-one/agent-one/commit/98b2d75ebaadcee2ae16f2b26c1b2a7d13d95883))
+* **ui:** add obstacle visualization to WorldMap SVG ([#221](https://github.com/mhack-agent-one/agent-one/issues/221)) ([36c9dfa](https://github.com/mhack-agent-one/agent-one/commit/36c9dfa50229778e404dd1580cd0ae6968bb2431))
+
+
+### Bug Fixes
+
+* **ci:** resolve 3 CI failures blocking all branches ([#216](https://github.com/mhack-agent-one/agent-one/issues/216)) ([eddcddd](https://github.com/mhack-agent-one/agent-one/commit/eddcdddea7a781ee3a9d755157e0f9fbb6ab637d))
+* correct SyntaxError in training_logger, improve logging, add tests ([#218](https://github.com/mhack-agent-one/agent-one/issues/218)) ([8adfe61](https://github.com/mhack-agent-one/agent-one/commit/8adfe61aa0a7aad0543408f2f6151b9ad3d7be9f))
+* resolve PR [#145](https://github.com/mhack-agent-one/agent-one/issues/145) runtime crashes in memory summarization ([b7642d1](https://github.com/mhack-agent-one/agent-one/commit/b7642d12ff7085f22ac695ed41276c006e9922a7))
+* resolve PR [#145](https://github.com/mhack-agent-one/agent-one/issues/145) runtime crashes in memory summarization ([#210](https://github.com/mhack-agent-one/agent-one/issues/210)) ([94e5914](https://github.com/mhack-agent-one/agent-one/commit/94e59141db2fb7d0a6c0542e3d68dd83be27889c))
+* resolve production site issues — PORT, SPA routing, WS initial state ([#219](https://github.com/mhack-agent-one/agent-one/issues/219)) ([a64700f](https://github.com/mhack-agent-one/agent-one/commit/a64700f1bbc9f9bad2268ecf906ac6dc0e77badd))
+* **tests:** add assertions to tests that verified nothing ([#142](https://github.com/mhack-agent-one/agent-one/issues/142)) ([8323908](https://github.com/mhack-agent-one/agent-one/commit/8323908815889655a0396a97f41097ca2b2329ee))
+* **ui:** guard AgentDetailModal against null properties ([#89](https://github.com/mhack-agent-one/agent-one/issues/89)) ([#217](https://github.com/mhack-agent-one/agent-one/issues/217)) ([2d73524](https://github.com/mhack-agent-one/agent-one/commit/2d7352475718d7204ce102a5495579371bf3342a))
+
 ## [Unreleased]
 
 ### Features
@@ -274,6 +294,35 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Fixed
 
 * **ci:** apply ruff format to 7 unformatted files (agent.py, main.py, station.py, world.py, test_narrator.py, test_station.py, test_world.py) to fix server-lint CI failure
+
+## [Unreleased] — Abandoned Buildings & Vehicles
+
+### Added (Abandoned Structures)
+
+- **Abandoned structures system**: 5 structure types (Refinery, Solar Panel, Accumulator, Broken Hauler, Broken Manipulator) spawn deterministically within 10 tiles of base station
+  - **Refinery**: Processes basalt from rover inventory with +50% bonus quantity yield
+  - **Solar Panel Structure**: Passive +1% battery every 2 ticks to rovers within 1 tile
+  - **Accumulator**: Passive +1% battery every 5 ticks to rovers within 2 tiles
+  - **Broken Hauler**: Obstacle; can be investigated to reveal salvageable parts
+  - **Broken Manipulator**: Obstacle; can be investigated to reveal salvageable parts
+- **Structure obstacles**: Structures block agent movement — path-checking in `move_agent()` prevents traversal through occupied tiles
+- **`investigate_structure` action**: Explore adjacent structures (costs ~0.6% battery) to reveal details and activate them
+- **`use_refinery` action**: Process basalt at an active refinery (costs ~1.4% battery), produces refined basalt with 50% bonus
+- **Passive charging effects**: Solar panels and accumulators apply tick-based battery bonuses to nearby rovers automatically via `apply_structure_passive_effects()`
+- **Agent AI integration**: Two new rover tools (`INVESTIGATE_STRUCTURE_TOOL`, `USE_REFINERY_TOOL`), "Nearby structures" context section in `_build_context()`, 4 new rules in system prompt for structure interaction
+- **Task suggestions**: `_update_rover_tasks()` generates navigate-to and interact-with hints for visible/adjacent structures
+- **Fog-of-war filtering**: Structures only visible in `get_snapshot()` when within revealed tiles
+- **Frontend rendering**: SVG buildings (sharp corners) and vehicles (rounded corners) on WorldMap with `?` marks for unexplored structures, structure colors and labels in constants, legend section in MapLegend
+- **`StructureInfo` Pydantic model**: Added to `models.py` with `visible_structures` field on `RoverComputed`
+- **34 new tests**: `TestSpawnStructures` (6), `TestStructureObstacles` (4), `TestInvestigateStructure` (7), `TestUseRefinery` (8), `TestStructurePassiveEffects` (8), `TestStructureSnapshot` (2), `TestStructureHelpers` (3) — all passing (329 total)
+
+### Changed (Abandoned Structures)
+
+- `_build_initial_world()` initializes `"structures": []` key in world state
+- `_init_world_chunks()` calls `_spawn_abandoned_structures()` after chunk generation
+- `next_tick()` calls `apply_structure_passive_effects()` each tick
+- `TestUpdateTasks` setUp/tearDown saves/restores `structures` list to prevent spawn interference
+
 
 ## [0.2.0](https://github.com/mhack-agent-one/agent-one/compare/v0.1.0...v0.2.0) (2026-02-28)
 

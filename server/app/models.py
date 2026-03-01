@@ -22,6 +22,15 @@ class StoneInfo(BaseModel):
     analyzed: bool = False
 
 
+class StructureInfo(BaseModel):
+    type: str
+    category: str
+    position: list[int]
+    explored: bool = False
+    active: bool = False
+    description: str = ""
+
+
 # ── Rover Context (3 clear sections) ──
 
 
@@ -73,6 +82,7 @@ class RoverComputed(BaseModel):
     stone_here: StoneInfo | None = None
     visible_stones: list[str] = []
     pending_commands: list[PendingCommand] = []
+    visible_structures: list[str] = []
     nearby_obstacles: list[ObstacleInfo] = []
 
 

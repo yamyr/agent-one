@@ -1,6 +1,6 @@
 <script setup>
 import { computed, ref, watch, onMounted, onUnmounted } from 'vue'
-import { TILE_SIZE, VIEWPORT_W, VIEWPORT_H, VEIN_COLORS, VEIN_SIZES, SOLAR_PANEL_COLOR, SOLAR_PANEL_DEPLETED_COLOR, OBSTACLE_COLORS, agentColor, revealRadius } from '../constants.js'
+import { TILE_SIZE, VIEWPORT_W, VIEWPORT_H, VEIN_COLORS, VEIN_SIZES, SOLAR_PANEL_COLOR, SOLAR_PANEL_DEPLETED_COLOR, STRUCTURE_COLORS, STRUCTURE_LABELS, OBSTACLE_COLORS, agentColor, revealRadius } from '../constants.js'
 import { usePreferences } from '../composables/usePreferences.js'
 import { useRevealedSet } from '../composables/useRevealedSet.js'
 
@@ -525,6 +525,36 @@ function panelTooltip(p) {
   return `Solar Panel ${p.depleted ? '(depleted)' : '(active)'}\nPosition: ${pos}`
 }
 
+function isStructureVisible(s) {
+  const [wx, wy] = s.position
+  return wx >= camX.value && wx < camX.value + visibleW.value &&
+         wy >= camY.value && wy < camY.value + visibleH.value
+}
+
+function structureScreenX(s) {
+  return (s.position[0] - camX.value) * TILE_SIZE + 2
+}
+
+function structureScreenY(s) {
+  return (visibleH.value - 1 - (s.position[1] - camY.value)) * TILE_SIZE + 2
+}
+
+function structureTooltip(s) {
+  const label = STRUCTURE_LABELS[s.type] || s.type
+  const status = s.explored ? 'Explored' : 'Unexplored'
+  const pos = `(${s.position[0]}, ${s.position[1]})`
+  return `${label} (${status})\nPosition: ${pos}`
+}
+
+function structureColor(s) {
+  const base = STRUCTURE_COLORS[s.type] || '#888888'
+  return base
+}
+
+function structureOpacity(s) {
+  return s.explored ? 0.85 : 0.45
+}
+
 function roverInventory(id) {
   if (!props.worldState) return []
   const a = props.worldState.agents[id]
@@ -562,6 +592,48 @@ function panCamera(dx, dy) {
   targetCamY.value += dy
   ensureCameraLoop()
 }
+
+// Storm overlay computeds
+const stormActive = computed(() => {
+  if (!props.worldState?.storm) return false
+  return props.worldState.storm.phase === 'active' || props.worldState.storm.phase === 'warning'
+})
+
+const stormIntensity = computed(() => {
+  if (!props.worldState?.storm) return 0
+  return props.worldState.storm.intensity || 0
+})
+
+const stormColor = computed(() => {
+  const i = stormIntensity.value
+  const r = Math.round(140 + i * 60)
+  const g = Math.round(80 + i * 20)
+  const b = Math.round(30 + i * 10)
+  return `rgb(${r},${g},${b})`
+})
+
+const stormOpacity = computed(() => {
+  if (!props.worldState?.storm) return 0
+  if (props.worldState.storm.phase === 'warning') return 0.06
+  return 0.05 + stormIntensity.value * 0.15
+})
+
+const stormParticles = computed(() => {
+  if (!stormActive.value) return []
+  const count = Math.floor(8 + stormIntensity.value * 20)
+  const particles = []
+  for (let i = 0; i < count; i++) {
+    particles.push({
+      id: `dust-${i}`,
+      cx: ((i * 137.5) % dynamicMapW.value),
+      cy: ((i * 97.3) % dynamicMapH.value),
+      r: 1.5 + (i % 3) * 1.2,
+      dur: 2 + (i % 4) * 0.8,
+      delay: (i * 0.3) % 3,
+    })
+  }
+  return particles
+})
 
 // Expose camera and dynamic viewport for minimap & keyboard shortcuts
 function navigateTo(x, y) {
@@ -718,6 +790,51 @@ defineExpose({ camX, camY, visibleW, visibleH, panCamera, navigateTo })
         </rect>
       </template>
 
+      <!-- abandoned structures -->
+      <template
+        v-for="(s, i) in (worldState.structures || [])"
+        :key="'struct-'+i"
+      >
+        <g v-if="isStructureVisible(s)">
+          <title>{{ structureTooltip(s) }}</title>
+          <!-- Buildings: sharp rectangles -->
+          <rect
+            v-if="s.category === 'building'"
+            :x="structureScreenX(s)"
+            :y="structureScreenY(s)"
+            :width="TILE_SIZE - 4"
+            :height="TILE_SIZE - 4"
+            :fill="structureColor(s)"
+            :opacity="structureOpacity(s)"
+            rx="1"
+            stroke="rgba(255,255,255,0.3)"
+            stroke-width="0.5"
+          />
+          <!-- Vehicles: rounded shapes -->
+          <rect
+            v-else
+            :x="structureScreenX(s)"
+            :y="structureScreenY(s)"
+            :width="TILE_SIZE - 4"
+            :height="TILE_SIZE - 4"
+            :fill="structureColor(s)"
+            :opacity="structureOpacity(s)"
+            rx="4"
+            stroke="rgba(255,255,255,0.2)"
+            stroke-width="0.5"
+          />
+          <!-- Unexplored indicator: ? mark -->
+          <text
+            v-if="!s.explored"
+            :x="structureScreenX(s) + (TILE_SIZE - 4) / 2"
+            :y="structureScreenY(s) + (TILE_SIZE - 4) / 2 + 3"
+            text-anchor="middle"
+            fill="rgba(255,255,255,0.6)"
+            font-size="8"
+            font-family="monospace"
+          >?</text>
+        </g>
+      </template>
       <!-- obstacles (mountains + geysers) -->
       <template
         v-for="(o, i) in visibleObstacles"
@@ -792,6 +909,28 @@ defineExpose({ camX, camY, visibleW, visibleH, panCamera, navigateTo })
         mask="url(#fog-mask)"
         class="fog-overlay"
       />
+
+      <!-- dust storm overlay -->
+      <g v-if="stormActive" class="storm-overlay">
+        <rect
+          x="0"
+          y="0"
+          :width="dynamicMapW"
+          :height="dynamicMapH"
+          :fill="stormColor"
+          :opacity="stormOpacity"
+        />
+        <circle
+          v-for="p in stormParticles"
+          :key="p.id"
+          :cx="p.cx"
+          :cy="p.cy"
+          :r="p.r"
+          fill="#c8804080"
+          class="dust-particle"
+          :style="{ animationDuration: p.dur + 's', animationDelay: p.delay + 's' }"
+        />
+      </g>
 
       <!-- agent movement trails -->
       <template
