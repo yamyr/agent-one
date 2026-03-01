@@ -28,6 +28,7 @@ class Host:
         self._inboxes: dict[str, asyncio.Queue] = {}
         self._agents: list[BaseAgent] = []
         self._station = StationAgent()
+        self._station_loop = None
         self._agent_tasks: list[asyncio.Task] = []
         self.paused = False
 
@@ -35,8 +36,12 @@ class Host:
 
     def register(self, agent: BaseAgent):
         """Register an agent and create its inbox."""
+        from .agent import StationLoop
+
         self._agents.append(agent)
         self._inboxes[agent.agent_id] = asyncio.Queue()
+        if isinstance(agent, StationLoop):
+            self._station_loop = agent
 
     # ── Inbox management ──
 
@@ -67,6 +72,13 @@ class Host:
         """Send a message to all WebSocket clients and feed the narrator."""
         await broadcaster.send(msg_dict)
         await self._narrator.feed(msg_dict)
+        # Feed interesting events to station loop for periodic evaluation
+        if self._station_loop is not None:
+            from .agent import StationLoop
+
+            event_name = msg_dict.get("name", "")
+            if event_name in StationLoop.INTERESTING_EVENTS:
+                self._station_loop.buffer_event(msg_dict)
 
     # ── Lifecycle ──
 

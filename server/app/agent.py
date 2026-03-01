@@ -8,6 +8,7 @@ import asyncio
 import json
 import logging
 import random
+import re
 
 from huggingface_hub import InferenceClient
 from huggingface_hub.errors import HfHubHTTPError, InferenceTimeoutError
@@ -18,16 +19,39 @@ from .broadcast import broadcaster
 from .config import settings
 from .protocol import make_message
 from .world import World, world as default_world
-from .world import GRID_W, GRID_H, DIRECTIONS, MAX_MOVE_DISTANCE, MAX_MOVE_DISTANCE_DRONE
+from .world import DIRECTIONS, MAX_MOVE_DISTANCE, MAX_MOVE_DISTANCE_DRONE
 from .world import FUEL_CAPACITY_ROVER, FUEL_CAPACITY_DRONE, DRONE_REVEAL_RADIUS
 from .world import BATTERY_COST_MOVE, BATTERY_COST_MOVE_DRONE, BATTERY_COST_DIG
 from .world import BATTERY_COST_ANALYZE, BATTERY_COST_SCAN, BATTERY_COST_NOTIFY
 from .world import MAX_INVENTORY_ROVER
 from .world import check_ground, direction_hint, best_drone_hotspot
+from .world import get_drone_intel_for_rover, get_unread_messages, send_agent_message
 from .world import set_agent_model
 from .world import execute_action, get_snapshot, charge_agent, next_tick
+from .station import StationAgent
 
 logger = logging.getLogger(__name__)
+
+STRUCTURED_REASONING_PROMPT = "\n\nBefore acting, output: SITUATION: <state> | OPTIONS: <a, b> | DECISION: <choice + why> | RISK: low/medium/high"
+
+
+def _parse_structured_thinking(raw_thinking: str) -> dict:
+    """Extract structured reasoning fields from LLM output."""
+    result = {"situation": "", "options": [], "decision": "", "risk": "low"}
+    if not raw_thinking:
+        return result
+    for field in ("situation", "decision", "risk"):
+        m = re.search(rf"(?i)^{field}:\s*(.+)$", raw_thinking, re.MULTILINE)
+        if m:
+            result[field] = m.group(1).strip()
+    m = re.search(r"(?i)^OPTIONS:\s*(.+)$", raw_thinking, re.MULTILINE)
+    if m:
+        result["options"] = [o.strip() for o in m.group(1).split(",") if o.strip()]
+    if result["risk"] not in ("low", "medium", "high"):
+        logger.debug("Unrecognized risk level %r, defaulting to 'low'", result["risk"])
+        result["risk"] = "low"
+    return result
+
 
 TASK_SEPARATOR = "---TASK---"
 
@@ -176,7 +200,7 @@ class MistralRoverReasoner:
         unvisited_dirs = []
         for name, (dx, dy) in DIRECTIONS.items():
             nx, ny = x + dx, y + dy
-            if 0 <= nx < GRID_W and 0 <= ny < GRID_H and (nx, ny) not in visited_set:
+            if (nx, ny) not in visited_set:
                 unvisited_dirs.append(name)
 
         # Vein at current tile
@@ -307,7 +331,7 @@ class MistralRoverReasoner:
 
         parts.append(
             f"\n== Environment ==\n"
-            f"Grid: {GRID_W}x{GRID_H}\n"
+            f"World: chunk-based (infinite terrain)\n"
             f"Tiles visited: {len(agent.get('visited', []))}\n"
             f"Unvisited neighbors: {', '.join(unvisited_dirs) if unvisited_dirs else 'none'}\n"
             f"Vein here: {stone_line}"
@@ -336,6 +360,13 @@ class MistralRoverReasoner:
             for entry in recent:
                 parts.append(f"- {entry}")
 
+        # --- Strategic Insights ---
+        sm = agent.get("strategic_memory", [])
+        if sm:
+            parts.append("# Strategic Insights (from past experience)")
+            for s in sm:
+                parts.append(f"- [tick {s['tick']}] {s['insight']}")
+
         # Urgent commands from Host inbox
         pending = agent.get("pending_commands", [])
         if pending:
@@ -349,6 +380,29 @@ class MistralRoverReasoner:
                     parts.append(f"NEW MISSION: {objective}")
                 else:
                     parts.append(f"{cmd['name'].upper()}: {cmd.get('payload', {})}")
+
+        # Drone intel: hotspots from drone scans
+        drone_intel = get_drone_intel_for_rover(self.agent_id)
+        if drone_intel:
+            parts.append("\n== DRONE INTEL (high-concentration scan results) ==")
+            for di in drone_intel:
+                parts.append(
+                    f"  \U0001f4e1 [{di['position'][0]},{di['position'][1]}] "
+                    f"concentration={di['concentration']} "
+                    f"(scanned by {di['scanned_by']} at tick {di['tick']})"
+                )
+            parts.append("Consider moving toward high-concentration sites.")
+
+        # Incoming messages from other agents
+        incoming = get_unread_messages(self.agent_id)
+        if incoming:
+            parts.append("\n== INCOMING MESSAGES ==")
+            for msg in incoming:
+                parts.append(
+                    f"  \U0001f4e8 From {msg['from']} (tick {msg['tick']}): {msg['message']}"
+                )
+
+        parts.append(STRUCTURED_REASONING_PROMPT)
 
         return "\n".join(parts)
 
@@ -365,10 +419,20 @@ class MistralRoverReasoner:
             ]
 
             logger.info("Calling Mistral (%s) for %s", self.model, self.agent_id)
+            effective_model = settings.fine_tuned_agent_model or self.model
             response = client.chat.complete(
-                model=self.model,
+                model=effective_model,
                 messages=messages,
                 tools=ROVER_TOOLS,
+            )
+            from .training import collector
+
+            collector.record_agent_interaction(
+                agent_id=self.agent_id,
+                agent_type="rover",
+                messages=messages,
+                tools=ROVER_TOOLS,
+                response=response,
             )
             choice = response.choices[0]
             thinking = choice.message.content or None
@@ -711,6 +775,13 @@ class DroneAgent:
             for entry in recent:
                 parts.append(f"- {entry}")
 
+        # --- Strategic Insights ---
+        sm = agent.get("strategic_memory", [])
+        if sm:
+            parts.append("# Strategic Insights (from past experience)")
+            for s in sm:
+                parts.append(f"- [tick {s['tick']}] {s['insight']}")
+
         # -- Urgent commands from Host inbox --
         pending = agent.get("pending_commands", [])
         if pending:
@@ -724,6 +795,8 @@ class DroneAgent:
                     parts.append(f"NEW MISSION: {objective}")
                 else:
                     parts.append(f"{cmd['name'].upper()}: {cmd.get('payload', {})}")
+
+        parts.append(STRUCTURED_REASONING_PROMPT)
 
         return "\n".join(parts)
 
@@ -743,10 +816,20 @@ class DroneAgent:
             ]
 
             logger.info("Calling Mistral (%s) for %s", self.model, self.agent_id)
+            effective_model = settings.fine_tuned_agent_model or self.model
             response = client.chat.complete(
-                model=self.model,
+                model=effective_model,
                 messages=messages,
                 tools=DRONE_TOOLS,
+            )
+            from .training import collector
+
+            collector.record_agent_interaction(
+                agent_id=self.agent_id,
+                agent_type="drone",
+                messages=messages,
+                tools=DRONE_TOOLS,
+                response=response,
             )
             choice = response.choices[0]
             thinking = choice.message.content or None
@@ -1045,7 +1128,10 @@ class RoverLoop(BaseAgent):
                 source=self.agent_id,
                 type="event",
                 name="thinking",
-                payload={"text": turn["thinking"]},
+                payload={
+                    "text": turn["thinking"],
+                    "structured": _parse_structured_thinking(turn["thinking"]),
+                },
             )
             messages.append(msg)
 
@@ -1125,6 +1211,35 @@ class RoverLoop(BaseAgent):
 
         await broadcaster.send(make_message("world", "event", "state", get_snapshot()).to_dict())
 
+        # --- Periodic memory summarization ---
+        current_tick = self._world.get_tick()
+        if current_tick % 20 == 0:
+            from .world import summarize_memories, record_strategic_insight
+
+            prompt = summarize_memories(self.rover_id)
+            if prompt:
+                try:
+                    client = Mistral(api_key=settings.mistral_api_key)
+                    resp = await asyncio.to_thread(
+                        client.chat.complete,
+                        model="mistral-small-latest",
+                        messages=[{"role": "user", "content": prompt}],
+                        max_tokens=150,
+                    )
+                    insight_text = resp.choices[0].message.content.strip()
+                    record_strategic_insight(self.rover_id, insight_text, current_tick)
+                    await broadcaster.broadcast(
+                        {
+                            "type": "event",
+                            "name": "insight",
+                            "source": self.rover_id,
+                            "payload": {"text": insight_text},
+                        }
+                    )
+                    logger.info("Strategic insight for %s: %s", self.rover_id, insight_text)
+                except Exception as exc:
+                    logger.warning("Memory summarization failed for %s: %s", self.rover_id, exc)
+
         # Auto-charge rover when it arrives at station
         rover = self._world.get_agents().get(self.agent_id)
         if (
@@ -1191,7 +1306,10 @@ class DroneLoop(BaseAgent):
                 source=self.agent_id,
                 type="event",
                 name="thinking",
-                payload={"text": turn["thinking"]},
+                payload={
+                    "text": turn["thinking"],
+                    "structured": _parse_structured_thinking(turn["thinking"]),
+                },
             )
             messages.append(msg)
 
@@ -1228,6 +1346,25 @@ class DroneLoop(BaseAgent):
                         },
                     )
                     messages.append(station_log)
+
+                # Auto-relay high-concentration scan results to rover
+                if turn["action"]["name"] == "scan" and result.get("concentration", 0) > 0.5:
+                    relay_msg = send_agent_message(
+                        self.agent_id,
+                        "rover-mistral",
+                        f"High concentration {result['concentration']:.2f} at {result.get('position', '?')}",
+                    )
+                    relay_event = make_message(
+                        source=self.agent_id,
+                        type="event",
+                        name="intel_relay",
+                        payload={
+                            "from": self.agent_id,
+                            "to": "rover-mistral",
+                            "message": relay_msg["message"],
+                        },
+                    )
+                    messages.append(relay_event)
 
         # LLM-owned task: update agent tasks from LLM output
         llm_task = turn.get("task")
@@ -1295,3 +1432,59 @@ class DroneHuggingFaceLoop(DroneLoop):
         super().__init__(agent_id="drone-huggingface", interval=interval, world=world)
         self._reasoner = HuggingFaceDroneAgent(agent_id=self.agent_id, world=self._world)
         set_agent_model(self.agent_id, self._reasoner.model)
+# ── Station reactive loop ────────────────────────────────────────────────────────
+
+
+class StationLoop(BaseAgent):
+    """Station periodic evaluation loop — monitors field events and coordinates agents."""
+
+    INTERESTING_EVENTS = frozenset(
+        {
+            "thinking",
+            "notify",
+            "check",
+            "dig",
+            "analyze",
+            "scan",
+            "world_event",
+            "mission_success",
+            "mission_failed",
+            "mission_aborted",
+            "charge_agent",
+            "deploy_solar_panel",
+            "use_solar_battery",
+        }
+    )
+
+    def __init__(self, interval: float = 20.0, world: World | None = None):
+        super().__init__(agent_id="station-loop", interval=interval, world=world)
+        self._station = StationAgent()
+        self._event_buffer: list[dict] = []
+
+    def buffer_event(self, event: dict):
+        """Buffer a field event for next evaluation cycle."""
+        self._event_buffer.append(event)
+        if len(self._event_buffer) > 50:
+            self._event_buffer = self._event_buffer[-50:]
+
+    async def tick(self, host) -> None:
+        if not self._event_buffer:
+            return
+
+        context = self._world.observe_station()
+        result = await asyncio.to_thread(
+            self._station.evaluate_situation, context, self._event_buffer
+        )
+        self._event_buffer.clear()
+
+        if result.get("thinking"):
+            msg = make_message(
+                source="station",
+                type="event",
+                name="thinking",
+                payload={"text": result["thinking"]},
+            )
+            await host.broadcast(msg.to_dict())
+
+        # Execute actions through Host routing (ensures world-effect)
+        await host.route_station_actions(result)

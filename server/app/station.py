@@ -98,6 +98,12 @@ SYSTEM_PROMPT = (
 def _build_world_summary(context: StationContext):
     """Build a text summary of current world state for the station's context."""
     lines = [f"Grid: {context.grid_w}x{context.grid_h}"]
+    if context.tick:
+        lines.append(f"Tick: {context.tick}")
+    if context.mission_status:
+        lines.append(
+            f"Mission status: {context.mission_status} ({context.collected_quantity}/{context.target_quantity})"
+        )
     for rover in context.rovers:
         x, y = rover.position
         label = "drone" if rover.agent_type == "drone" else "rover"
@@ -185,24 +191,37 @@ class StationAgent:
             {"role": "user", "content": user_message},
         ]
         logger.info("Station LLM call: %s", user_message[:80])
+        effective_model = settings.fine_tuned_agent_model or self.model
+        try:
+            if settings.llm_provider == "huggingface":
+                hf_client = self._get_hf_client()
+                model = settings.huggingface_model or "Qwen/Qwen2.5-72B-Instruct"
+                response = hf_client.chat_completion(
+                    model=model,
+                    messages=messages,
+                    tools=STATION_TOOLS,
+                    tool_choice="auto",
+                )
+            else:
+                client = self._get_client()
+                response = client.chat.complete(
+                    model=effective_model,
+                    messages=messages,
+                    tools=STATION_TOOLS,
+                )
+        except Exception as e:
+            logger.exception("Station LLM API failed: %s", e)
+            return {"thinking": None, "actions": [], "context_text": ctx_text}
+            
+        from .training import collector
 
-        if settings.llm_provider == "huggingface":
-            hf_client = self._get_hf_client()
-            model = settings.huggingface_model or "Qwen/Qwen2.5-72B-Instruct"
-            response = hf_client.chat_completion(
-                model=model,
-                messages=messages,
-                tools=STATION_TOOLS,
-                tool_choice="auto",
-            )
-        else:
-            client = self._get_client()
-            response = client.chat.complete(
-                model=self.model,
-                messages=messages,
-                tools=STATION_TOOLS,
-            )
-
+        collector.record_agent_interaction(
+            agent_id=self.agent_id,
+            agent_type="station",
+            messages=messages,
+            tools=STATION_TOOLS,
+            response=response,
+        )
         choice = response.choices[0]
         thinking = choice.message.content or None
         actions = []
@@ -240,5 +259,21 @@ class StationAgent:
             f"Field report from {event['source']}: {event['name']}\n"
             f"Details: {json.dumps(event.get('payload', {}))}\n"
             "Decide how to respond. You may reassign missions or broadcast alerts."
+        )
+        return self._call_llm(prompt, context)
+
+    def evaluate_situation(self, context: StationContext, events: list[dict]):
+        """Periodic evaluation of recent field events. Called by StationLoop."""
+        if events:
+            event_lines = "\n".join(
+                f"- {e.get('source', '?')}: {e.get('name', '?')} — {json.dumps(e.get('payload', {}))}"
+                for e in events[-10:]
+            )
+        else:
+            event_lines = "(no recent events)"
+        prompt = (
+            f"Tick {context.tick} — periodic situation evaluation.\n"
+            f"Recent field events:\n{event_lines}\n"
+            "Evaluate the situation. Reassign missions, broadcast alerts, or charge rovers as needed."
         )
         return self._call_llm(prompt, context)

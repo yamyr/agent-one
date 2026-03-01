@@ -35,7 +35,7 @@ INTERESTING_EVENTS = {
     # Station events
     "assign_mission": 3,  # mission assigned to rover
     "alert": 3,  # station broadcast alert
-    "charge_agent": 2,  # rover being charged
+    "charge_agent": 2,  # agent being charged
     # Agent internal
     "thinking": 1,  # agent reasoning (narrate sparingly)
     # Mission-level
@@ -261,7 +261,7 @@ def _generate_dialogue_audio(dialogue: list[tuple[str, str]], client: ElevenLabs
     try:
         audio_iter = client.text_to_dialogue.convert(
             inputs=inputs,
-            model_id="eleven_v3",
+            model_id=settings.elevenlabs_model_id,
             output_format="mp3_22050_32",
         )
         chunks = []
@@ -282,7 +282,7 @@ def _generate_audio_single(text: str, client: ElevenLabs) -> bytes | None:
         audio_iter = client.text_to_speech.convert(
             voice_id=settings.narration_voice_id_male,
             text=text,
-            model_id="eleven_v3",
+            model_id=settings.elevenlabs_model_id,
             output_format="mp3_22050_32",
         )
         chunks = []
@@ -547,20 +547,32 @@ class Narrator:
                         {"role": "system", "content": NARRATOR_SYSTEM_PROMPT},
                         {"role": "user", "content": prompt},
                     ],
-                    max_tokens=350,
-                    temperature=0.9,
+                    max_tokens=settings.narration_max_tokens,
+                    temperature=settings.narration_temperature,
                 )
             else:
                 client = self._get_mistral()
+                effective_model = settings.fine_tuned_narration_model or settings.narration_model
                 response = client.chat.complete(
-                    model=settings.narration_model,
+                    model=effective_model,
                     messages=[
                         {"role": "system", "content": NARRATOR_SYSTEM_PROMPT},
                         {"role": "user", "content": prompt},
                     ],
-                    max_tokens=350,
-                    temperature=0.9,
+                    max_tokens=settings.narration_max_tokens,
+                    temperature=settings.narration_temperature,
                 )
+
+            from .training import collector
+
+            messages = [
+                {"role": "system", "content": NARRATOR_SYSTEM_PROMPT},
+                {"role": "user", "content": prompt},
+            ]
+            collector.record_narration_interaction(
+                messages=messages,
+                response_text=response.choices[0].message.content or "",
+            )
             text = response.choices[0].message.content
             return text.strip() if text else None
         except Exception:
@@ -587,7 +599,20 @@ class Narrator:
                     stream=True,
                 )
 
-                full_text = ""
+            full_text = ""
+            if settings.llm_provider == "huggingface":
+                client = self._get_huggingface()
+                stream = client.chat_completion(
+                    model=settings.huggingface_narration_model,
+                    messages=[
+                        {"role": "system", "content": NARRATOR_SYSTEM_PROMPT},
+                        {"role": "user", "content": prompt},
+                    ],
+                    max_tokens=settings.narration_max_tokens,
+                    temperature=settings.narration_temperature,
+                    stream=True,
+                )
+                
                 for chunk_event in stream:
                     chunk = chunk_event.choices[0].delta.content
                     if chunk:
@@ -602,23 +627,22 @@ class Narrator:
                                 },
                             }
                         )
-
-                return full_text.strip() if full_text else None
             else:
-                client = self._get_mistral()
-
-                stream = client.chat.stream(
-                    model=settings.narration_model,
+                effective_model = settings.fine_tuned_narration_model or settings.narration_model
+    
+                stream = await client.chat.stream_async(
+                    model=effective_model,
                     messages=[
                         {"role": "system", "content": NARRATOR_SYSTEM_PROMPT},
                         {"role": "user", "content": prompt},
                     ],
-                    max_tokens=350,
-                    temperature=0.9,
+                    max_tokens=settings.narration_max_tokens,
+                    temperature=settings.narration_temperature,
                 )
-
-                full_text = ""
-                for event in stream:
+    
+                async for event in stream:
+                    if not event.data.choices:
+                        continue
                     chunk = event.data.choices[0].delta.content
                     if chunk:
                         full_text += chunk
@@ -633,7 +657,17 @@ class Narrator:
                             }
                         )
 
-                return full_text.strip() if full_text else None
+            from .training import collector
+
+            messages = [
+                {"role": "system", "content": NARRATOR_SYSTEM_PROMPT},
+                {"role": "user", "content": prompt},
+            ]
+            collector.record_narration_interaction(
+                messages=messages,
+                response_text=full_text,
+            )
+            return full_text.strip() if full_text else None
         except Exception:
             logger.exception("Narrator streaming LLM call failed")
             return None

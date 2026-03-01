@@ -49,7 +49,9 @@ const progressPct = computed(() => Math.min(100, Math.round((collected.value / t
     >{{ mission.status }}</span>
     <button
       v-if="mission.status === 'running'"
+      type="button"
       class="abort-btn"
+      aria-label="Abort mission"
       @click="emit('abort')"
     >
       ABORT
@@ -60,6 +62,7 @@ const progressPct = computed(() => Math.min(100, Math.round((collected.value / t
 <style scoped>
 .mission-bar {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 0.75rem;
   padding: 0.4rem 0.75rem;
@@ -155,5 +158,19 @@ const progressPct = computed(() => Math.min(100, Math.round((collected.value / t
 .abort-btn:hover {
   border-color: var(--accent-red);
   color: var(--accent-red-light);
+}
+
+@media (max-width: 600px) {
+  .mission-bar {
+    gap: 0.5rem;
+    padding: 0.35rem 0.5rem;
+    font-size: 0.7rem;
+  }
+  .mission-status {
+    margin-left: 0;
+  }
+  .progress-track {
+    width: 3rem;
+  }
 }
 </style>

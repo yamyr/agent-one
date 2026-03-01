@@ -207,3 +207,95 @@ class TestHostRecall(unittest.TestCase):
 
         self.assertFalse(result["ok"])
         self.assertIn("Unknown rover", result["error"])
+
+
+class TestHostStationLoop(unittest.TestCase):
+    def test_register_detects_station_loop(self):
+        from app.agent import StationLoop
+
+        host = _make_host()
+        loop = StationLoop.__new__(StationLoop)
+        loop.agent_id = "station-loop"
+        loop.interval = 20.0
+        loop._event_buffer = []
+        host.register(loop)
+        self.assertIs(host._station_loop, loop)
+
+    def test_register_non_station_leaves_none(self):
+        host = _make_host()
+        host.register(_dummy("rover-mock"))
+        self.assertIsNone(host._station_loop)
+
+    def test_broadcast_feeds_interesting_event(self):
+        from app.agent import StationLoop
+
+        host = _make_host()
+        loop = StationLoop.__new__(StationLoop)
+        loop.agent_id = "station-loop"
+        loop.interval = 20.0
+        loop._event_buffer = []
+        host.register(loop)
+        msg = {"name": "dig", "source": "rover", "payload": {}}
+        with patch("app.host.broadcaster") as mock_bc:
+            mock_bc.send = AsyncMock()
+            asyncio.run(host.broadcast(msg))
+        self.assertEqual(len(loop._event_buffer), 1)
+        self.assertEqual(loop._event_buffer[0]["name"], "dig")
+
+    def test_broadcast_ignores_uninteresting_event(self):
+        from app.agent import StationLoop
+
+        host = _make_host()
+        loop = StationLoop.__new__(StationLoop)
+        loop.agent_id = "station-loop"
+        loop.interval = 20.0
+        loop._event_buffer = []
+        host.register(loop)
+        msg = {"name": "move", "source": "rover", "payload": {}}
+        with patch("app.host.broadcaster") as mock_bc:
+            mock_bc.send = AsyncMock()
+            asyncio.run(host.broadcast(msg))
+        self.assertEqual(len(loop._event_buffer), 0)
+
+    def test_buffer_event_caps_at_50(self):
+        from app.agent import StationLoop
+
+        loop = StationLoop.__new__(StationLoop)
+        loop._event_buffer = [{"n": i} for i in range(50)]
+        loop.buffer_event({"n": 50})
+        self.assertEqual(len(loop._event_buffer), 50)
+        self.assertEqual(loop._event_buffer[-1]["n"], 50)
+        self.assertEqual(loop._event_buffer[0]["n"], 1)
+
+    def test_tick_skips_when_buffer_empty(self):
+        from app.agent import StationLoop
+
+        loop = StationLoop.__new__(StationLoop)
+        loop._event_buffer = []
+        host = unittest.mock.MagicMock()
+        asyncio.run(loop.tick(host))
+        host.broadcast.assert_not_called()
+
+    def test_tick_calls_evaluate_and_clears_buffer(self):
+        from app.agent import StationLoop
+
+        loop = StationLoop.__new__(StationLoop)
+        loop._event_buffer = [{"name": "scan", "source": "drone", "payload": {}}]
+        loop._station = unittest.mock.MagicMock()
+        loop._station.evaluate_situation.return_value = {"thinking": "", "actions": []}
+        mock_world = unittest.mock.MagicMock()
+        mock_world.observe_station.return_value = unittest.mock.MagicMock()
+        loop._world = mock_world
+        host = unittest.mock.AsyncMock()
+        asyncio.run(loop.tick(host))
+        self.assertEqual(len(loop._event_buffer), 0)
+
+    def test_interesting_events_frozenset(self):
+        from app.agent import StationLoop
+
+        self.assertIsInstance(StationLoop.INTERESTING_EVENTS, frozenset)
+        self.assertIn("dig", StationLoop.INTERESTING_EVENTS)
+        self.assertIn("scan", StationLoop.INTERESTING_EVENTS)
+        self.assertNotIn("move", StationLoop.INTERESTING_EVENTS)
+        self.assertIn("charge_agent", StationLoop.INTERESTING_EVENTS)
+        self.assertNotIn("charge_rover", StationLoop.INTERESTING_EVENTS)

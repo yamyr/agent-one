@@ -91,3 +91,7 @@ class StationContext(BaseModel):
     rovers: list[RoverSummary]
     stones: list[StoneInfo]
     memory: list[str] = []
+    tick: int = 0
+    mission_status: str = "in_progress"
+    collected_quantity: int = 0
+    target_quantity: int = 100

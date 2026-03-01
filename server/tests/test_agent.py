@@ -2,7 +2,7 @@ import unittest
 
 from app.world import world, execute_action
 from app.agent import MistralRoverReasoner, ROVER_TOOLS, DRONE_TOOLS
-from app.agent import parse_task_separator
+from app.agent import parse_task_separator, _parse_structured_thinking
 
 
 class TestRoverFallback(unittest.TestCase):
@@ -161,3 +161,98 @@ class TestExecuteActionNoTaskUpdate(unittest.TestCase):
         result = execute_action("rover-mistral", "move", {"direction": "north"})
         self.assertTrue(result["ok"])
         self.assertNotIn("task_update", result)
+
+
+class TestRoverContextNoBoundaryClipping(unittest.TestCase):
+    """Verify _build_context doesn't clip unvisited dirs at legacy GRID_W/GRID_H."""
+
+    def setUp(self):
+        self._orig_pos = world.state["agents"]["rover-mistral"]["position"][:]
+        self._orig_battery = world.state["agents"]["rover-mistral"]["battery"]
+        self._orig_mission = world.state["agents"]["rover-mistral"]["mission"].copy()
+        self._orig_visited = world.state["agents"]["rover-mistral"].get("visited", [])[:]
+
+    def tearDown(self):
+        world.state["agents"]["rover-mistral"]["position"] = self._orig_pos
+        world.state["agents"]["rover-mistral"]["battery"] = self._orig_battery
+        world.state["agents"]["rover-mistral"]["mission"] = self._orig_mission
+        world.state["agents"]["rover-mistral"]["visited"] = self._orig_visited
+
+    def test_unvisited_dirs_beyond_old_grid_boundary(self):
+        """At x=25, y=25 (beyond old 20x20 grid), all 4 dirs should be unvisited."""
+        world.state["agents"]["rover-mistral"]["position"] = [25, 25]
+        world.state["agents"]["rover-mistral"]["battery"] = 1.0
+        world.state["agents"]["rover-mistral"]["mission"] = {"objective": "Explore", "plan": []}
+        world.state["agents"]["rover-mistral"]["visited"] = [[25, 25]]
+        agent = MistralRoverReasoner()
+        context = agent._build_context()
+        # All 4 directions should appear as unvisited
+        self.assertIn("north", context)
+        self.assertIn("south", context)
+        self.assertIn("east", context)
+        self.assertIn("west", context)
+
+    def test_unvisited_dirs_at_negative_coords(self):
+        """At x=-5, y=-5, all 4 dirs should still be listed as unvisited."""
+        world.state["agents"]["rover-mistral"]["position"] = [-5, -5]
+        world.state["agents"]["rover-mistral"]["battery"] = 1.0
+        world.state["agents"]["rover-mistral"]["mission"] = {"objective": "Explore", "plan": []}
+        world.state["agents"]["rover-mistral"]["visited"] = [[-5, -5]]
+        agent = MistralRoverReasoner()
+        context = agent._build_context()
+        self.assertIn("north", context)
+        self.assertIn("south", context)
+        self.assertIn("east", context)
+        self.assertIn("west", context)
+
+    def test_context_says_infinite_terrain(self):
+        """Context should mention 'infinite terrain', not 'Grid: 20x20'."""
+        world.state["agents"]["rover-mistral"]["position"] = [0, 0]
+        world.state["agents"]["rover-mistral"]["battery"] = 1.0
+        world.state["agents"]["rover-mistral"]["mission"] = {"objective": "Explore", "plan": []}
+        world.state["agents"]["rover-mistral"]["visited"] = [[0, 0]]
+        agent = MistralRoverReasoner()
+        context = agent._build_context()
+        self.assertIn("chunk-based", context)
+        self.assertNotIn("Grid: 20x20", context)
+
+
+class TestParseStructuredThinking(unittest.TestCase):
+    """Tests for _parse_structured_thinking helper."""
+
+    def test_parses_all_fields(self):
+        text = "SITUATION: Low battery near vein\nOPTIONS: dig, return\nDECISION: return to station\nRISK: high"
+        result = _parse_structured_thinking(text)
+        self.assertEqual(result["situation"], "Low battery near vein")
+        self.assertEqual(result["options"], ["dig", "return"])
+        self.assertEqual(result["decision"], "return to station")
+        self.assertEqual(result["risk"], "high")
+
+    def test_returns_default_for_plain_text(self):
+        result = _parse_structured_thinking("Just thinking about stuff")
+        self.assertEqual(result["situation"], "")
+        self.assertEqual(result["options"], [])
+        self.assertEqual(result["risk"], "low")
+
+    def test_partial_tags_still_parsed(self):
+        text = "SITUATION: Exploring north\nDECISION: move north"
+        result = _parse_structured_thinking(text)
+        self.assertEqual(result["situation"], "Exploring north")
+        self.assertEqual(result["decision"], "move north")
+
+    def test_risk_normalized_to_lowercase(self):
+        text = "SITUATION: Storm approaching\nRISK: high"
+        result = _parse_structured_thinking(text)
+        self.assertEqual(result["risk"], "high")
+
+    def test_empty_string_returns_default(self):
+        result = _parse_structured_thinking("")
+        self.assertEqual(result["situation"], "")
+        self.assertEqual(result["risk"], "low")
+
+    def test_invalid_risk_defaults_with_warning(self):
+        text = "SITUATION: Unknown state\nRISK: extreme"
+        with self.assertLogs("app.agent", level="DEBUG") as cm:
+            result = _parse_structured_thinking(text)
+        self.assertEqual(result["risk"], "low")
+        self.assertTrue(any("Unrecognized risk level" in msg for msg in cm.output))

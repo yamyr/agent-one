@@ -88,11 +88,19 @@ def _random_free_pos(occupied, rng=None, cx=0, cy=0):
     """Pick a random position within a chunk area not in `occupied`."""
     r = rng or random
     x0, y0 = cx * CHUNK_SIZE, cy * CHUNK_SIZE
-    while True:
+    for _ in range(CHUNK_SIZE * CHUNK_SIZE * 2):
         x = r.randint(x0, x0 + CHUNK_SIZE - 1)
         y = r.randint(y0, y0 + CHUNK_SIZE - 1)
         if (x, y) not in occupied:
             return x, y
+    # Fallback: linear scan for any free position
+    for y in range(y0, y0 + CHUNK_SIZE):
+        for x in range(x0, x0 + CHUNK_SIZE):
+            if (x, y) not in occupied:
+                return x, y
+    # Chunk fully occupied — return origin as last resort
+    logger.warning("Chunk (%d,%d) fully occupied, returning origin", cx, cy)
+    return x0, y0
 
 
 # --------------- Chunk-based procedural generation ---------------
@@ -172,6 +180,7 @@ def _ensure_chunk(cx, cy):
 
     # Register stones in the global list
     WORLD.setdefault("stones", []).extend(stones)
+    _index_stones(stones)
 
     chunk_data = {"generated": True, "stone_count": len(stones)}
     chunks[key] = chunk_data
@@ -282,6 +291,7 @@ def _make_drone(start_x, start_y):
         "revealed": _init_revealed(start_x, start_y, DRONE_REVEAL_RADIUS),
         "inventory": [],
         "memory": [],
+        "strategic_memory": [],
         "tasks": [],
         "type": "drone",
         "tools": None,  # populated lazily via _ensure_agent_tools()
@@ -297,6 +307,7 @@ def _make_rover(start_x, start_y):
         "revealed": _init_revealed(start_x, start_y),
         "inventory": [],
         "memory": [],
+        "strategic_memory": [],
         "tasks": [],
         "type": "rover",
         "tools": None,  # populated lazily via _ensure_agent_tools()
@@ -327,6 +338,7 @@ def _build_initial_world():
         "solar_panels": [],
         "drone_scans": [],
         "tick": 0,
+        "generation_id": 0,
         "bounds": {"min_x": -3, "max_x": 3, "min_y": -3, "max_y": 3},
         "mission": {
             "status": "running",
@@ -344,6 +356,39 @@ def _init_world_chunks():
     for cx in range(-1, 2):
         for cy in range(-1, 2):
             _ensure_chunk(cx, cy)
+
+
+# Spatial index: (x, y) -> stone dict for O(1) lookups.
+# Rebuilt lazily when the WORLD["stones"] list is replaced externally (e.g. tests).
+_stone_index: dict[tuple[int, int], dict] = {}
+_stone_index_source: list | None = None  # tracks which list we indexed
+
+
+def _rebuild_stone_index() -> None:
+    """Rebuild the spatial index from the current stones list."""
+    global _stone_index_source
+    stones = WORLD.get("stones", [])
+    _stone_index.clear()
+    for s in stones:
+        _stone_index[tuple(s["position"])] = s
+    _stone_index_source = stones
+
+
+def _ensure_stone_index() -> None:
+    """Ensure the spatial index is in sync with WORLD['stones']."""
+    if WORLD.get("stones") is not _stone_index_source:
+        _rebuild_stone_index()
+
+
+def _index_stones(stones: list[dict]) -> None:
+    """Add newly generated stones to the spatial index."""
+    for s in stones:
+        _stone_index[tuple(s["position"])] = s
+
+
+def _unindex_stone(stone: dict) -> None:
+    """Remove a stone from the spatial index."""
+    _stone_index.pop(tuple(stone["position"]), None)
 
 
 WORLD = _build_initial_world()
@@ -403,18 +448,87 @@ class World:
         else:
             self._state["agents"][agent_id].pop("pending_commands", None)
 
+    def get_generation_id(self) -> int:
+        return self._state.get("generation_id", 0)
+
+    def summarize_memories(self, agent_id: str) -> str | None:
+        return summarize_memories(agent_id)
+
+    def record_strategic_insight(self, agent_id: str, insight: str, tick: int):
+        record_strategic_insight(agent_id, insight, tick)
+
 
 # Module-level singleton wrapping the global WORLD dict
 world = World(WORLD)
 
 
+# -- Inter-agent message relay --
+
+AGENT_MESSAGES: list[dict] = []
+
+
+def send_agent_message(from_id: str, to_id: str, message: str) -> dict:
+    """Route a message from one agent to another (via station relay)."""
+    msg = {
+        "from": from_id,
+        "to": to_id,
+        "message": message,
+        "tick": WORLD["tick"],
+        "read": False,
+    }
+    AGENT_MESSAGES.append(msg)
+    return {"ok": True, "message": message, "to": to_id}
+
+
+def get_unread_messages(agent_id: str) -> list[dict]:
+    """Get and mark as read all messages for an agent."""
+    unread = [m for m in AGENT_MESSAGES if m["to"] == agent_id and not m["read"]]
+    for m in unread:
+        m["read"] = True
+    return unread
+
+
+def get_drone_intel_for_rover(rover_id: str) -> list[dict]:
+    """Return drone scan hotspots that the rover hasn't visited yet."""
+    rover = WORLD["agents"].get(rover_id)
+    if not rover:
+        return []
+    visited = set(map(tuple, rover.get("visited", [])))
+    intel = []
+    for scan in WORLD.get("drone_scans", []):
+        readings = scan.get("readings", {})
+        for cell_key, conc in readings.items():
+            if conc <= 0.3:
+                continue
+            parts = cell_key.split(",")
+            cx, cy = int(parts[0]), int(parts[1])
+            if (cx, cy) in visited:
+                continue
+            intel.append(
+                {
+                    "position": [cx, cy],
+                    "concentration": round(conc, 2),
+                    "scanned_by": scan.get("scanner", scan.get("agent_id", "drone")),
+                    "tick": scan.get("tick", 0),
+                }
+            )
+    intel.sort(key=lambda x: x["concentration"], reverse=True)
+    return intel[:5]
+
+
 def reset_world():
     """Reset WORLD to initial state. Re-seeds RNG if world_seed is set."""
+    gen = WORLD.get("generation_id", 0) + 1
     fresh = _build_initial_world()
+    fresh["generation_id"] = gen
     WORLD.clear()
     WORLD.update(fresh)
+    _stone_index.clear()
+    global _stone_index_source
+    _stone_index_source = None
+    AGENT_MESSAGES.clear()
     _init_world_chunks()
-    logger.info("World reset")
+    logger.info("World reset (generation %d)", gen)
 
 
 def next_tick():
@@ -429,15 +543,15 @@ def check_ground(agent_id):
     if agent is None:
         return {"stone": None}
     x, y = agent["position"]
-    for stone in WORLD.get("stones", []):
-        if stone["position"] == [x, y]:
-            return {
-                "stone": {
-                    "type": stone["type"],
-                    "grade": stone.get("grade", "unknown"),
-                    "quantity": stone.get("quantity", 0),
-                }
+    stone = _find_stone_at(x, y)
+    if stone:
+        return {
+            "stone": {
+                "type": stone["type"],
+                "grade": stone.get("grade", "unknown"),
+                "quantity": stone.get("quantity", 0),
             }
+        }
     return {"stone": None}
 
 
@@ -570,11 +684,9 @@ def execute_action(agent_id, action_name, params):
 
 
 def _find_stone_at(x, y):
-    """Find a stone at the given position, or None."""
-    for stone in WORLD.get("stones", []):
-        if stone["position"] == [x, y]:
-            return stone
-    return None
+    """Find a stone at the given position, or None. O(1) via spatial index."""
+    _ensure_stone_index()
+    return _stone_index.get((x, y))
 
 
 def _execute_analyze(agent_id, agent):
@@ -664,6 +776,7 @@ def _execute_dig(agent_id, agent):
         }
     )
     WORLD["stones"].remove(stone)
+    _unindex_stone(stone)
     logger.info(
         "Agent %s dug and collected %s grade=%s qty=%d at (%d,%d)",
         agent_id,
@@ -806,20 +919,6 @@ def _execute_use_solar_battery(agent_id):
     return {"ok": False, "error": "No active solar panel at current position"}
 
 
-def _nearest_solar_panel(x, y):
-    best = None
-    best_dist = float("inf")
-    for panel in WORLD.get("solar_panels", []):
-        if panel["depleted"]:
-            continue
-        px, py = panel["position"]
-        d = abs(px - x) + abs(py - y)
-        if d < best_dist:
-            best_dist = d
-            best = panel
-    return best
-
-
 def check_mission_status():
     """Update mission collected_quantity and detect success/failure.
 
@@ -916,6 +1015,34 @@ def record_memory(agent_id, text):
     mem.append(text)
     if len(mem) > MEMORY_MAX:
         del mem[: len(mem) - MEMORY_MAX]
+
+
+def summarize_memories(agent_id: str) -> str | None:
+    """Return a summary prompt for the agent's memories, or None if too few."""
+    agent = WORLD["agents"].get(agent_id)
+    if agent is None:
+        return None
+    memories = agent.get("memory", [])
+    if len(memories) < 6:
+        return None
+    mem_text = "\n".join(f"- {m}" for m in memories[-8:])
+    return (
+        "Summarize the following rover exploration memories into 1-2 strategic "
+        "insights (e.g., 'Zone B3 consistently yields high-grade minerals', "
+        "'Storms from the north tend to last 3 ticks'). Be concise.\n\n"
+        f"{mem_text}"
+    )
+
+
+def record_strategic_insight(agent_id: str, insight: str, tick: int):
+    """Store a strategic insight for the agent, capped at 5."""
+    agent = WORLD["agents"].get(agent_id)
+    if agent is None:
+        return
+    sm = agent.setdefault("strategic_memory", [])
+    sm.append({"insight": insight, "tick": tick})
+    if len(sm) > 5:
+        agent["strategic_memory"] = sm[-5:]
 
 
 def direction_hint(dx, dy):
@@ -1081,12 +1208,17 @@ def observe_station():
         )
 
     station_agent = WORLD["agents"].get("station", {})
+    mission = WORLD.get("mission", {})
     return StationContext(
         grid_w=GRID_W,
         grid_h=GRID_H,
         rovers=rovers,
         stones=stones,
         memory=station_agent.get("memory", []),
+        tick=WORLD.get("tick", 0),
+        mission_status=mission.get("status", "in_progress"),
+        collected_quantity=mission.get("collected_quantity", 0),
+        target_quantity=mission.get("target_quantity", TARGET_QUANTITY),
     )
 
 
@@ -1120,6 +1252,8 @@ def get_snapshot():
             s.pop("_true_quantity", None)
             visible.append(s)
     snap["stones"] = visible
+    # Include agent messages for UI visibility
+    snap["agent_messages"] = copy.deepcopy(AGENT_MESSAGES)
     # Ensure bounds are present
     if "bounds" not in snap:
         snap["bounds"] = {"min_x": 0, "max_x": GRID_W - 1, "min_y": 0, "max_y": GRID_H - 1}
