@@ -463,7 +463,16 @@ def _ensure_chunk(cx, cy):
             r = rng.random()
             if r < MOUNTAIN_PROBABILITY:
                 occupied.add((wx, wy))
-                obstacles.append({"position": [wx, wy], "kind": "mountain", "state": "idle"})
+                has_ice = rng.random() < ICE_DEPOSIT_PROBABILITY
+                ice_qty = rng.randint(*ICE_QUANTITY_RANGE) if has_ice else 0
+                obstacles.append(
+                    {
+                        "position": [wx, wy],
+                        "kind": "mountain",
+                        "state": "idle",
+                        "ice_deposit": ice_qty,
+                    }
+                )
             elif r < MOUNTAIN_PROBABILITY + GEYSER_PROBABILITY:
                 occupied.add((wx, wy))
                 obstacles.append(
@@ -1371,31 +1380,21 @@ def execute_action(agent_id, action_name, params):
         if is_hauler:
             return {"ok": False, "error": "Haulers cannot upgrade buildings"}
         result = _execute_upgrade_building(agent_id, agent, params)
-    elif action_name == "load_cargo":
+    elif action_name in ("load_from_rover", "load_cargo"):
         if not is_hauler:
-            return {"ok": False, "error": "Only haulers can load cargo"}
-        result = _execute_load_cargo(agent_id, agent)
+            return {"ok": False, "error": "Only haulers can load from rover"}
+        result = _execute_load_cargo(agent_id, agent, params)
         if result["ok"]:
             record_memory(
                 agent_id,
-                f"Loaded {result.get('loaded_count', 0)} items at ({result['position'][0]},{result['position'][1]})",
+                f"Loaded {result.get('loaded_count', 0)} cargo item(s), inventory={result.get('inventory_count', 0)}",
             )
-    elif action_name == "unload_cargo":
+    elif action_name in ("unload_at_station", "unload_cargo"):
         if not is_hauler:
-            return {"ok": False, "error": "Only haulers can unload cargo"}
+            return {"ok": False, "error": "Only haulers can unload at station"}
         result = _execute_unload_cargo(agent_id, agent)
         if result["ok"]:
             record_memory(agent_id, f"Unloaded {result.get('unloaded_count', 0)} items at station")
-    elif action_name in (
-        "load_from_rover",
-        "unload_at_station",
-        "pick_up_from",
-        "transfer_cargo",
-    ):
-        return {
-            "ok": False,
-            "error": "Legacy cargo transfer actions are disabled; use load_cargo + unload_cargo",
-        }
     else:
         return {"ok": False, "error": f"Unknown action: {action_name}"}
 
