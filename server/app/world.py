@@ -327,6 +327,7 @@ def _build_initial_world():
         "solar_panels": [],
         "drone_scans": [],
         "tick": 0,
+        "generation_id": 0,
         "bounds": {"min_x": -3, "max_x": 3, "min_y": -3, "max_y": 3},
         "mission": {
             "status": "running",
@@ -403,6 +404,9 @@ class World:
         else:
             self._state["agents"][agent_id].pop("pending_commands", None)
 
+    def get_generation_id(self) -> int:
+        return self._state.get("generation_id", 0)
+
 
 # Module-level singleton wrapping the global WORLD dict
 world = World(WORLD)
@@ -410,11 +414,13 @@ world = World(WORLD)
 
 def reset_world():
     """Reset WORLD to initial state. Re-seeds RNG if world_seed is set."""
+    gen = WORLD.get("generation_id", 0) + 1
     fresh = _build_initial_world()
+    fresh["generation_id"] = gen
     WORLD.clear()
     WORLD.update(fresh)
     _init_world_chunks()
-    logger.info("World reset")
+    logger.info("World reset (generation %d)", gen)
 
 
 def next_tick():

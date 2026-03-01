@@ -531,14 +531,25 @@ class Narrator:
         """
         try:
             client = self._get_mistral()
+            effective_model = settings.fine_tuned_narration_model or settings.narration_model
             response = client.chat.complete(
-                model=settings.narration_model,
+                model=effective_model,
                 messages=[
                     {"role": "system", "content": NARRATOR_SYSTEM_PROMPT},
                     {"role": "user", "content": prompt},
                 ],
                 max_tokens=350,
                 temperature=0.9,
+            )
+            from .training import collector
+
+            messages = [
+                {"role": "system", "content": NARRATOR_SYSTEM_PROMPT},
+                {"role": "user", "content": prompt},
+            ]
+            collector.record_narration_interaction(
+                messages=messages,
+                response_text=response.choices[0].message.content or "",
             )
             text = response.choices[0].message.content
             return text.strip() if text else None
@@ -555,8 +566,10 @@ class Narrator:
         try:
             client = self._get_mistral()
 
+            effective_model = settings.fine_tuned_narration_model or settings.narration_model
+
             stream = client.chat.stream(
-                model=settings.narration_model,
+                model=effective_model,
                 messages=[
                     {"role": "system", "content": NARRATOR_SYSTEM_PROMPT},
                     {"role": "user", "content": prompt},
@@ -583,6 +596,16 @@ class Narrator:
                         }
                     )
 
+            from .training import collector
+
+            messages = [
+                {"role": "system", "content": NARRATOR_SYSTEM_PROMPT},
+                {"role": "user", "content": prompt},
+            ]
+            collector.record_narration_interaction(
+                messages=messages,
+                response_text=full_text,
+            )
             return full_text.strip() if full_text else None
         except Exception:
             logger.exception("Narrator streaming LLM call failed")
