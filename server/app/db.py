@@ -9,11 +9,14 @@ RecordID notes:
 
 from __future__ import annotations
 
+import logging
 from typing import Generator
 
 from surrealdb import Surreal
 
 from .config import settings
+
+logger = logging.getLogger(__name__)
 
 
 def _create_connection() -> Surreal:
@@ -28,22 +31,22 @@ def init_db():
     """Verify DB connection on startup, with retries for Railway cold starts."""
     import time as _time
 
-    print(f"Connecting to SurrealDB: {settings.surreal_url}")
-    print(f"Namespace: {settings.surreal_ns}, Database: {settings.surreal_db}")
+    logger.info("Connecting to SurrealDB: %s", settings.surreal_url)
+    logger.info("Namespace: %s, Database: %s", settings.surreal_ns, settings.surreal_db)
 
     max_attempts = 10
     for attempt in range(1, max_attempts + 1):
         try:
             client = _create_connection()
             client.close()
-            print("SurrealDB connection verified")
+            logger.info("SurrealDB connection verified")
             return
         except Exception as exc:
             if attempt == max_attempts:
                 raise RuntimeError(
                     f"Failed to connect to SurrealDB after {max_attempts} attempts"
                 ) from exc
-            print(f"SurrealDB not ready (attempt {attempt}/{max_attempts}): {exc}")
+            logger.warning("SurrealDB not ready (attempt %d/%d): %s", attempt, max_attempts, exc)
             _time.sleep(2)
 
 

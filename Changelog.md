@@ -4,6 +4,9 @@
 
 ### Added
 - **Agent Reasoning Transparency Panel (Feature C)**: Structured reasoning output from LLM agents with visual card display
+
+### Fixed
+- **Logging hygiene (#134, #135)**: Replace f-string formatting in `broadcast.py` logger calls with lazy `%s` formatting; replace bare `print()` in `db.py` with proper `logger.info()`/`logger.warning()` using lazy formatting
   - Compressed `STRUCTURED_REASONING_PROMPT` appended to rover and drone `_build_context()` — agents output SITUATION/OPTIONS/DECISION/RISK fields
   - `_parse_structured_thinking()` parser extracts structured fields with graceful fallback defaults
   - Risk-level logging: unrecognized risk values logged at DEBUG before defaulting to "low"
