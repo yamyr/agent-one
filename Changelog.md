@@ -20,6 +20,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+* **station-loop:** Station Reactive Intelligence (Feature E) — periodic LLM evaluation of field events with reactive coordination
+* **station-loop:** `StationLoop` BaseAgent subclass with 20s evaluation interval and event buffering (max 50)
+* **station:** `StationAgent.evaluate_situation()` method for periodic LLM-based field assessment
+* **models:** `StationContext` extended with `tick`, `mission_status`, `collected_quantity`, `target_quantity`
+* **host:** interesting field events (dig, scan, notify, etc.) automatically routed to station loop
+* **tests:** 18 new tests (7 station + 11 host integration)
 * **voice:** add `/api/voice-command` endpoint — accepts audio uploads, transcribes via Mistral Voxtral, parses structured commands (recall_rover, abort_mission, pause/resume, etc.) via LLM, routes through Host, and broadcasts events via WebSocket
 * **voice:** new `VoiceCommandProcessor` class with lazy Mistral client, Mars domain context bias terms, and JSON command extraction
 * **voice:** add `voice_transcription_model` and `voice_command_model` settings to `config.py`
@@ -272,6 +278,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+* **station-loop:** Station Reactive Intelligence (Feature E) — periodic LLM evaluation of field events with reactive coordination
+* **station-loop:** `StationLoop` BaseAgent subclass with 20s evaluation interval and event buffering (max 50)
+* **station:** `StationAgent.evaluate_situation()` method for periodic LLM-based field assessment
+* **models:** `StationContext` extended with `tick`, `mission_status`, `collected_quantity`, `target_quantity`
+* **host:** interesting field events (dig, scan, notify, etc.) automatically routed to station loop
+* **tests:** 18 new tests (7 station + 11 host integration)
 - **Infinite Grid with Viewport & Minimap**: World is no longer a fixed 20×20 grid
   - Chunk-based procedural generation: 16×16 tile chunks generated lazily as agents explore
   - Seeded/deterministic world: each chunk uses `sha256(world_seed:cx:cy)` for consistent generation
@@ -362,6 +374,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+* **station-loop:** Station Reactive Intelligence (Feature E) — periodic LLM evaluation of field events with reactive coordination
+* **station-loop:** `StationLoop` BaseAgent subclass with 20s evaluation interval and event buffering (max 50)
+* **station:** `StationAgent.evaluate_situation()` method for periodic LLM-based field assessment
+* **models:** `StationContext` extended with `tick`, `mission_status`, `collected_quantity`, `target_quantity`
+* **host:** interesting field events (dig, scan, notify, etc.) automatically routed to station loop
+* **tests:** 18 new tests (7 station + 11 host integration)
 - **`analyze` action**: reveals a stone's true type (core/basalt), costs 3% battery; dig/pickup now require prior analysis
 - **`analyze_ground` action**: reads ground concentration at current tile (0.0–1.0 indicating proximity to core deposits), costs 3% battery; readings stored in agent memory
 - **Concentration map**: computed from core positions using Gaussian falloff (`exp(-d²/σ²)`, σ=4.0), serialized in snapshots for UI access

@@ -1145,12 +1145,17 @@ def observe_station():
         )
 
     station_agent = WORLD["agents"].get("station", {})
+    mission = WORLD.get("mission", {})
     return StationContext(
         grid_w=GRID_W,
         grid_h=GRID_H,
         rovers=rovers,
         stones=stones,
         memory=station_agent.get("memory", []),
+        tick=WORLD.get("tick", 0),
+        mission_status=mission.get("status", "in_progress"),
+        collected_quantity=mission.get("collected_quantity", 0),
+        target_quantity=mission.get("target_quantity", TARGET_QUANTITY),
     )
 
 
