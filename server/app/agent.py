@@ -16,7 +16,7 @@ from .broadcast import broadcaster
 from .config import settings
 from .protocol import make_message
 from .world import World, world as default_world
-from .world import GRID_W, GRID_H, DIRECTIONS, MAX_MOVE_DISTANCE, MAX_MOVE_DISTANCE_DRONE
+from .world import DIRECTIONS, MAX_MOVE_DISTANCE, MAX_MOVE_DISTANCE_DRONE
 from .world import FUEL_CAPACITY_ROVER, FUEL_CAPACITY_DRONE, DRONE_REVEAL_RADIUS
 from .world import BATTERY_COST_MOVE, BATTERY_COST_MOVE_DRONE, BATTERY_COST_DIG
 from .world import BATTERY_COST_ANALYZE, BATTERY_COST_SCAN, BATTERY_COST_NOTIFY
@@ -174,7 +174,7 @@ class MistralRoverReasoner:
         unvisited_dirs = []
         for name, (dx, dy) in DIRECTIONS.items():
             nx, ny = x + dx, y + dy
-            if 0 <= nx < GRID_W and 0 <= ny < GRID_H and (nx, ny) not in visited_set:
+            if (nx, ny) not in visited_set:
                 unvisited_dirs.append(name)
 
         # Vein at current tile
@@ -305,7 +305,7 @@ class MistralRoverReasoner:
 
         parts.append(
             f"\n== Environment ==\n"
-            f"Grid: {GRID_W}x{GRID_H}\n"
+            f"World: chunk-based (infinite terrain)\n"
             f"Tiles visited: {len(agent.get('visited', []))}\n"
             f"Unvisited neighbors: {', '.join(unvisited_dirs) if unvisited_dirs else 'none'}\n"
             f"Vein here: {stone_line}"

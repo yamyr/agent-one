@@ -161,3 +161,57 @@ class TestExecuteActionNoTaskUpdate(unittest.TestCase):
         result = execute_action("rover-mistral", "move", {"direction": "north"})
         self.assertTrue(result["ok"])
         self.assertNotIn("task_update", result)
+
+
+class TestRoverContextNoBoundaryClipping(unittest.TestCase):
+    """Verify _build_context doesn't clip unvisited dirs at legacy GRID_W/GRID_H."""
+
+    def setUp(self):
+        self._orig_pos = world.state["agents"]["rover-mistral"]["position"][:]
+        self._orig_battery = world.state["agents"]["rover-mistral"]["battery"]
+        self._orig_mission = world.state["agents"]["rover-mistral"]["mission"].copy()
+        self._orig_visited = world.state["agents"]["rover-mistral"].get("visited", [])[:]
+
+    def tearDown(self):
+        world.state["agents"]["rover-mistral"]["position"] = self._orig_pos
+        world.state["agents"]["rover-mistral"]["battery"] = self._orig_battery
+        world.state["agents"]["rover-mistral"]["mission"] = self._orig_mission
+        world.state["agents"]["rover-mistral"]["visited"] = self._orig_visited
+
+    def test_unvisited_dirs_beyond_old_grid_boundary(self):
+        """At x=25, y=25 (beyond old 20x20 grid), all 4 dirs should be unvisited."""
+        world.state["agents"]["rover-mistral"]["position"] = [25, 25]
+        world.state["agents"]["rover-mistral"]["battery"] = 1.0
+        world.state["agents"]["rover-mistral"]["mission"] = {"objective": "Explore", "plan": []}
+        world.state["agents"]["rover-mistral"]["visited"] = [[25, 25]]
+        agent = MistralRoverReasoner()
+        context = agent._build_context()
+        # All 4 directions should appear as unvisited
+        self.assertIn("north", context)
+        self.assertIn("south", context)
+        self.assertIn("east", context)
+        self.assertIn("west", context)
+
+    def test_unvisited_dirs_at_negative_coords(self):
+        """At x=-5, y=-5, all 4 dirs should still be listed as unvisited."""
+        world.state["agents"]["rover-mistral"]["position"] = [-5, -5]
+        world.state["agents"]["rover-mistral"]["battery"] = 1.0
+        world.state["agents"]["rover-mistral"]["mission"] = {"objective": "Explore", "plan": []}
+        world.state["agents"]["rover-mistral"]["visited"] = [[-5, -5]]
+        agent = MistralRoverReasoner()
+        context = agent._build_context()
+        self.assertIn("north", context)
+        self.assertIn("south", context)
+        self.assertIn("east", context)
+        self.assertIn("west", context)
+
+    def test_context_says_infinite_terrain(self):
+        """Context should mention 'infinite terrain', not 'Grid: 20x20'."""
+        world.state["agents"]["rover-mistral"]["position"] = [0, 0]
+        world.state["agents"]["rover-mistral"]["battery"] = 1.0
+        world.state["agents"]["rover-mistral"]["mission"] = {"objective": "Explore", "plan": []}
+        world.state["agents"]["rover-mistral"]["visited"] = [[0, 0]]
+        agent = MistralRoverReasoner()
+        context = agent._build_context()
+        self.assertIn("chunk-based", context)
+        self.assertNotIn("Grid: 20x20", context)
