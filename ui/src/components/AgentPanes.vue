@@ -44,6 +44,12 @@ function agentModel(id) {
   return a && a.model ? a.model : ''
 }
 
+function messageCount(id) {
+  if (!props.worldState) return 0
+  const msgs = props.worldState.agent_messages || []
+  return msgs.filter(m => m.to === id && !m.read).length
+}
+
 function inventorySummary(id) {
   if (!props.worldState) return ''
   const a = props.worldState.agents[id]
@@ -91,6 +97,7 @@ function missionObjective(id) {
         :mission="missionObjective(id)"
         :events="agentEvents[id]"
         :color="agentColor(id)"
+        :message-count="messageCount(id)"
         @select-agent="emit('select-agent', $event)"
       />
     </template>

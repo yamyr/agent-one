@@ -454,6 +454,58 @@ class World:
 world = World(WORLD)
 
 
+# -- Inter-agent message relay --
+
+AGENT_MESSAGES: list[dict] = []
+
+
+def send_agent_message(from_id: str, to_id: str, message: str) -> dict:
+    """Route a message from one agent to another (via station relay)."""
+    msg = {
+        "from": from_id,
+        "to": to_id,
+        "message": message,
+        "tick": WORLD["tick"],
+        "read": False,
+    }
+    AGENT_MESSAGES.append(msg)
+    return {"ok": True, "message": message, "to": to_id}
+
+
+def get_unread_messages(agent_id: str) -> list[dict]:
+    """Get and mark as read all messages for an agent."""
+    unread = [m for m in AGENT_MESSAGES if m["to"] == agent_id and not m["read"]]
+    for m in unread:
+        m["read"] = True
+    return unread
+
+
+def get_drone_intel_for_rover(rover_id: str) -> list[dict]:
+    """Return drone scan hotspots that the rover hasn't visited yet."""
+    rover = WORLD["agents"].get(rover_id)
+    if not rover:
+        return []
+    visited = set(map(tuple, rover.get("visited", [])))
+    intel = []
+    for scan in WORLD.get("drone_scans", []):
+        readings = scan.get("readings", {})
+        for cell_key, conc in readings.items():
+            if conc <= 0.3:
+                continue
+            parts = cell_key.split(",")
+            cx, cy = int(parts[0]), int(parts[1])
+            if (cx, cy) in visited:
+                continue
+            intel.append({
+                "position": [cx, cy],
+                "concentration": round(conc, 2),
+                "scanned_by": scan.get("scanner", scan.get("agent_id", "drone")),
+                "tick": scan.get("tick", 0),
+            })
+    intel.sort(key=lambda x: x["concentration"], reverse=True)
+    return intel[:5]
+
+
 def reset_world():
     """Reset WORLD to initial state. Re-seeds RNG if world_seed is set."""
     gen = WORLD.get("generation_id", 0) + 1
@@ -464,6 +516,7 @@ def reset_world():
     _stone_index.clear()
     global _stone_index_source
     _stone_index_source = None
+    AGENT_MESSAGES.clear()
     _init_world_chunks()
     logger.info("World reset (generation %d)", gen)
 
@@ -1184,6 +1237,8 @@ def get_snapshot():
             s.pop("_true_quantity", None)
             visible.append(s)
     snap["stones"] = visible
+    # Include agent messages for UI visibility
+    snap["agent_messages"] = copy.deepcopy(AGENT_MESSAGES)
     # Ensure bounds are present
     if "bounds" not in snap:
         snap["bounds"] = {"min_x": 0, "max_x": GRID_W - 1, "min_y": 0, "max_y": GRID_H - 1}
