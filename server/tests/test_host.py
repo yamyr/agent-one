@@ -208,9 +208,11 @@ class TestHostRecall(unittest.TestCase):
         self.assertFalse(result["ok"])
         self.assertIn("Unknown rover", result["error"])
 
+
 class TestHostStationLoop(unittest.TestCase):
     def test_register_detects_station_loop(self):
         from app.agent import StationLoop
+
         host = _make_host()
         loop = StationLoop.__new__(StationLoop)
         loop.agent_id = "station-loop"
@@ -226,6 +228,7 @@ class TestHostStationLoop(unittest.TestCase):
 
     def test_broadcast_feeds_interesting_event(self):
         from app.agent import StationLoop
+
         host = _make_host()
         loop = StationLoop.__new__(StationLoop)
         loop.agent_id = "station-loop"
@@ -241,6 +244,7 @@ class TestHostStationLoop(unittest.TestCase):
 
     def test_broadcast_ignores_uninteresting_event(self):
         from app.agent import StationLoop
+
         host = _make_host()
         loop = StationLoop.__new__(StationLoop)
         loop.agent_id = "station-loop"
@@ -255,6 +259,7 @@ class TestHostStationLoop(unittest.TestCase):
 
     def test_buffer_event_caps_at_50(self):
         from app.agent import StationLoop
+
         loop = StationLoop.__new__(StationLoop)
         loop._event_buffer = [{"n": i} for i in range(50)]
         loop.buffer_event({"n": 50})
@@ -264,6 +269,7 @@ class TestHostStationLoop(unittest.TestCase):
 
     def test_tick_skips_when_buffer_empty(self):
         from app.agent import StationLoop
+
         loop = StationLoop.__new__(StationLoop)
         loop._event_buffer = []
         host = unittest.mock.MagicMock()
@@ -272,6 +278,7 @@ class TestHostStationLoop(unittest.TestCase):
 
     def test_tick_calls_evaluate_and_clears_buffer(self):
         from app.agent import StationLoop
+
         loop = StationLoop.__new__(StationLoop)
         loop._event_buffer = [{"name": "scan", "source": "drone", "payload": {}}]
         loop._station = unittest.mock.MagicMock()
@@ -285,6 +292,7 @@ class TestHostStationLoop(unittest.TestCase):
 
     def test_interesting_events_frozenset(self):
         from app.agent import StationLoop
+
         self.assertIsInstance(StationLoop.INTERESTING_EVENTS, frozenset)
         self.assertIn("dig", StationLoop.INTERESTING_EVENTS)
         self.assertIn("scan", StationLoop.INTERESTING_EVENTS)

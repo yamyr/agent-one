@@ -361,6 +361,7 @@ class TestBuildWorldSummary(unittest.TestCase):
         self.assertIn("rover-mistral (rover)", summary)
         self.assertIn("drone-mistral (drone)", summary)
 
+
 class TestBuildWorldSummaryExtended(unittest.TestCase):
     def test_summary_includes_tick(self):
         ctx = _make_station_context(tick=42)
@@ -368,7 +369,9 @@ class TestBuildWorldSummaryExtended(unittest.TestCase):
         self.assertIn("Tick: 42", summary)
 
     def test_summary_includes_mission_status(self):
-        ctx = _make_station_context(tick=10, mission_status="completed", collected_quantity=5, target_quantity=5)
+        ctx = _make_station_context(
+            tick=10, mission_status="completed", collected_quantity=5, target_quantity=5
+        )
         summary = _build_world_summary(ctx)
         self.assertIn("Mission status: completed", summary)
         self.assertIn("5/5", summary)
@@ -382,7 +385,9 @@ class TestStationEvaluate(unittest.TestCase):
         agent = self._make_agent()
         ctx = _make_station_context(tick=10)
         events = [{"name": "scan", "source": "drone", "payload": {"text": "ok"}}]
-        with unittest.mock.patch.object(agent, "_call_llm", return_value={"thinking": "ok", "actions": []}) as m:
+        with unittest.mock.patch.object(
+            agent, "_call_llm", return_value={"thinking": "ok", "actions": []}
+        ) as m:
             result = agent.evaluate_situation(ctx, events)
         self.assertIn("thinking", result)
         m.assert_called_once()
@@ -391,7 +396,9 @@ class TestStationEvaluate(unittest.TestCase):
         agent = self._make_agent()
         ctx = _make_station_context(tick=25)
         events = [{"name": "dig", "source": "rover", "payload": {"text": "dug"}}]
-        with unittest.mock.patch.object(agent, "_call_llm", return_value={"thinking": "", "actions": []}) as m:
+        with unittest.mock.patch.object(
+            agent, "_call_llm", return_value={"thinking": "", "actions": []}
+        ) as m:
             agent.evaluate_situation(ctx, events)
         prompt = m.call_args[0][0]
         self.assertIn("Tick 25", prompt)
@@ -399,7 +406,9 @@ class TestStationEvaluate(unittest.TestCase):
     def test_evaluate_with_empty_events(self):
         agent = self._make_agent()
         ctx = _make_station_context(tick=5)
-        with unittest.mock.patch.object(agent, "_call_llm", return_value={"thinking": "", "actions": []}) as m:
+        with unittest.mock.patch.object(
+            agent, "_call_llm", return_value={"thinking": "", "actions": []}
+        ) as m:
             agent.evaluate_situation(ctx, [])
         prompt = m.call_args[0][0]
         self.assertIn("(no recent events)", prompt)
@@ -414,6 +423,8 @@ class TestStationContextFields(unittest.TestCase):
         self.assertEqual(ctx.target_quantity, 100)
 
     def test_custom_values(self):
-        ctx = _make_station_context(tick=50, mission_status="completed", collected_quantity=10, target_quantity=10)
+        ctx = _make_station_context(
+            tick=50, mission_status="completed", collected_quantity=10, target_quantity=10
+        )
         self.assertEqual(ctx.tick, 50)
         self.assertEqual(ctx.mission_status, "completed")
