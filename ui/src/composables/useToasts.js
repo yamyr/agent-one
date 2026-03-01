@@ -49,6 +49,12 @@ export function useToasts() {
     if (toast?.timerId) clearTimeout(toast.timerId)
     toasts.value = toasts.value.filter(t => t.id !== id)
   }
+  function clearAll() {
+    for (const toast of toasts.value) {
+      if (toast.timerId) clearTimeout(toast.timerId)
+    }
+    toasts.value = []
+  }
 
-  return { toasts, addToast, dismiss }
+  return { toasts, addToast, dismiss, clearAll }
 }

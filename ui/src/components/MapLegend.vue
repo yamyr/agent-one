@@ -1,5 +1,5 @@
 <script setup>
-import { AGENT_COLORS, VEIN_COLORS } from '../constants.js'
+import { AGENT_COLORS, VEIN_COLORS, STRUCTURE_COLORS, STRUCTURE_LABELS } from '../constants.js'
 import { usePreferences } from '../composables/usePreferences.js'
 
 const { prefs } = usePreferences()
@@ -67,6 +67,55 @@ function toggle() {
                 :style="{ background: color }"
               />
               <span class="grade-label">{{ grade }}</span>
+            </div>
+          </div>
+        </div>
+        <div class="legend-section">
+          <h4>Structures</h4>
+          <div class="legend-grid">
+            <div
+              v-for="(color, type) in STRUCTURE_COLORS"
+              :key="type"
+              class="legend-item"
+            >
+              <span
+                class="dot structure"
+                :style="{ background: color }"
+              />
+              <span class="grade-label">{{ STRUCTURE_LABELS[type] || type }}</span>
+            </div>
+          </div>
+        </div>
+        <div class="legend-section">
+          <h4>Communication</h4>
+          <div class="legend-grid comm-grid">
+            <div class="legend-item">
+              <span
+                class="comm-swatch"
+                style="background: #44ccaa"
+              />
+              <span>Intel relay</span>
+            </div>
+            <div class="legend-item">
+              <span
+                class="comm-swatch"
+                style="background: #cc8844"
+              />
+              <span>Command</span>
+            </div>
+            <div class="legend-item">
+              <span
+                class="comm-swatch"
+                style="background: #cc4444"
+              />
+              <span>Alert</span>
+            </div>
+            <div class="legend-item">
+              <span
+                class="comm-swatch"
+                style="background: #4488cc"
+              />
+              <span>Notification</span>
             </div>
           </div>
         </div>
@@ -163,8 +212,25 @@ h4 {
   border: 1px solid rgba(255, 255, 255, 0.2);
 }
 
+.dot.structure {
+  border-radius: 2px;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+}
+
 .grade-label {
   text-transform: capitalize;
+}
+
+.comm-swatch {
+  width: 14px;
+  height: 2px;
+  flex-shrink: 0;
+  border-radius: 1px;
+  opacity: 0.9;
+}
+
+.comm-grid {
+  grid-template-columns: 1fr;
 }
 
 /* Transitions */

@@ -1,0 +1,129 @@
+{
+  "nav": {
+    "mission": "미션",
+    "agents": "에이전트",
+    "features": "기능",
+    "tech": "기술 스택",
+    "launch": "미션 시작"
+  },
+  "hero": {
+    "badge": "멀티 에이전트 화성 시뮬레이션",
+    "title_line1": "정복하라",
+    "title_line2": "붉은 행성을",
+    "subtitle": "자율 AI 에이전트를 화성에 배치하세요. 정교한 미션 컨트롤 인터페이스를 통해 에이전트의 추론, 적응, 협업 과정을 실시간으로 관찰하세요.",
+    "cta_launch": "미션 시작",
+    "cta_explore": "기능 살펴보기"
+  },
+  "mission": {
+    "label": "미션 브리핑",
+    "title": "자율 화성 탐사",
+    "description": "로버, 드론, 스테이션 세 개의 AI 에이전트가 중앙 미션 컨트롤을 통해 협력하며 화성 표면을 탐사합니다. 각 에이전트는 독립적인 추론 루프를 실행하여 지형, 기상, 미션 목표에 따라 실시간으로 의사결정을 내립니다.",
+    "stat_agents": "AI 에이전트",
+    "stat_tools": "에이전트 도구",
+    "stat_realtime": "실시간",
+    "stat_languages": "지원 언어"
+  },
+  "agents": {
+    "label": "에이전트 소개",
+    "title": "당신의 화성 팀",
+    "rover_name": "로버",
+    "rover_role": "지표면 탐사기",
+    "rover_desc": "화성 지형을 탐색하고, 코어 샘플을 시추하며 지질 구조를 분석합니다. 드론 정보와 폭풍 상황에 기반하여 탐사 경로를 자율적으로 결정합니다.",
+    "rover_tools": "이동 • 시추 • 분석 • 수거",
+    "drone_name": "드론",
+    "drone_role": "공중 정찰기",
+    "drone_desc": "상공에서 넓은 지형을 스캔하고, 로버의 안전한 경로를 매핑하며, 핵심 환경 데이터를 중계합니다. 암석 조성에 대한 확률적 평가를 제공합니다.",
+    "drone_tools": "스캔 • 경로 매핑 • 데이터 중계",
+    "station_name": "스테이션",
+    "station_role": "미션 컨트롤",
+    "station_desc": "모든 에이전트의 전력 배분을 관리하고, 시스템 상태를 모니터링하며 경고를 발송합니다. 모래 폭풍과 장비 문제 속에서도 팀의 가동을 유지합니다.",
+    "station_tools": "충전 • 전력 배분 • 경고"
+  },
+  "features": {
+    "label": "핵심 역량",
+    "title": "미션 시스템",
+    "items": [
+      {
+        "title": "LLM 기반 추론",
+        "desc": "각 에이전트가 Mistral AI 추론 루프를 실행하여 목표를 평가하고, 행동을 제안하며, 변화하는 조건에 실시간으로 적응합니다."
+      },
+      {
+        "title": "확률적 목표 관리",
+        "desc": "목표는 0.0에서 1.0까지의 신뢰도 점수를 추적하며, 에이전트가 데이터를 수집하고 임무를 완수할 때마다 동적으로 갱신됩니다."
+      },
+      {
+        "title": "실시간 스트리밍",
+        "desc": "WebSocket 연결을 통해 에이전트 결정, 도구 호출, 월드 상태 업데이트를 라이브로 시청하세요."
+      },
+      {
+        "title": "AI 내레이션",
+        "desc": "Mistral AI가 실시간 미션 해설을 생성하며, ElevenLabs 음성 합성 옵션으로 몰입감 있는 경험을 제공합니다."
+      },
+      {
+        "title": "다이내믹 월드",
+        "desc": "지형 위험, 모래 폭풍, 전장의 안개, 시간에 따라 변화하는 지질 구조를 갖춘 화성 환경입니다."
+      },
+      {
+        "title": "멀티 에이전트 협업",
+        "desc": "에이전트들은 구조화된 프로토콜로 통신합니다. 드론 정찰이 로버의 결정에 반영되고, 스테이션이 공유 자원을 관리합니다."
+      }
+    ]
+  },
+  "how_it_works": {
+    "label": "작동 방식",
+    "title": "미션 루프",
+    "steps": [
+      {
+        "number": "01",
+        "title": "관찰",
+        "desc": "에이전트가 월드 상태를 읽습니다. 지형, 위험, 배터리 잔량, 폭풍 강도, 다른 에이전트의 데이터 등을 파악합니다."
+      },
+      {
+        "number": "02",
+        "title": "추론",
+        "desc": "Mistral AI가 목표를 평가하고 위험을 분석하여, 대안과 함께 최적의 다음 행동을 제안합니다."
+      },
+      {
+        "number": "03",
+        "title": "실행",
+        "desc": "도구 호출이 월드 상태를 변경합니다. 이동, 시추, 스캔, 충전의 진행 상황이 라이브로 스트리밍됩니다."
+      },
+      {
+        "number": "04",
+        "title": "적응",
+        "desc": "목표 신뢰도가 동적으로 갱신됩니다. 조건이 변화하면 에이전트는 계획을 재평가합니다."
+      }
+    ]
+  },
+  "tech": {
+    "label": "기술 스택",
+    "title": "사용 기술",
+    "ai": {
+      "label": "AI & LLM",
+      "items": ["Mistral AI", "ElevenLabs TTS", "확률적 추론"]
+    },
+    "backend": {
+      "label": "백엔드",
+      "items": ["Python 3.14+", "FastAPI", "SurrealDB", "WebSockets"]
+    },
+    "frontend": {
+      "label": "프론트엔드",
+      "items": ["Vue 3", "Vite 7", "Three.js", "GSAP"]
+    },
+    "infra": {
+      "label": "인프라",
+      "items": ["Docker", "GitHub Actions", "Railway", "Discord Webhooks"]
+    }
+  },
+  "cta": {
+    "title": "화성 탐사 준비되셨나요?",
+    "subtitle": "미션 컨트롤 인터페이스를 실행하고, 자율 AI 에이전트가 붉은 행성을 실시간으로 탐사하는 모습을 지켜보세요.",
+    "button_launch": "미션 컨트롤 시작",
+    "button_github": "GitHub에서 보기"
+  },
+  "footer": {
+    "built_with": "Mistral Hackathon을 위해 Mistral AI로 제작",
+    "hackathon": "2025년 2월 28일 – 3월 1일",
+    "copyright": "© 2025 Agent One Team"
+  }
+}

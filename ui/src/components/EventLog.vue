@@ -19,6 +19,7 @@ const pinnedToTop = ref(true)
 const newEventKeys = ref(new Set())
 
 let lastSeenUid = 0
+let animationTimerId = null
 
 function onScroll() {
   const el = container.value
@@ -59,8 +60,9 @@ watch(
       newEventKeys.value = keys
 
       // Clear animation class after transition completes
-      setTimeout(() => {
+      animationTimerId = setTimeout(() => {
         newEventKeys.value = new Set()
+        animationTimerId = null
       }, 350)
 
       // Auto-scroll to top if pinned
@@ -97,6 +99,10 @@ onBeforeUnmount(() => {
   if (resizeObserver) {
     resizeObserver.disconnect()
   }
+  if (animationTimerId) {
+    clearTimeout(animationTimerId)
+    animationTimerId = null
+  }
 })
 
 function isNewEvent(event) {
@@ -120,49 +126,70 @@ function eventNameClass(event) {
       return 'event-name-map'
     case 'thinking':
       return 'event-name-think'
+    case 'insight':
+      return 'event-name-insight'
+    case 'intel_relay':
+      return 'event-name-relay'
     default:
       return 'event-name-default'
   }
 }
 
 function formatPayload(event) {
+  if (event._fmtPayload !== undefined) return event._fmtPayload
   const p = event.payload
-  if (!p) return ''
+  if (!p) return (event._fmtPayload = '')
 
+  let result = ''
   switch (event.name) {
     case 'thinking':
-      return p.text || ''
+      result = p.text || ''
+      break
     case 'move':
       if (p.from && p.to)
-        return `(${p.from[0]},${p.from[1]}) \u2192 (${p.to[0]},${p.to[1]})  bat ${Math.round((p.battery ?? 0) * 100)}%`
-      return ''
+        result = `(${p.from[0]},${p.from[1]}) \u2192 (${p.to[0]},${p.to[1]})  bat ${Math.round((p.battery ?? 0) * 100)}%`
+      break
     case 'analyze':
       if (p.stone)
-        return `${p.stone.grade} vein at (${p.position[0]},${p.position[1]}) qty=${p.stone.quantity}`
-      return ''
+        result = `${p.stone.grade} vein at (${p.position[0]},${p.position[1]}) qty=${p.stone.quantity}`
+      break
     case 'dig':
       if (p.stone)
-        return `dug ${p.stone.grade} qty=${p.stone.quantity} at (${p.position[0]},${p.position[1]})  inv=${p.inventory_count}`
-      return ''
+        result = `dug ${p.stone.grade} qty=${p.stone.quantity} at (${p.position[0]},${p.position[1]})  inv=${p.inventory_count}`
+      break
     case 'scan':
-      return `peak ${p.peak} at (${p.position[0]},${p.position[1]})`
+      result = `peak ${p.peak} at (${p.position[0]},${p.position[1]})`
+      break
     case 'charge_agent':
-      return `${p.agent_id || 'agent'} charged ${Math.round((p.battery_before ?? 0) * 100)}% \u2192 ${Math.round((p.battery_after ?? p.battery ?? 0) * 100)}%`
+      result = `${p.agent_id || 'agent'} charged ${Math.round((p.battery_before ?? 0) * 100)}% \u2192 ${Math.round((p.battery_after ?? p.battery ?? 0) * 100)}%`
+      break
     case 'alert':
-      return p.message || ''
+      result = p.message || ''
+      break
     case 'state':
-      return '' // skip world snapshots
+      break // skip world snapshots
     case 'mission_success':
-      return `\u2713 mission complete \u2014 ${p.collected_quantity ?? '?'} collected`
+      result = `\u2713 mission complete \u2014 ${p.collected_quantity ?? '?'} collected`
+      break
     case 'mission_aborted':
-      return `\u2717 mission aborted \u2014 ${p.reason || '?'}`
+      result = `\u2717 mission aborted \u2014 ${p.reason || '?'}`
+      break
     case 'assign_mission':
-      return p.objective || ''
+      result = p.objective || ''
+      break
     case 'recall':
-      return `recall ${p.rover_id || ''}${p.reason ? ' \u2014 ' + p.reason : ''}`
+      result = `recall ${p.rover_id || ''}${p.reason ? ' \u2014 ' + p.reason : ''}`
+      break
+    case 'insight':
+      result = `💡 ${p.text || ''}`
+      break
+    case 'intel_relay':
+      result = `\u{1F4E8} ${p.from || '?'} \u2192 ${p.to || '?'}: ${p.message || 'Intel relayed'}`
+      break
     default:
-      return JSON.stringify(p, null, 2)
+      result = JSON.stringify(p, null, 2)
   }
+  return (event._fmtPayload = result)
 }
 </script>
 
@@ -281,6 +308,7 @@ function formatPayload(event) {
 .event-name-resource { color: var(--accent-amber); }
 .event-name-map { color: var(--accent-blue); }
 .event-name-think { color: var(--accent-teal); }
+.event-name-insight { color: #f59e0b; }
 
 .event-payload {
   font-size: 0.7rem;

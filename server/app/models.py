@@ -22,6 +22,15 @@ class StoneInfo(BaseModel):
     analyzed: bool = False
 
 
+class StructureInfo(BaseModel):
+    type: str
+    category: str
+    position: list[int]
+    explored: bool = False
+    active: bool = False
+    description: str = ""
+
+
 # ── Rover Context (3 clear sections) ──
 
 
@@ -57,6 +66,14 @@ class PendingCommand(BaseModel):
     id: str = ""
 
 
+class ObstacleInfo(BaseModel):
+    """An environmental obstacle visible to the agent."""
+
+    position: list[int]
+    kind: str  # "mountain" or "geyser"
+    state: str = "idle"  # mountains: always "idle"; geysers: "idle" | "warning" | "erupting"
+
+
 class RoverComputed(BaseModel):
     """Derived fields for decision-making."""
 
@@ -65,6 +82,8 @@ class RoverComputed(BaseModel):
     stone_here: StoneInfo | None = None
     visible_stones: list[str] = []
     pending_commands: list[PendingCommand] = []
+    visible_structures: list[str] = []
+    nearby_obstacles: list[ObstacleInfo] = []
 
 
 class RoverContext(BaseModel):
@@ -91,3 +110,7 @@ class StationContext(BaseModel):
     rovers: list[RoverSummary]
     stones: list[StoneInfo]
     memory: list[str] = []
+    tick: int = 0
+    mission_status: str = "in_progress"
+    collected_quantity: int = 0
+    target_quantity: int = 100

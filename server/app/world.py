@@ -8,7 +8,7 @@ import random
 from .config import settings
 from . import storm as storm_mod
 from .models import RoverAgentState, RoverWorldView, RoverComputed, RoverContext
-from .models import AgentMission, InventoryItem, StoneInfo
+from .models import AgentMission, InventoryItem, StoneInfo, ObstacleInfo
 from .models import RoverSummary, StationContext
 
 logger = logging.getLogger(__name__)
@@ -84,16 +84,126 @@ MAX_SOLAR_PANELS = 2
 STONE_PROBABILITY = 0.015
 CORE_PROBABILITY = 0.3
 
+# --- Abandoned structures ---
+STRUCTURE_TYPES = [
+    {
+        "type": "refinery",
+        "category": "building",
+        "description": "An abandoned refinery capable of extracting valuable materials from basalt",
+        "contents": {"processing_capacity": 50},
+    },
+    {
+        "type": "solar_panel_structure",
+        "category": "building",
+        "description": "A large solar panel array that provides passive charging to nearby rovers",
+        "contents": {"charge_rate": 0.01, "charge_interval": 2, "charge_radius": 1},
+    },
+    {
+        "type": "accumulator",
+        "category": "building",
+        "description": "A power accumulator that increases base capacity and recharges nearby rovers",
+        "contents": {"capacity_bonus": 0.20, "recharge_rate": 0.01, "recharge_interval": 5},
+    },
+    {
+        "type": "broken_hauler",
+        "category": "vehicle",
+        "description": "A broken vehicle hauler once used to transport materials across the surface",
+        "contents": {"salvageable_parts": ["wheels", "chassis"]},
+    },
+    {
+        "type": "broken_manipulator",
+        "category": "vehicle",
+        "description": "A broken construction manipulator used to build buildings and infrastructure",
+        "contents": {"salvageable_parts": ["arm", "actuator", "controller"]},
+    },
+]
+STRUCTURE_SPAWN_RADIUS = 10  # max Manhattan distance from base (0,0)
+BATTERY_COST_INVESTIGATE = 2 / FUEL_CAPACITY_ROVER  # 2 fuel units
+BATTERY_COST_USE_REFINERY = 5 / FUEL_CAPACITY_ROVER  # 5 fuel units
+
+# --- Obstacle generation ---
+MOUNTAIN_PROBABILITY = 0.008  # ~0.8% per tile
+GEYSER_PROBABILITY = 0.004  # ~0.4% per tile
+GEYSER_CYCLE_IDLE = 8  # ticks idle before warning
+GEYSER_CYCLE_WARNING = 2  # ticks in warning before erupting
+GEYSER_CYCLE_ERUPTING = 3  # ticks erupting
+BATTERY_COST_GEYSER = 0.10  # 10% battery drain when caught in eruption
+
 
 def _random_free_pos(occupied, rng=None, cx=0, cy=0):
     """Pick a random position within a chunk area not in `occupied`."""
     r = rng or random
     x0, y0 = cx * CHUNK_SIZE, cy * CHUNK_SIZE
-    while True:
+    for _ in range(CHUNK_SIZE * CHUNK_SIZE * 2):
         x = r.randint(x0, x0 + CHUNK_SIZE - 1)
         y = r.randint(y0, y0 + CHUNK_SIZE - 1)
         if (x, y) not in occupied:
             return x, y
+    # Fallback: linear scan for any free position
+    for y in range(y0, y0 + CHUNK_SIZE):
+        for x in range(x0, x0 + CHUNK_SIZE):
+            if (x, y) not in occupied:
+                return x, y
+    # Chunk fully occupied — return origin as last resort
+    logger.warning("Chunk (%d,%d) fully occupied, returning origin", cx, cy)
+    return x0, y0
+
+
+def _spawn_abandoned_structures(rng=None):
+    """Spawn one of each structure type within STRUCTURE_SPAWN_RADIUS of base (0,0).
+
+    Uses deterministic RNG so the same world_seed always produces the same layout.
+    Avoids (0,0) (station), existing stones, and previously placed structures.
+    """
+    r = rng or random
+    occupied = set(AGENT_STARTS)  # block station tile
+    # Collect existing stone positions to avoid overlap
+    for s in WORLD.get("stones", []):
+        occupied.add(tuple(s["position"]))
+
+    structures = []
+    for template in STRUCTURE_TYPES:
+        # Find a free position within spawn radius
+        for _ in range(200):  # safety limit
+            x = r.randint(-STRUCTURE_SPAWN_RADIUS, STRUCTURE_SPAWN_RADIUS)
+            y = r.randint(-STRUCTURE_SPAWN_RADIUS, STRUCTURE_SPAWN_RADIUS)
+            if abs(x) + abs(y) > STRUCTURE_SPAWN_RADIUS:
+                continue
+            if (x, y) in occupied:
+                continue
+            occupied.add((x, y))
+            structures.append(
+                {
+                    "type": template["type"],
+                    "category": template["category"],
+                    "position": [x, y],
+                    "explored": False,
+                    "active": False,
+                    "description": template["description"],
+                    "contents": dict(template["contents"]),
+                }
+            )
+            break
+    WORLD.setdefault("structures", []).extend(structures)
+    logger.info(
+        "Spawned %d abandoned structures within %d tiles of base",
+        len(structures),
+        STRUCTURE_SPAWN_RADIUS,
+    )
+    return structures
+
+
+def _find_structure_at(x, y):
+    """Find a structure at the given position, or None."""
+    for s in WORLD.get("structures", []):
+        if s["position"] == [x, y]:
+            return s
+    return None
+
+
+def _get_structure_positions():
+    """Return set of (x, y) tuples for all structure positions."""
+    return {tuple(s["position"]) for s in WORLD.get("structures", [])}
 
 
 # --------------- Chunk-based procedural generation ---------------
@@ -173,10 +283,40 @@ def _ensure_chunk(cx, cy):
 
     # Register stones in the global list
     WORLD.setdefault("stones", []).extend(stones)
+    _index_stones(stones)
 
-    chunk_data = {"generated": True, "stone_count": len(stones)}
+    # Obstacles: mountains (impassable) and geysers (periodic eruptions)
+    obstacles = []
+    for dy in range(CHUNK_SIZE):
+        for dx in range(CHUNK_SIZE):
+            wx, wy = x0 + dx, y0 + dy
+            if (wx, wy) in occupied:
+                continue
+            if is_origin and abs(wx) <= 1 and abs(wy) <= 1:
+                continue  # keep origin area clear for agents
+            r = rng.random()
+            if r < MOUNTAIN_PROBABILITY:
+                occupied.add((wx, wy))
+                obstacles.append({"position": [wx, wy], "kind": "mountain", "state": "idle"})
+            elif r < MOUNTAIN_PROBABILITY + GEYSER_PROBABILITY:
+                occupied.add((wx, wy))
+                obstacles.append(
+                    {
+                        "position": [wx, wy],
+                        "kind": "geyser",
+                        "state": "idle",
+                        "_cycle_tick": rng.randint(0, GEYSER_CYCLE_IDLE - 1),
+                    }
+                )
+
+    WORLD.setdefault("obstacles", []).extend(obstacles)
+    _index_obstacles(obstacles)
+
+    chunk_data = {"generated": True, "stone_count": len(stones), "obstacle_count": len(obstacles)}
     chunks[key] = chunk_data
-    logger.info("Generated chunk (%d,%d) with %d stones", cx, cy, len(stones))
+    logger.info(
+        "Generated chunk (%d,%d) with %d stones, %d obstacles", cx, cy, len(stones), len(obstacles)
+    )
     return chunk_data
 
 
@@ -283,6 +423,7 @@ def _make_drone(start_x, start_y):
         "revealed": _init_revealed(start_x, start_y, DRONE_REVEAL_RADIUS),
         "inventory": [],
         "memory": [],
+        "strategic_memory": [],
         "tasks": [],
         "type": "drone",
         "tools": None,  # populated lazily via _ensure_agent_tools()
@@ -298,6 +439,7 @@ def _make_rover(start_x, start_y):
         "revealed": _init_revealed(start_x, start_y),
         "inventory": [],
         "memory": [],
+        "strategic_memory": [],
         "tasks": [],
         "type": "rover",
         "tools": None,  # populated lazily via _ensure_agent_tools()
@@ -324,10 +466,13 @@ def _build_initial_world():
             "drone-mistral": _make_drone(0, 0),
         },
         "stones": [],
+        "obstacles": [],
         "chunks": {},
         "solar_panels": [],
         "drone_scans": [],
+        "structures": [],
         "tick": 0,
+        "generation_id": 0,
         "bounds": {"min_x": -3, "max_x": 3, "min_y": -3, "max_y": 3},
         "mission": {
             "status": "running",
@@ -346,6 +491,74 @@ def _init_world_chunks():
     for cx in range(-1, 2):
         for cy in range(-1, 2):
             _ensure_chunk(cx, cy)
+    # Spawn abandoned structures near base after chunks exist
+    _spawn_abandoned_structures()
+
+
+# Spatial index: (x, y) -> stone dict for O(1) lookups.
+# Rebuilt lazily when the WORLD["stones"] list is replaced externally (e.g. tests).
+_stone_index: dict[tuple[int, int], dict] = {}
+_stone_index_source: list | None = None  # tracks which list we indexed
+
+
+def _rebuild_stone_index() -> None:
+    """Rebuild the spatial index from the current stones list."""
+    global _stone_index_source
+    stones = WORLD.get("stones", [])
+    _stone_index.clear()
+    for s in stones:
+        _stone_index[tuple(s["position"])] = s
+    _stone_index_source = stones
+
+
+def _ensure_stone_index() -> None:
+    """Ensure the spatial index is in sync with WORLD['stones']."""
+    if WORLD.get("stones") is not _stone_index_source:
+        _rebuild_stone_index()
+
+
+def _index_stones(stones: list[dict]) -> None:
+    """Add newly generated stones to the spatial index."""
+    for s in stones:
+        _stone_index[tuple(s["position"])] = s
+
+
+def _unindex_stone(stone: dict) -> None:
+    """Remove a stone from the spatial index."""
+    _stone_index.pop(tuple(stone["position"]), None)
+
+
+# Spatial index for obstacles: (x, y) -> obstacle dict for O(1) lookups.
+_obstacle_index: dict[tuple[int, int], dict] = {}
+_obstacle_index_source: list | None = None
+
+
+def _rebuild_obstacle_index() -> None:
+    """Rebuild the obstacle spatial index from the current obstacles list."""
+    global _obstacle_index_source
+    obstacles = WORLD.get("obstacles", [])
+    _obstacle_index.clear()
+    for o in obstacles:
+        _obstacle_index[tuple(o["position"])] = o
+    _obstacle_index_source = obstacles
+
+
+def _ensure_obstacle_index() -> None:
+    """Ensure the obstacle spatial index is in sync with WORLD['obstacles']."""
+    if WORLD.get("obstacles") is not _obstacle_index_source:
+        _rebuild_obstacle_index()
+
+
+def _index_obstacles(obstacles: list[dict]) -> None:
+    """Add newly generated obstacles to the spatial index."""
+    for o in obstacles:
+        _obstacle_index[tuple(o["position"])] = o
+
+
+def is_obstacle_at(x: int, y: int) -> dict | None:
+    """Return the obstacle at (x, y) if any, else None. Public API."""
+    _ensure_obstacle_index()
+    return _obstacle_index.get((x, y))
 
 
 WORLD = _build_initial_world()
@@ -390,6 +603,9 @@ class World:
     def get_drone_scans(self) -> list:
         return self._state.get("drone_scans", [])
 
+    def get_structures(self) -> list:
+        return self._state.get("structures", [])
+
     def get_tick(self) -> int:
         return self._state["tick"]
 
@@ -406,25 +622,148 @@ class World:
         else:
             self._state["agents"][agent_id].pop("pending_commands", None)
 
+    def get_generation_id(self) -> int:
+        return self._state.get("generation_id", 0)
+
+    def summarize_memories(self, agent_id: str) -> str | None:
+        return summarize_memories(agent_id)
+
+    def record_strategic_insight(self, agent_id: str, insight: str, tick: int):
+        record_strategic_insight(agent_id, insight, tick)
+
 
 # Module-level singleton wrapping the global WORLD dict
 world = World(WORLD)
 
 
+# -- Inter-agent message relay --
+
+AGENT_MESSAGES: list[dict] = []
+
+
+def send_agent_message(from_id: str, to_id: str, message: str) -> dict:
+    """Route a message from one agent to another (via station relay)."""
+    msg = {
+        "from": from_id,
+        "to": to_id,
+        "message": message,
+        "tick": WORLD["tick"],
+        "read": False,
+    }
+    AGENT_MESSAGES.append(msg)
+    return {"ok": True, "message": message, "to": to_id}
+
+
+def get_unread_messages(agent_id: str) -> list[dict]:
+    """Get and mark as read all messages for an agent."""
+    unread = [m for m in AGENT_MESSAGES if m["to"] == agent_id and not m["read"]]
+    for m in unread:
+        m["read"] = True
+    return unread
+
+
+def get_drone_intel_for_rover(rover_id: str) -> list[dict]:
+    """Return drone scan hotspots that the rover hasn't visited yet."""
+    rover = WORLD["agents"].get(rover_id)
+    if not rover:
+        return []
+    visited = set(map(tuple, rover.get("visited", [])))
+    intel = []
+    for scan in WORLD.get("drone_scans", []):
+        readings = scan.get("readings", {})
+        for cell_key, conc in readings.items():
+            if conc <= 0.3:
+                continue
+            parts = cell_key.split(",")
+            cx, cy = int(parts[0]), int(parts[1])
+            if (cx, cy) in visited:
+                continue
+            intel.append(
+                {
+                    "position": [cx, cy],
+                    "concentration": round(conc, 2),
+                    "scanned_by": scan.get("scanner", scan.get("agent_id", "drone")),
+                    "tick": scan.get("tick", 0),
+                }
+            )
+    intel.sort(key=lambda x: x["concentration"], reverse=True)
+    return intel[:5]
+
+
 def reset_world():
     """Reset WORLD to initial state. Re-seeds RNG if world_seed is set."""
+    gen = WORLD.get("generation_id", 0) + 1
     fresh = _build_initial_world()
+    fresh["generation_id"] = gen
     WORLD.clear()
     WORLD.update(fresh)
+    _stone_index.clear()
+    global _stone_index_source
+    _stone_index_source = None
+    _obstacle_index.clear()
+    global _obstacle_index_source
+    _obstacle_index_source = None
+    AGENT_MESSAGES.clear()
     _init_world_chunks()
     storm_mod.schedule_next_storm(WORLD)
-    logger.info("World reset")
+    logger.info("World reset (generation %d)", gen)
 
 
 def next_tick():
     """Increment and return the current tick number."""
     WORLD["tick"] += 1
+    apply_structure_passive_effects()
     return WORLD["tick"]
+
+
+def update_geysers():
+    """Advance geyser state machines. Returns list of eruption event dicts.
+
+    Geysers cycle: idle → warning → erupting → idle.
+    Agents standing on an erupting geyser lose BATTERY_COST_GEYSER battery.
+    """
+    events = []
+    for obs in WORLD.get("obstacles", []):
+        if obs["kind"] != "geyser":
+            continue
+        ct = obs.get("_cycle_tick", 0) + 1
+        total = GEYSER_CYCLE_IDLE + GEYSER_CYCLE_WARNING + GEYSER_CYCLE_ERUPTING
+        phase = ct % total
+        if phase < GEYSER_CYCLE_IDLE:
+            obs["state"] = "idle"
+        elif phase < GEYSER_CYCLE_IDLE + GEYSER_CYCLE_WARNING:
+            obs["state"] = "warning"
+        else:
+            if obs["state"] != "erupting":
+                # Transition to erupting — apply damage to agents on this tile
+                gx, gy = obs["position"]
+                for aid, agent in WORLD["agents"].items():
+                    if agent.get("type") == "station":
+                        continue
+                    ax, ay = agent["position"]
+                    if ax == gx and ay == gy:
+                        old_bat = agent["battery"]
+                        agent["battery"] = max(0.0, old_bat - BATTERY_COST_GEYSER)
+                        events.append(
+                            {
+                                "type": "geyser_eruption",
+                                "position": [gx, gy],
+                                "agent_id": aid,
+                                "battery_before": old_bat,
+                                "battery_after": agent["battery"],
+                            }
+                        )
+                        logger.info(
+                            "Geyser eruption at (%d,%d) hit %s: %.0f%% -> %.0f%%",
+                            gx,
+                            gy,
+                            aid,
+                            old_bat * 100,
+                            agent["battery"] * 100,
+                        )
+            obs["state"] = "erupting"
+        obs["_cycle_tick"] = ct
+    return events
 
 
 def check_ground(agent_id):
@@ -433,15 +772,15 @@ def check_ground(agent_id):
     if agent is None:
         return {"stone": None}
     x, y = agent["position"]
-    for stone in WORLD.get("stones", []):
-        if stone["position"] == [x, y]:
-            return {
-                "stone": {
-                    "type": stone["type"],
-                    "grade": stone.get("grade", "unknown"),
-                    "quantity": stone.get("quantity", 0),
-                }
+    stone = _find_stone_at(x, y)
+    if stone:
+        return {
+            "stone": {
+                "type": stone["type"],
+                "grade": stone.get("grade", "unknown"),
+                "quantity": stone.get("quantity", 0),
             }
+        }
     return {"stone": None}
 
 
@@ -463,9 +802,25 @@ def move_agent(agent_id, x, y):
     if dx != 0 and dy != 0:
         return {"ok": False, "error": f"Not a straight line: ({ox}, {oy}) -> ({x}, {y})"}
 
+    # Check for obstacles (structures) along the movement path
+    structure_positions = _get_structure_positions()
+    step_dx = (1 if dx > 0 else -1) if dx != 0 else 0
+    step_dy = (1 if dy > 0 else -1) if dy != 0 else 0
+    for step in range(1, dist + 1):
+        check_x, check_y = ox + step_dx * step, oy + step_dy * step
+        if (check_x, check_y) in structure_positions:
+            struct = _find_structure_at(check_x, check_y)
+            label = struct["type"].replace("_", " ") if struct else "structure"
+            return {"ok": False, "error": f"Path blocked by {label} at ({check_x}, {check_y})"}
+
     # Ensure chunk exists at destination
     _ensure_chunk(*_chunk_key(x, y))
     _update_bounds(x, y)
+
+    # Block movement onto mountains
+    obs = is_obstacle_at(x, y)
+    if obs and obs["kind"] == "mountain":
+        return {"ok": False, "error": f"Mountain blocks path at ({x}, {y})"}
 
     agent["position"] = [x, y]
     logger.info("Agent %s moved (%d,%d) -> (%d,%d)", agent_id, ox, oy, x, y)
@@ -571,6 +926,14 @@ def execute_action(agent_id, action_name, params):
         result = _execute_notify(agent_id, agent, params)
         if result["ok"]:
             record_memory(agent_id, f"Notified station: {result['message']}")
+    elif action_name == "investigate_structure":
+        if is_drone:
+            return {"ok": False, "error": "Drones cannot investigate structures"}
+        result = _execute_investigate_structure(agent_id, agent, params)
+    elif action_name == "use_refinery":
+        if is_drone:
+            return {"ok": False, "error": "Drones cannot use the refinery"}
+        result = _execute_use_refinery(agent_id, agent)
     else:
         return {"ok": False, "error": f"Unknown action: {action_name}"}
 
@@ -586,11 +949,9 @@ def execute_action(agent_id, action_name, params):
 
 
 def _find_stone_at(x, y):
-    """Find a stone at the given position, or None."""
-    for stone in WORLD.get("stones", []):
-        if stone["position"] == [x, y]:
-            return stone
-    return None
+    """Find a stone at the given position, or None. O(1) via spatial index."""
+    _ensure_stone_index()
+    return _stone_index.get((x, y))
 
 
 def _execute_analyze(agent_id, agent):
@@ -686,6 +1047,7 @@ def _execute_dig(agent_id, agent):
         }
     )
     WORLD["stones"].remove(stone)
+    _unindex_stone(stone)
     logger.info(
         "Agent %s dug and collected %s grade=%s qty=%d at (%d,%d)",
         agent_id,
@@ -782,66 +1144,6 @@ def set_agent_last_context(agent_id: str, context: str):
 
 def set_pending_commands(agent_id: str, commands: list | None):
     world.set_pending_commands(agent_id, commands)
-
-
-def _execute_deploy_solar_panel(agent_id):
-    agent = WORLD["agents"].get(agent_id)
-    if agent is None or agent.get("type") != "rover":
-        return {"ok": False, "error": f"{agent_id} is not a rover"}
-    remaining = agent.get("solar_panels_remaining", 0)
-    if remaining <= 0:
-        return {"ok": False, "error": "No solar panels remaining"}
-    x, y = agent["position"]
-    for p in WORLD.get("solar_panels", []):
-        if p["position"] == [x, y]:
-            return {"ok": False, "error": "Solar panel already deployed here"}
-    panel = {
-        "position": [x, y],
-        "battery": SOLAR_BATTERY_CAPACITY,
-        "deployed_by": agent_id,
-        "depleted": False,
-    }
-    WORLD.setdefault("solar_panels", []).append(panel)
-    agent["solar_panels_remaining"] = remaining - 1
-    agent["battery"] = max(0.0, agent["battery"] - BATTERY_COST_MOVE)  # deploy costs 1 fuel
-    record_memory(
-        agent_id, f"Deployed solar panel at ({x},{y}) — {SOLAR_BATTERY_CAPACITY:.0%} battery"
-    )
-    return {"ok": True, "result": f"Solar panel deployed at ({x},{y})", "panel": panel}
-
-
-def _execute_use_solar_battery(agent_id):
-    agent = WORLD["agents"].get(agent_id)
-    if agent is None or agent.get("type") != "rover":
-        return {"ok": False, "error": f"{agent_id} is not a rover"}
-    x, y = agent["position"]
-    for panel in WORLD.get("solar_panels", []):
-        if panel["position"] == [x, y] and not panel["depleted"]:
-            charge = panel["battery"]
-            agent["battery"] = min(1.0, agent["battery"] + charge)
-            panel["battery"] = 0.0
-            panel["depleted"] = True
-            record_memory(agent_id, f"Used solar battery at ({x},{y}), gained {charge:.0%}")
-            return {
-                "ok": True,
-                "result": f"Recharged {charge:.0%} from solar panel",
-                "new_battery": agent["battery"],
-            }
-    return {"ok": False, "error": "No active solar panel at current position"}
-
-
-def _nearest_solar_panel(x, y):
-    best = None
-    best_dist = float("inf")
-    for panel in WORLD.get("solar_panels", []):
-        if panel["depleted"]:
-            continue
-        px, py = panel["position"]
-        d = abs(px - x) + abs(py - y)
-        if d < best_dist:
-            best_dist = d
-            best = panel
-    return best
 
 
 def check_mission_status():
@@ -942,6 +1244,34 @@ def record_memory(agent_id, text):
         del mem[: len(mem) - MEMORY_MAX]
 
 
+def summarize_memories(agent_id: str) -> str | None:
+    """Return a summary prompt for the agent's memories, or None if too few."""
+    agent = WORLD["agents"].get(agent_id)
+    if agent is None:
+        return None
+    memories = agent.get("memory", [])
+    if len(memories) < 6:
+        return None
+    mem_text = "\n".join(f"- {m}" for m in memories[-8:])
+    return (
+        "Summarize the following rover exploration memories into 1-2 strategic "
+        "insights (e.g., 'Zone B3 consistently yields high-grade minerals', "
+        "'Storms from the north tend to last 3 ticks'). Be concise.\n\n"
+        f"{mem_text}"
+    )
+
+
+def record_strategic_insight(agent_id: str, insight: str, tick: int):
+    """Store a strategic insight for the agent, capped at 5."""
+    agent = WORLD["agents"].get(agent_id)
+    if agent is None:
+        return
+    sm = agent.setdefault("strategic_memory", [])
+    sm.append({"insight": insight, "tick": tick})
+    if len(sm) > 5:
+        agent["strategic_memory"] = sm[-5:]
+
+
 def direction_hint(dx, dy):
     """Return human-readable direction hint from deltas.
 
@@ -957,6 +1287,403 @@ def direction_hint(dx, dy):
     elif dx < 0:
         parts.append("west")
     return ", ".join(parts) if parts else "here"
+
+
+def _execute_deploy_solar_panel(agent_id):
+    agent = WORLD["agents"].get(agent_id)
+    if agent is None or agent.get("type") != "rover":
+        return {"ok": False, "error": f"{agent_id} is not a rover"}
+    remaining = agent.get("solar_panels_remaining", 0)
+    if remaining <= 0:
+        return {"ok": False, "error": "No solar panels remaining"}
+    x, y = agent["position"]
+    for p in WORLD.get("solar_panels", []):
+        if p["position"] == [x, y]:
+            return {"ok": False, "error": "Solar panel already deployed here"}
+    panel = {
+        "position": [x, y],
+        "battery": SOLAR_BATTERY_CAPACITY,
+        "deployed_by": agent_id,
+        "depleted": False,
+    }
+    WORLD.setdefault("solar_panels", []).append(panel)
+    agent["solar_panels_remaining"] = remaining - 1
+    agent["battery"] = max(0.0, agent["battery"] - BATTERY_COST_MOVE)  # deploy costs 1 fuel
+    record_memory(
+        agent_id, f"Deployed solar panel at ({x},{y}) — {SOLAR_BATTERY_CAPACITY:.0%} battery"
+    )
+    return {"ok": True, "result": f"Solar panel deployed at ({x},{y})", "panel": panel}
+
+
+def _execute_use_solar_battery(agent_id):
+    agent = WORLD["agents"].get(agent_id)
+    if agent is None or agent.get("type") != "rover":
+        return {"ok": False, "error": f"{agent_id} is not a rover"}
+    x, y = agent["position"]
+    for panel in WORLD.get("solar_panels", []):
+        if panel["position"] == [x, y] and not panel["depleted"]:
+            charge = panel["battery"]
+            agent["battery"] = min(1.0, agent["battery"] + charge)
+            panel["battery"] = 0.0
+            panel["depleted"] = True
+            record_memory(agent_id, f"Used solar battery at ({x},{y}), gained {charge:.0%}")
+            return {
+                "ok": True,
+                "result": f"Recharged {charge:.0%} from solar panel",
+                "new_battery": agent["battery"],
+            }
+    return {"ok": False, "error": "No active solar panel at current position"}
+
+
+def _nearest_solar_panel(x, y):
+    best = None
+    best_dist = float("inf")
+    for panel in WORLD.get("solar_panels", []):
+        if panel["depleted"]:
+            continue
+        px, py = panel["position"]
+        d = abs(px - x) + abs(py - y)
+        if d < best_dist:
+            best_dist = d
+            best = panel
+    return best
+
+
+# --- Abandoned structure interactions ---
+
+
+def _execute_investigate_structure(agent_id, agent, params):
+    """Investigate an adjacent structure to reveal its details."""
+    if agent["battery"] < BATTERY_COST_INVESTIGATE:
+        return {"ok": False, "error": "Not enough battery to investigate"}
+
+    x, y = agent["position"]
+    # Find adjacent structure (Manhattan distance 1)
+    target = None
+    for s in WORLD.get("structures", []):
+        sx, sy = s["position"]
+        if abs(sx - x) + abs(sy - y) <= 1:
+            target = s
+            break
+
+    if target is None:
+        return {"ok": False, "error": "No structure within reach (must be adjacent, 1 tile)"}
+
+    if target["explored"]:
+        return {
+            "ok": False,
+            "error": f"{target['type'].replace('_', ' ').title()} already investigated",
+        }
+
+    agent["battery"] = max(0.0, agent["battery"] - BATTERY_COST_INVESTIGATE)
+    target["explored"] = True
+    target["active"] = True
+    logger.info(
+        "Agent %s investigated %s at (%d,%d)",
+        agent_id,
+        target["type"],
+        target["position"][0],
+        target["position"][1],
+    )
+    record_memory(
+        agent_id,
+        f"Investigated {target['type'].replace('_', ' ')} at ({target['position'][0]},{target['position'][1]}): {target['description']}",
+    )
+    return {
+        "ok": True,
+        "structure": {
+            "type": target["type"],
+            "category": target["category"],
+            "position": target["position"],
+            "description": target["description"],
+            "contents": target["contents"],
+        },
+    }
+
+
+def _execute_use_refinery(agent_id, agent):
+    """Use the refinery to process basalt from rover inventory into refined materials."""
+    if agent["battery"] < BATTERY_COST_USE_REFINERY:
+        return {"ok": False, "error": "Not enough battery to use refinery"}
+
+    x, y = agent["position"]
+    # Find adjacent active refinery
+    refinery = None
+    for s in WORLD.get("structures", []):
+        if s["type"] != "refinery":
+            continue
+        sx, sy = s["position"]
+        if abs(sx - x) + abs(sy - y) <= 1 and s.get("active"):
+            refinery = s
+            break
+
+    if refinery is None:
+        return {
+            "ok": False,
+            "error": "No active refinery within reach (must investigate first and be adjacent)",
+        }
+
+    inventory = agent.get("inventory", [])
+    basalt_items = [i for i in inventory if i.get("type") == "basalt_vein"]
+    if not basalt_items:
+        return {"ok": False, "error": "No basalt in inventory to refine"}
+
+    # Process the first basalt item — refining doubles its effective quantity
+    item = basalt_items[0]
+    original_qty = item.get("quantity", 0)
+    bonus = int(original_qty * 0.5)  # +50% bonus from refining
+    item["quantity"] = original_qty + bonus
+    item["refined"] = True
+
+    agent["battery"] = max(0.0, agent["battery"] - BATTERY_COST_USE_REFINERY)
+    logger.info(
+        "Agent %s refined basalt at refinery: %d -> %d (bonus +%d)",
+        agent_id,
+        original_qty,
+        item["quantity"],
+        bonus,
+    )
+    record_memory(
+        agent_id,
+        f"Refined basalt at refinery: {original_qty} -> {item['quantity']} units (+{bonus} bonus)",
+    )
+    return {
+        "ok": True,
+        "original_quantity": original_qty,
+        "refined_quantity": item["quantity"],
+        "bonus": bonus,
+    }
+
+
+def apply_structure_passive_effects():
+    """Apply passive effects from active structures. Called each simulation tick.
+
+    - Solar Panel Structure: +1% battery per 2 ticks to rovers within 1 tile.
+    - Accumulator: +1% battery per 5 ticks to rovers within range.
+    """
+    tick = WORLD.get("tick", 0)
+    for structure in WORLD.get("structures", []):
+        if not structure.get("active"):
+            continue
+
+        sx, sy = structure["position"]
+
+        if structure["type"] == "solar_panel_structure":
+            # +1% per 2 ticks to rovers within 1 tile (Manhattan)
+            interval = structure["contents"].get("charge_interval", 2)
+            if tick % interval != 0:
+                continue
+            charge = structure["contents"].get("charge_rate", 0.01)
+            radius = structure["contents"].get("charge_radius", 1)
+            for agent in WORLD["agents"].values():
+                if agent.get("type") not in ("rover", "drone"):
+                    continue
+                ax, ay = agent["position"]
+                if abs(ax - sx) + abs(ay - sy) <= radius:
+                    old = agent["battery"]
+                    agent["battery"] = min(1.0, agent["battery"] + charge)
+                    if agent["battery"] > old:
+                        logger.debug(
+                            "Solar panel structure at (%d,%d) charged agent at (%d,%d): %.0f%% -> %.0f%%",
+                            sx,
+                            sy,
+                            ax,
+                            ay,
+                            old * 100,
+                            agent["battery"] * 100,
+                        )
+
+        elif structure["type"] == "accumulator":
+            # +1% per 5 ticks to rovers nearby (within 2 tiles)
+            interval = structure["contents"].get("recharge_interval", 5)
+            if tick % interval != 0:
+                continue
+            charge = structure["contents"].get("recharge_rate", 0.01)
+            for agent in WORLD["agents"].values():
+                if agent.get("type") not in ("rover", "drone"):
+                    continue
+                ax, ay = agent["position"]
+                if abs(ax - sx) + abs(ay - sy) <= 2:
+                    old = agent["battery"]
+                    agent["battery"] = min(1.0, agent["battery"] + charge)
+                    if agent["battery"] > old:
+                        logger.debug(
+                            "Accumulator at (%d,%d) recharged agent at (%d,%d): %.0f%% -> %.0f%%",
+                            sx,
+                            sy,
+                            ax,
+                            ay,
+                            old * 100,
+                            agent["battery"] * 100,
+                        )
+
+
+def update_tasks(agent_id):
+    """Recompute short-term tasks for an agent based on current world state.
+
+    Returns the new primary task string if it changed, else None.
+    """
+    agent = WORLD["agents"].get(agent_id)
+    if agent is None:
+        return None
+    old_task = agent["tasks"][0] if agent.get("tasks") else None
+    old_key = old_task.split(" — ")[0] if old_task else None
+    # Mission aborted — only task is return to station
+    if WORLD["mission"]["status"] == "aborted":
+        station = WORLD["agents"].get("station")
+        sp = station["position"] if station else [0, 0]
+        x, y = agent["position"]
+        if [x, y] == sp:
+            agent["tasks"] = ["At station — mission aborted, standing by"]
+        else:
+            dist = abs(sp[0] - x) + abs(sp[1] - y)
+            hint = direction_hint(sp[0] - x, sp[1] - y)
+            agent["tasks"] = [
+                f"MISSION ABORTED — return to station at ({sp[0]},{sp[1]}) — {hint}, {dist} tiles"
+            ]
+        return
+    if agent.get("type") == "drone":
+        _update_drone_tasks(agent_id, agent)
+    else:
+        _update_rover_tasks(agent_id, agent)
+
+    new_task = agent["tasks"][0] if agent.get("tasks") else None
+    new_key = new_task.split(" — ")[0] if new_task else None
+    if new_key != old_key:
+        return new_task
+    return None
+
+
+def _update_drone_tasks(agent_id, agent):
+    """Recompute tasks for a drone — scan unscanned areas, explore the map."""
+    x, y = agent["position"]
+    _ = {tuple(c) for c in agent.get("visited", [])}  # reserved for future use
+    tasks = []
+
+    # Check if current area has been scanned already
+    scanned_positions = {tuple(s["position"]) for s in WORLD.get("drone_scans", [])}
+    if (x, y) not in scanned_positions:
+        tasks.append(f"Scan area at current position ({x},{y})")
+
+    # Find nearest unscanned region within a search radius around the drone
+    search_radius = 30
+    best_target = None
+    best_dist = float("inf")
+    for gx in range(x - search_radius, x + search_radius + 1):
+        for gy in range(y - search_radius, y + search_radius + 1):
+            if (gx, gy) in scanned_positions:
+                continue
+            min_scan_dist = min(
+                (abs(gx - sp[0]) + abs(gy - sp[1]) for sp in scanned_positions),
+                default=search_radius * 2,
+            )
+            if min_scan_dist < DRONE_REVEAL_RADIUS:
+                continue
+            d = abs(gx - x) + abs(gy - y)
+            if d < best_dist:
+                best_dist = d
+                best_target = (gx, gy)
+
+    if best_target and best_dist > 0:
+        hint = direction_hint(best_target[0] - x, best_target[1] - y)
+        tasks.append(
+            f"Fly to unscanned area at ({best_target[0]},{best_target[1]}) — {hint}, {best_dist} tiles"
+        )
+
+    if not tasks:
+        tasks.append("All areas scanned — patrol for new readings")
+
+    agent["tasks"] = tasks
+
+
+def _update_rover_tasks(agent_id, agent):
+    """Recompute short-term tasks for a rover based on current world state."""
+    x, y = agent["position"]
+    inventory = agent.get("inventory", [])
+    revealed_set = {tuple(c) for c in agent.get("revealed", [])}
+    tasks = []
+
+    inv_count = len(inventory)
+
+    # Vein at current tile → analyze or dig (priority order)
+    stone_here = _find_stone_at(x, y)
+    if stone_here:
+        if not stone_here.get("analyzed"):
+            tasks.append(f"Analyze unknown vein at current tile ({x},{y})")
+        elif inv_count < MAX_INVENTORY_ROVER:
+            tasks.append(
+                f"Dig {stone_here['grade']} vein (qty={stone_here['quantity']}) at current tile ({x},{y})"
+            )
+
+    # Known veins on revealed tiles → navigate to best one
+    # Prefer: unknown veins (might be high-grade) first, then by grade (higher = better), then distance
+    known_stones = []
+    for stone in WORLD.get("stones", []):
+        sp = tuple(stone["position"])
+        if sp in revealed_set:
+            dist = abs(sp[0] - x) + abs(sp[1] - y)
+            if stone["type"] == "unknown":
+                # Unknown veins get top priority (might be high-grade)
+                priority = 0
+            else:
+                # Analyzed veins: prioritize higher grades (lower priority number = better)
+                grade = stone.get("grade", "low")
+                grade_idx = VEIN_GRADES.index(grade) if grade in VEIN_GRADES else 0
+                # Invert: pristine(4) → priority 1, low(0) → priority 5
+                priority = len(VEIN_GRADES) - grade_idx
+            known_stones.append((priority, dist, stone))
+    known_stones.sort(key=lambda t: (t[0], t[1]))
+
+    if known_stones:
+        _priority, dist, stone = known_stones[0]
+        sx, sy = stone["position"]
+        hint = direction_hint(sx - x, sy - y)
+        if stone["type"] == "unknown":
+            label = "unknown vein"
+        else:
+            label = f"{stone.get('grade', '?')} vein (qty={stone.get('quantity', 0)})"
+        tasks.append(f"Navigate to {label} at ({sx},{sy}) — {hint}, {dist} tiles")
+
+    # Check drone scan hotspots — navigate toward high-concentration areas
+    if not tasks:
+        best_hotspot = best_drone_hotspot(x, y, revealed_set)
+        if best_hotspot:
+            hx, hy, conc = best_hotspot
+            hint = direction_hint(hx - x, hy - y)
+            dist = abs(hx - x) + abs(hy - y)
+            tasks.append(
+                f"Navigate to drone-scanned hotspot at ({hx},{hy}) — {hint}, {dist} tiles, concentration={conc:.2f}"
+            )
+
+    # Adjacent structures → investigate or use
+    for structure in WORLD.get("structures", []):
+        sp = tuple(structure["position"])
+        dist = abs(sp[0] - x) + abs(sp[1] - y)
+        if dist <= 1:
+            label = structure["type"].replace("_", " ").title()
+            if not structure.get("explored"):
+                tasks.append(f"Investigate {label} at ({sp[0]},{sp[1]})")
+            elif structure["type"] == "refinery" and structure.get("active"):
+                basalt_in_inv = any(
+                    i.get("type") == "basalt_vein" and not i.get("refined") for i in inventory
+                )
+                if basalt_in_inv:
+                    tasks.append(f"Use Refinery at ({sp[0]},{sp[1]}) to refine basalt")
+
+    # Visible unexplored structures on revealed tiles — suggest navigation
+    for structure in WORLD.get("structures", []):
+        sp = tuple(structure["position"])
+        if sp in revealed_set and not structure.get("explored"):
+            dist = abs(sp[0] - x) + abs(sp[1] - y)
+            if dist > 1:
+                hint = direction_hint(sp[0] - x, sp[1] - y)
+                label = structure["type"].replace("_", " ").title()
+                tasks.append(f"Navigate to {label} at ({sp[0]},{sp[1]}) — {hint}, {dist} tiles")
+
+    if not tasks:
+        tasks.append("Explore unvisited tiles to find veins")
+
+    agent["tasks"] = tasks
 
 
 def best_drone_hotspot(rx, ry, revealed_set):
@@ -1045,8 +1772,37 @@ def observe_rover(agent_id):
                 label += f" qty={qty_info}"
             visible_stones.append(f"{label} ({status}) at ({sp[0]},{sp[1]}) — {hint}, {dist} tiles")
 
+    # Visible structures on revealed tiles
+    visible_structures = []
+    for structure in WORLD.get("structures", []):
+        sp = tuple(structure["position"])
+        if sp in revealed_set:
+            dist = abs(sp[0] - x) + abs(sp[1] - y)
+            hint = direction_hint(sp[0] - x, sp[1] - y)
+            status = "explored" if structure.get("explored") else "unexplored"
+            label = structure["type"].replace("_", " ").title()
+            visible_structures.append(
+                f"{label} ({status}) at ({sp[0]},{sp[1]}) — {hint}, {dist} tiles"
+            )
+
     # Mission info
     world_mission = WORLD.get("mission", {})
+
+    # Nearby obstacles on revealed tiles
+    _ensure_obstacle_index()
+    nearby_obstacles = []
+    for obs in WORLD.get("obstacles", []):
+        op = tuple(obs["position"])
+        if op in revealed_set:
+            dist = abs(op[0] - x) + abs(op[1] - y)
+            if dist <= ROVER_REVEAL_RADIUS * 2:
+                nearby_obstacles.append(
+                    ObstacleInfo(
+                        position=list(obs["position"]),
+                        kind=obs["kind"],
+                        state=obs.get("state", "idle"),
+                    )
+                )
 
     return RoverContext(
         agent=RoverAgentState(
@@ -1072,6 +1828,8 @@ def observe_rover(agent_id):
             stone_line=stone_line,
             stone_here=stone_here,
             visible_stones=visible_stones,
+            visible_structures=visible_structures,
+            nearby_obstacles=nearby_obstacles,
         ),
     )
 
@@ -1105,12 +1863,17 @@ def observe_station():
         )
 
     station_agent = WORLD["agents"].get("station", {})
+    mission = WORLD.get("mission", {})
     return StationContext(
         grid_w=GRID_W,
         grid_h=GRID_H,
         rovers=rovers,
         stones=stones,
         memory=station_agent.get("memory", []),
+        tick=WORLD.get("tick", 0),
+        mission_status=mission.get("status", "in_progress"),
+        collected_quantity=mission.get("collected_quantity", 0),
+        target_quantity=mission.get("target_quantity", TARGET_QUANTITY),
     )
 
 
@@ -1144,6 +1907,21 @@ def get_snapshot():
             s.pop("_true_quantity", None)
             visible.append(s)
     snap["stones"] = visible
+    # Filter structures to only those on revealed cells
+    visible_structures = []
+    for s in snap.get("structures", []):
+        if tuple(s["position"]) in revealed:
+            visible_structures.append(s)
+    snap["structures"] = visible_structures
+    # Filter obstacles by fog-of-war (same revealed set)
+    visible_obstacles = []
+    for o in snap.get("obstacles", []):
+        if tuple(o["position"]) in revealed:
+            cleaned = {k: v for k, v in o.items() if not k.startswith("_")}
+            visible_obstacles.append(cleaned)
+    snap["obstacles"] = visible_obstacles
+    # Include agent messages for UI visibility
+    snap["agent_messages"] = copy.deepcopy(AGENT_MESSAGES)
     # Ensure bounds are present
     if "bounds" not in snap:
         snap["bounds"] = {"min_x": 0, "max_x": GRID_W - 1, "min_y": 0, "max_y": GRID_H - 1}

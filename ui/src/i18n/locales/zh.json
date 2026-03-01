@@ -1,0 +1,129 @@
+{
+  "nav": {
+    "mission": "任务",
+    "agents": "智能体",
+    "features": "功能",
+    "tech": "技术栈",
+    "launch": "启动任务"
+  },
+  "hero": {
+    "badge": "多智能体火星模拟",
+    "title_line1": "征服",
+    "title_line2": "红色星球",
+    "subtitle": "部署自主AI智能体探索火星。通过精美的任务控制界面，实时观察它们的推理、适应与协作过程。",
+    "cta_launch": "启动任务",
+    "cta_explore": "探索功能"
+  },
+  "mission": {
+    "label": "任务简报",
+    "title": "自主火星探索",
+    "description": "三个AI智能体（巡视车、无人机和基站）通过中央任务控制中心协调行动，共同探索火星表面。每个智能体运行独立的推理循环，根据地形、天气和任务目标实时做出决策。",
+    "stat_agents": "AI 智能体",
+    "stat_tools": "智能体工具",
+    "stat_realtime": "实时",
+    "stat_languages": "支持语言"
+  },
+  "agents": {
+    "label": "认识智能体",
+    "title": "你的火星团队",
+    "rover_name": "巡视车",
+    "rover_role": "地表探索者",
+    "rover_desc": "在火星地形中导航，钻取岩芯样本并分析地质构造。根据无人机情报和风暴状况自主决定探索路线。",
+    "rover_tools": "移动 • 钻探 • 分析 • 拾取",
+    "drone_name": "无人机",
+    "drone_role": "空中侦察兵",
+    "drone_desc": "从空中扫描大范围地形，为巡视车规划安全路线，并传递关键环境数据。提供岩石成分的概率评估。",
+    "drone_tools": "扫描 • 规划路线 • 传递数据",
+    "station_name": "基站",
+    "station_role": "任务控制中心",
+    "station_desc": "管理所有智能体的电力分配，监控系统状态并发布警报。确保团队在沙尘暴和设备挑战中保持运行。",
+    "station_tools": "充电 • 分配电力 • 警报"
+  },
+  "features": {
+    "label": "核心能力",
+    "title": "任务系统",
+    "items": [
+      {
+        "title": "LLM 驱动推理",
+        "desc": "每个智能体运行 Mistral AI 推理循环，评估目标、提出行动方案，并实时适应不断变化的环境。"
+      },
+      {
+        "title": "概率化目标",
+        "desc": "目标追踪 0.0 到 1.0 的置信度分数，随着智能体收集数据和完成任务动态更新。"
+      },
+      {
+        "title": "实时数据流",
+        "desc": "通过 WebSocket 连接实时观看智能体决策、工具调用和世界状态更新。"
+      },
+      {
+        "title": "AI 解说",
+        "desc": "Mistral AI 生成实时任务解说，可选配 ElevenLabs 语音合成，打造沉浸式体验。"
+      },
+      {
+        "title": "动态世界",
+        "desc": "包含地形险阻、沙尘暴、战争迷雾以及随时间变化的地质构造的火星环境。"
+      },
+      {
+        "title": "多智能体协同",
+        "desc": "智能体通过结构化协议通信。无人机侦察为巡视车决策提供依据，基站管理共享资源。"
+      }
+    ]
+  },
+  "how_it_works": {
+    "label": "工作原理",
+    "title": "任务循环",
+    "steps": [
+      {
+        "number": "01",
+        "title": "观察",
+        "desc": "智能体读取世界状态：地形、险阻、电池电量、风暴强度以及其他智能体的数据。"
+      },
+      {
+        "number": "02",
+        "title": "推理",
+        "desc": "Mistral AI 评估目标、分析风险，并提出最优行动方案及备选方案。"
+      },
+      {
+        "number": "03",
+        "title": "执行",
+        "desc": "工具调用改变世界状态：移动、钻探、扫描、充电，进度实时推送。"
+      },
+      {
+        "number": "04",
+        "title": "适应",
+        "desc": "目标置信度动态更新。当条件变化时，智能体重新评估计划。"
+      }
+    ]
+  },
+  "tech": {
+    "label": "技术栈",
+    "title": "技术构成",
+    "ai": {
+      "label": "AI & LLM",
+      "items": ["Mistral AI", "ElevenLabs TTS", "概率推理"]
+    },
+    "backend": {
+      "label": "后端",
+      "items": ["Python 3.14+", "FastAPI", "SurrealDB", "WebSockets"]
+    },
+    "frontend": {
+      "label": "前端",
+      "items": ["Vue 3", "Vite 7", "Three.js", "GSAP"]
+    },
+    "infra": {
+      "label": "基础设施",
+      "items": ["Docker", "GitHub Actions", "Railway", "Discord Webhooks"]
+    }
+  },
+  "cta": {
+    "title": "准备好前往火星了吗？",
+    "subtitle": "启动任务控制界面，实时观看自主AI智能体探索红色星球。",
+    "button_launch": "启动任务控制",
+    "button_github": "在 GitHub 上查看"
+  },
+  "footer": {
+    "built_with": "使用 Mistral AI 为 Mistral Hackathon 构建",
+    "hackathon": "2025年2月28日 – 3月1日",
+    "copyright": "© 2025 Agent One Team"
+  }
+}

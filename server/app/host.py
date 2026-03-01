@@ -7,6 +7,7 @@ The Host has NO domain knowledge — agents own their loops via BaseAgent.run().
 
 import asyncio
 import logging
+import time
 
 from .base_agent import BaseAgent
 from .broadcast import broadcaster
@@ -16,6 +17,9 @@ from .station import StationAgent, execute_action as station_execute_action
 from .world import abort_mission as world_abort_mission
 from .world import get_snapshot
 from .world import observe_station
+from .config import settings
+from .training_logger import training_logger
+from .training_models import SessionConfig, SessionResult
 
 logger = logging.getLogger(__name__)
 
@@ -28,15 +32,21 @@ class Host:
         self._inboxes: dict[str, asyncio.Queue] = {}
         self._agents: list[BaseAgent] = []
         self._station = StationAgent()
+        self._station_loop = None
         self._agent_tasks: list[asyncio.Task] = []
         self.paused = False
+        self._session_start_time: float = 0.0
 
     # ── Agent registration ──
 
     def register(self, agent: BaseAgent):
         """Register an agent and create its inbox."""
+        from .agent import StationLoop
+
         self._agents.append(agent)
         self._inboxes[agent.agent_id] = asyncio.Queue()
+        if isinstance(agent, StationLoop):
+            self._station_loop = agent
 
     # ── Inbox management ──
 
@@ -67,14 +77,33 @@ class Host:
         """Send a message to all WebSocket clients and feed the narrator."""
         await broadcaster.send(msg_dict)
         await self._narrator.feed(msg_dict)
+        # Log training events
+        from .world import world as default_world
+
+        training_logger.maybe_log_broadcast_event(msg_dict, default_world.get_tick())
+        # Feed interesting events to station loop for periodic evaluation
+        if self._station_loop is not None:
+            from .agent import StationLoop
+
+            event_name = msg_dict.get("name", "")
+            if event_name in StationLoop.INTERESTING_EVENTS:
+                self._station_loop.buffer_event(msg_dict)
 
     # ── Lifecycle ──
 
     async def start(self):
         """Launch all registered agent loops."""
         self.paused = False
+        self._session_start_time = time.monotonic()
         self._narrator.reset()
         self._narrator.start()
+
+        # Start training session
+        config = SessionConfig(
+            active_agents=[a.agent_id for a in self._agents],
+            llm_turn_interval=settings.llm_turn_interval_seconds,
+        )
+        training_logger.start_session(config)
 
         for agent in self._agents:
             task = asyncio.create_task(agent.run(self))
@@ -87,6 +116,12 @@ class Host:
     def stop(self):
         """Cancel all running agent loops and narrator."""
         self._narrator.stop()
+        # End training session
+        elapsed = time.monotonic() - self._session_start_time if self._session_start_time else 0.0
+        result = SessionResult(
+            duration_seconds=elapsed,
+        )
+        training_logger.end_session(result, status="aborted")
         for task in self._agent_tasks:
             task.cancel()
         self._agent_tasks.clear()

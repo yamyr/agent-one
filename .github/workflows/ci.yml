@@ -13,6 +13,7 @@ concurrency:
 jobs:
   changes:
     runs-on: ubuntu-latest
+    timeout-minutes: 2
     permissions:
       contents: read
       pull-requests: read
@@ -39,6 +40,7 @@ jobs:
     needs: changes
     if: needs.changes.outputs.server == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     defaults:
       run:
         working-directory: server
@@ -56,6 +58,7 @@ jobs:
     needs: changes
     if: needs.changes.outputs.server == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     defaults:
       run:
         working-directory: server
@@ -67,7 +70,7 @@ jobs:
           python-version: "3.14"
       - name: Install SurrealDB
         run: |
-          curl -sSf https://install.surrealdb.com | sh
+          curl -sSf https://install.surrealdb.com | sh -s -- --version v2.2.1
           echo "$HOME/.surrealdb" >> $GITHUB_PATH
       - run: uv sync --frozen --all-groups
       - run: uv run rut tests/
@@ -76,6 +79,7 @@ jobs:
     needs: changes
     if: needs.changes.outputs.ui == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     defaults:
       run:
         working-directory: ui
@@ -88,12 +92,14 @@ jobs:
           cache-dependency-path: ui/package-lock.json
       - run: npm ci
       - run: npx eslint .
+      - run: npm run test
       - run: npm run build
 
   docker-build:
     needs: changes
     if: needs.changes.outputs.docker == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - run: docker build -t agent-one-ci .

@@ -1,5 +1,6 @@
 <script setup>
 import { computed } from 'vue'
+import { useRevealedSet } from '../composables/useRevealedSet.js'
 
 const props = defineProps({
   worldState: {
@@ -18,16 +19,7 @@ const props = defineProps({
 
 const tick = computed(() => props.worldState?.tick ?? 0)
 
-const tilesRevealed = computed(() => {
-  if (!props.worldState) return 0
-  const set = new Set()
-  for (const agent of Object.values(props.worldState.agents || {})) {
-    for (const cell of (agent.revealed || [])) {
-      set.add(`${cell[0]},${cell[1]}`)
-    }
-  }
-  return set.size
-})
+const { revealedCount } = useRevealedSet(() => props.worldState)
 
 const mobileCount = computed(() => {
   if (!props.worldState) return 0
@@ -60,7 +52,7 @@ const targetQty = computed(() => {
       <span class="stat-sep" />
       <span class="stat">
         <span class="stat-label">Revealed</span>
-        <span class="stat-value">{{ tilesRevealed }} tiles</span>
+        <span class="stat-value">{{ revealedCount }} tiles</span>
       </span>
       <span class="stat-sep" />
       <span class="stat">

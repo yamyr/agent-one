@@ -2,19 +2,28 @@ import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import FastAPI, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from rich.logging import RichHandler
 
-from .agent import RoverMistralLoop, DroneMistralLoop
+from .agent import (
+    RoverMistralLoop,
+    DroneMistralLoop,
+    RoverHuggingFaceLoop,
+    DroneHuggingFaceLoop,
+    StationLoop,
+)
 from .broadcast import broadcaster
 from .config import settings
 from .db import init_db, close_db
 from .host import Host
 from .narrator import Narrator
 from .views import router as views_router
+from .voice import VoiceCommandProcessor, SUPPORTED_AUDIO_TYPES
 from .world import reset_world, set_agent_model
+from .training import collector as training_collector
 
 logging.basicConfig(
     level=logging.INFO,
@@ -27,6 +36,7 @@ logger = logging.getLogger(__name__)
 
 narrator = Narrator(broadcast_fn=broadcaster.send)
 host = Host(narrator=narrator)
+voice_processor = VoiceCommandProcessor()
 
 AGENT_MAP = {
     "rover-mistral": lambda: RoverMistralLoop(
@@ -35,7 +45,14 @@ AGENT_MAP = {
     "rover-2": lambda: RoverMistralLoop(
         agent_id="rover-2", interval=settings.llm_turn_interval_seconds
     ),
-    "drone-mistral": lambda: DroneMistralLoop(interval=2.0),
+    "drone-mistral": lambda: DroneMistralLoop(interval=settings.drone_turn_interval_seconds),
+    "rover-huggingface": lambda: RoverHuggingFaceLoop(
+        agent_id="rover-huggingface", interval=settings.llm_turn_interval_seconds
+    ),
+    "drone-huggingface": lambda: DroneHuggingFaceLoop(
+        interval=settings.drone_turn_interval_seconds
+    ),
+    "station-loop": lambda: StationLoop(interval=20.0),
 }
 
 
@@ -55,6 +72,7 @@ def _register_agents():
 @asynccontextmanager
 async def lifespan(app):
     init_db()
+    training_collector._ensure_dir()
     _register_agents()
     await host.start()
     yield
@@ -64,7 +82,7 @@ async def lifespan(app):
 
 app = FastAPI(
     title="Mars Mission API",
-    version="0.1.0",
+    version="0.4.0",
     lifespan=lifespan,
 )
 
@@ -132,7 +150,88 @@ async def recall_rover(rover_id: str):
     return await host.recall_rover(rover_id)
 
 
+# ── Voice command endpoint ──────────────────────────────────────────────────
+
+
+@app.post("/api/voice-command")
+async def voice_command(audio: UploadFile):
+    """Accept audio upload, transcribe via Voxtral, parse command, and route."""
+    from .protocol import make_message
+
+    # Validate content type
+    content_type = audio.content_type or ""
+    if content_type and content_type not in SUPPORTED_AUDIO_TYPES:
+        return {
+            "ok": False,
+            "error": f"Unsupported audio format: {content_type}. "
+            f"Supported: {', '.join(sorted(SUPPORTED_AUDIO_TYPES))}",
+        }
+
+    # Read audio bytes
+    audio_bytes = await audio.read()
+    if not audio_bytes:
+        return {"ok": False, "error": "Empty audio file"}
+
+    # Process: transcribe + parse command
+    try:
+        result = await voice_processor.process(
+            audio_bytes=audio_bytes,
+            filename=audio.filename or "audio.wav",
+        )
+    except RuntimeError as exc:
+        return {"ok": False, "error": str(exc)}
+    except Exception:
+        logger.exception("Voice command processing failed")
+        return {"ok": False, "error": "Voice command processing failed"}
+
+    # Broadcast the voice command event to all WebSocket clients
+    msg = make_message(
+        source="human",
+        type="command",
+        name="voice_command",
+        payload={
+            "transcript": result["transcript"],
+            "command": result["command"],
+            "params": result["params"],
+            "confidence": result["confidence"],
+        },
+    )
+    await broadcaster.send(msg.to_dict())
+
+    # Route recognized commands through the Host
+    command = result["command"]
+    params = result["params"]
+
+    if command == "recall_rover":
+        rover_id = params.get("rover_id", "rover-mistral")
+        action_result = await host.recall_rover(rover_id)
+        result["action_result"] = action_result
+    elif command == "abort_mission":
+        reason = params.get("reason", "Voice command abort")
+        action_result = await host.abort_mission(reason)
+        result["action_result"] = action_result
+    elif command == "pause_simulation":
+        host.paused = True
+        result["action_result"] = {"ok": True, "paused": True}
+    elif command == "resume_simulation":
+        host.paused = False
+        result["action_result"] = {"ok": True, "paused": False}
+
+    return {"ok": True, **result}
+
+
 # Serve Vue static files (must be after all API routes)
 _ui_dir = Path(__file__).resolve().parent.parent / "ui_dist"
 if _ui_dir.is_dir():
+    _index_html = _ui_dir / "index.html"
+
+    @app.get("/{path:path}")
+    async def spa_fallback(path: str):
+        """Serve index.html for any path not matching API/WS routes (SPA fallback)."""
+        # Serve actual static files (JS, CSS, images) directly
+        candidate = _ui_dir / path
+        if candidate.is_file():
+            return FileResponse(candidate)
+        return FileResponse(_index_html)
+
     app.mount("/", StaticFiles(directory=_ui_dir, html=True), name="ui")

@@ -6,15 +6,22 @@ export function useWebSocket({ onConnect, onEvent } = {}) {
   const worldState = ref(null)
   const narration = ref(null)
   const narrationChunk = ref(null)
+  let reconnectDelay = 2000
+  const RECONNECT_MAX = 30000
   let ws = null
   let eventUid = 0
+  let isFirstConnect = true
 
   const agentEvents = computed(() => {
     const byAgent = {}
     for (const e of events.value) {
       if (e.source === 'world') continue
-      if (!byAgent[e.source]) byAgent[e.source] = []
-      if (byAgent[e.source].length < 50) byAgent[e.source].push(e)
+      const bucket = byAgent[e.source]
+      if (bucket) {
+        if (bucket.length < 50) bucket.push(e)
+      } else {
+        byAgent[e.source] = [e]
+      }
     }
     return byAgent
   })
@@ -30,13 +37,24 @@ export function useWebSocket({ onConnect, onEvent } = {}) {
 
     ws.onopen = () => {
       connected.value = true
-      events.value = []
-      worldState.value = null
-      if (onConnect) onConnect()
+      const first = isFirstConnect
+      isFirstConnect = false
+      if (first) {
+        events.value = []
+        worldState.value = null
+      }
+      if (onConnect) onConnect(first)
+      reconnectDelay = 2000  // reset backoff on successful connection
     }
 
     ws.onmessage = (msg) => {
-      const event = JSON.parse(msg.data)
+      let event
+      try {
+        event = JSON.parse(msg.data)
+      } catch (e) {
+        console.warn('WS: failed to parse message', e)
+        return
+      }
       if (event.source === 'world' && event.name === 'state') {
         worldState.value = event.payload
       } else if (event.source === 'narrator' && event.name === 'narration') {
@@ -47,7 +65,7 @@ export function useWebSocket({ onConnect, onEvent } = {}) {
         event._uid = ++eventUid
         events.value.unshift(event)
         if (events.value.length > 200) {
-          events.value.length = 200
+          events.value.splice(200)
         }
         if (onEvent) onEvent(event)
       }
@@ -55,7 +73,8 @@ export function useWebSocket({ onConnect, onEvent } = {}) {
 
     ws.onclose = () => {
       connected.value = false
-      setTimeout(connect, 2000)
+      setTimeout(connect, reconnectDelay)
+      reconnectDelay = Math.min(reconnectDelay * 2, RECONNECT_MAX)
     }
 
     ws.onerror = () => {
