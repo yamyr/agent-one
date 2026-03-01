@@ -568,7 +568,7 @@ class Narrator:
 
             effective_model = settings.fine_tuned_narration_model or settings.narration_model
 
-            stream = client.chat.stream(
+            stream = await client.chat.stream_async(
                 model=effective_model,
                 messages=[
                     {"role": "system", "content": NARRATOR_SYSTEM_PROMPT},
@@ -579,7 +579,9 @@ class Narrator:
             )
 
             full_text = ""
-            for event in stream:
+            async for event in stream:
+                if not event.data.choices:
+                    continue
                 chunk = event.data.choices[0].delta.content
                 if chunk:
                     full_text += chunk

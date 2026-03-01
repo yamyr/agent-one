@@ -102,6 +102,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 - **Live Inter-Agent Communication (Feature A)**: Drone scan intel wired into rover LLM context, inter-agent message relay system, auto-relay of high-concentration scans.
+
+### Fixed
+- **narrator:** use async streaming (`stream_async`) to prevent event loop blocking ([#92](https://github.com/mhack-agent-one/agent-one/issues/92))
+  - Replaced synchronous `client.chat.stream()` with `await client.chat.stream_async()`
+  - Changed `for event in stream:` to `async for event in stream:`
+  - Added empty-choices guard to handle heartbeat/usage-only stream events
+  - Added 16 regression tests covering async streaming, chunk ordering, error handling
 - `world.py`: `AGENT_MESSAGES`, `send_agent_message()`, `get_unread_messages()`, `get_drone_intel_for_rover()`
 - `agent.py`: Rover context injects drone intel hotspots and incoming messages; DroneLoop auto-relays scans
 - UI: `intel_relay` event rendering, message badge on agent panes
