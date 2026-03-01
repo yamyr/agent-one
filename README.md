@@ -22,7 +22,7 @@ Autonomous agents — a **Rover**, **Drone**, and **Station** — coordinate thr
   │ Move    │   │  Scan    │   │ Charge   │
   │ Dig     │   │  Map     │   │  Power   │
   │ Analyze │   │  Relay   │   │  Alert   │
-  │ Pickup  │   │          │   │          │
+  │ Notify  │   │          │   │          │
   └─────────┘   └──────────┘   └──────────┘
 ```
 
@@ -113,7 +113,7 @@ agent-one/
 
 ### World Model
 
-A Python dict representing the Mars environment: zones with hazards, rock types (core, basalt), agent positions, battery/power levels, storm intensity, visibility, and temperature.
+A Python dict representing the Mars environment: infinite chunk-based grid with fog-of-war, basalt veins with grades (low/medium/high/rich/pristine), agent positions, battery/power levels, and simulation tick state.
 
 ### Probabilistic Goals
 
