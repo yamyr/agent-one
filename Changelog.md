@@ -261,6 +261,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added (HuggingFace Integration)
+
+- **HuggingFace Inference API** as alternative LLM provider alongside Mistral — agents can now use models hosted on HuggingFace via config-driven provider selection (`LLM_PROVIDER=huggingface`)
+- Config fields: `HUGGING_FACE_READ`, `HUGGING_FACE_WRITE`, `LLM_PROVIDER`, `HUGGINGFACE_MODEL`, `HUGGINGFACE_NARRATION_MODEL`
+- `HuggingFaceRoverReasoner` class inheriting from `MistralRoverReasoner` with HF `InferenceClient`
+- `HuggingFaceDroneAgent` class inheriting from `DroneAgent` with HF `InferenceClient`
+- `RoverHuggingFaceLoop` and `DroneHuggingFaceLoop` agent loop classes
+- AGENT_MAP entries: `"rover-huggingface"`, `"drone-huggingface"`
+- Station agent HuggingFace support via `_get_hf_client()` and provider-aware `_call_llm()`
+- Narrator HuggingFace support via `_get_huggingface()` with both streaming and non-streaming text generation
+- `huggingface-hub>=0.25.0` dependency added to `server/pyproject.toml`
+- Comprehensive test suite in `test_huggingface.py` (37 tests) covering all HuggingFace agent variants
+- Updated `env.sample` with HuggingFace environment variables
 ### Changed
 
 - **`.dockerignore` expanded**: Updated `.dockerignore` with comprehensive exclusions — `.env*`, `__pycache__`, `.pytest_cache`, `.mypy_cache`, IDE files, `.github`, specs, tests, and OS files while preserving `README.md` via negation rule ([#75](https://github.com/mhack-agent-one/agent-one/issues/75))

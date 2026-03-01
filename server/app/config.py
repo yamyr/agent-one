@@ -25,6 +25,13 @@ class Settings(BaseSettings):
     # Mistral
     mistral_api_key: str = ""
 
+    # HuggingFace
+    hugging_face_read: str = ""
+    hugging_face_write: str = ""
+    llm_provider: str = "mistral"  # "mistral" or "huggingface"
+    huggingface_model: str = "Qwen/Qwen2.5-72B-Instruct"
+    huggingface_narration_model: str = "Qwen/Qwen2.5-72B-Instruct"
+
     # Simulation timing
     agent_turn_interval_seconds: float = Field(default=0.5, gt=0)
     llm_turn_interval_seconds: float = Field(default=3.0, gt=0)

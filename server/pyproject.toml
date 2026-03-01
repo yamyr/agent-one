@@ -13,6 +13,7 @@ dependencies = [
     "rich>=13.0.0",
     "mistralai>=1.0.0",
     "elevenlabs>=1.0.0",
+    "huggingface-hub>=0.25.0",
 ]
 
 [tool.uv]

@@ -3,6 +3,7 @@
 import json
 import logging
 
+from huggingface_hub import InferenceClient
 from mistralai import Mistral
 
 from .config import settings
@@ -158,6 +159,7 @@ class StationAgent:
         self.agent_id = agent_id
         self.model = model
         self._client = None
+        self._hf_client = None
 
     def _get_client(self):
         if self._client is None:
@@ -165,6 +167,13 @@ class StationAgent:
                 raise RuntimeError("MISTRAL_API_KEY not set")
             self._client = Mistral(api_key=settings.mistral_api_key)
         return self._client
+
+    def _get_hf_client(self):
+        if self._hf_client is None:
+            if not settings.hugging_face_read:
+                raise RuntimeError("HUGGING_FACE_READ not set")
+            self._hf_client = InferenceClient(token=settings.hugging_face_read, provider="auto")
+        return self._hf_client
 
     def _build_context(self, context: StationContext):
         parts = [SYSTEM_PROMPT, "\n== Current world state ==\n" + _build_world_summary(context)]
@@ -176,7 +185,6 @@ class StationAgent:
 
     def _call_llm(self, user_message, context: StationContext):
         """Single LLM call with tools. Returns {thinking, actions} dict."""
-        client = self._get_client()
         ctx_text = self._build_context(context)
         messages = [
             {"role": "system", "content": ctx_text},
@@ -185,14 +193,26 @@ class StationAgent:
         logger.info("Station LLM call: %s", user_message[:80])
         effective_model = settings.fine_tuned_agent_model or self.model
         try:
-            response = client.chat.complete(
-                model=effective_model,
-                messages=messages,
-                tools=STATION_TOOLS,
-            )
+            if settings.llm_provider == "huggingface":
+                hf_client = self._get_hf_client()
+                model = settings.huggingface_model or "Qwen/Qwen2.5-72B-Instruct"
+                response = hf_client.chat_completion(
+                    model=model,
+                    messages=messages,
+                    tools=STATION_TOOLS,
+                    tool_choice="auto",
+                )
+            else:
+                client = self._get_client()
+                response = client.chat.complete(
+                    model=effective_model,
+                    messages=messages,
+                    tools=STATION_TOOLS,
+                )
         except Exception as e:
             logger.exception("Station LLM API failed: %s", e)
             return {"thinking": None, "actions": [], "context_text": ctx_text}
+            
         from .training import collector
 
         collector.record_agent_interaction(

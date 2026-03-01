@@ -7,7 +7,13 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from rich.logging import RichHandler
 
-from .agent import RoverMistralLoop, DroneMistralLoop, StationLoop
+from .agent import (
+    RoverMistralLoop,
+    DroneMistralLoop,
+    RoverHuggingFaceLoop,
+    DroneHuggingFaceLoop,
+    StationLoop,
+)
 from .broadcast import broadcaster
 from .config import settings
 from .db import init_db, close_db
@@ -39,6 +45,10 @@ AGENT_MAP = {
         agent_id="rover-2", interval=settings.llm_turn_interval_seconds
     ),
     "drone-mistral": lambda: DroneMistralLoop(interval=settings.drone_turn_interval_seconds),
+    "rover-huggingface": lambda: RoverHuggingFaceLoop(
+        agent_id="rover-huggingface", interval=settings.llm_turn_interval_seconds
+    ),
+    "drone-huggingface": lambda: DroneHuggingFaceLoop(interval=settings.drone_turn_interval_seconds),
     "station-loop": lambda: StationLoop(interval=20.0),
 }
 

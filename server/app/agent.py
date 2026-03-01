@@ -10,6 +10,8 @@ import logging
 import random
 import re
 
+from huggingface_hub import InferenceClient
+from huggingface_hub.errors import HfHubHTTPError, InferenceTimeoutError
 from mistralai import Mistral, SDKError
 
 from .base_agent import BaseAgent
@@ -494,6 +496,80 @@ class MistralRoverReasoner:
 RoverAgent = MistralRoverReasoner
 
 
+class HuggingFaceRoverReasoner(MistralRoverReasoner):
+    """Rover reasoner using HuggingFace Inference API. Inherits context/fallback from Mistral variant."""
+
+    def __init__(self, agent_id="rover-huggingface", model=None, world: World | None = None):
+        super().__init__(
+            agent_id=agent_id,
+            model=model or settings.huggingface_model or "Qwen/Qwen2.5-72B-Instruct",
+            world=world,
+        )
+
+    def _get_client(self):
+        if self._client is None:
+            if not settings.hugging_face_read:
+                raise RuntimeError("HUGGING_FACE_READ not set")
+            self._client = InferenceClient(token=settings.hugging_face_read, provider="auto")
+        return self._client
+
+    def run_turn(self):
+        """Single-shot LLM call via HuggingFace. Returns {thinking, action} dict."""
+        try:
+            client = self._get_client()
+            context = self._build_context()
+            self._world.set_agent_last_context(self.agent_id, context)
+
+            messages = [
+                {"role": "system", "content": context},
+                {"role": "user", "content": "Observe your surroundings and decide your next move."},
+            ]
+
+            logger.info("Calling HuggingFace (%s) for %s", self.model, self.agent_id)
+            response = client.chat_completion(
+                model=self.model,
+                messages=messages,
+                tools=ROVER_TOOLS,
+                tool_choice="auto",
+            )
+            choice = response.choices[0]
+            thinking = choice.message.content or None
+            action = None
+
+            if choice.message.tool_calls:
+                tc = choice.message.tool_calls[0]
+                name = tc.function.name
+                args = (
+                    json.loads(tc.function.arguments)
+                    if isinstance(tc.function.arguments, str)
+                    else tc.function.arguments
+                )
+                if name in (
+                    "move",
+                    "dig",
+                    "analyze",
+                    "deploy_solar_panel",
+                    "use_solar_battery",
+                    "notify",
+                ):
+                    action = {"name": name, "params": args}
+                else:
+                    logger.warning("%s called unknown tool %r, ignoring", self.agent_id, name)
+
+            if action is None:
+                raise RuntimeError(
+                    f"{self.agent_id} returned no valid tool action (thinking={thinking!r})"
+                )
+
+            if thinking:
+                logger.info("Rover thinking: %s", thinking)
+
+            return {"thinking": thinking, "action": action}
+        except (HfHubHTTPError, InferenceTimeoutError, ConnectionError, TimeoutError) as exc:
+            logger.exception("Rover LLM turn failed for %s, using fallback", self.agent_id)
+            return self._fallback_turn(f"LLM unavailable ({type(exc).__name__})")
+
+
 # ── Drone Reasoners ──
 
 
@@ -800,6 +876,85 @@ class DroneAgent:
         prefix = f"LLM fallback: {reason}. "
         fallback["thinking"] = (prefix + fallback_thinking).strip()
         return fallback
+
+
+class HuggingFaceDroneAgent(DroneAgent):
+    """Drone agent using HuggingFace Inference API. Inherits context/fallback from Mistral variant."""
+
+    def __init__(self, agent_id="drone-huggingface", model=None, world: World | None = None):
+        super().__init__(
+            agent_id=agent_id,
+            model=model or settings.huggingface_model or "Qwen/Qwen2.5-72B-Instruct",
+            world=world,
+        )
+
+    def _get_client(self):
+        if self._client is None:
+            if not settings.hugging_face_read:
+                raise RuntimeError("HUGGING_FACE_READ not set")
+            self._client = InferenceClient(token=settings.hugging_face_read, provider="auto")
+        return self._client
+
+    def run_turn(self):
+        """Single-shot LLM call for drone via HuggingFace. Returns {thinking, action} dict."""
+        try:
+            client = self._get_client()
+            context = self._build_context()
+            self._world.set_agent_last_context(self.agent_id, context)
+
+            messages = [
+                {"role": "system", "content": context},
+                {
+                    "role": "user",
+                    "content": "Observe your surroundings and decide your next action.",
+                },
+            ]
+
+            logger.info("Calling HuggingFace (%s) for %s", self.model, self.agent_id)
+            response = client.chat_completion(
+                model=self.model,
+                messages=messages,
+                tools=DRONE_TOOLS,
+                tool_choice="auto",
+            )
+            choice = response.choices[0]
+            thinking = choice.message.content or None
+            action = None
+
+            if choice.message.tool_calls:
+                tc = choice.message.tool_calls[0]
+                name = tc.function.name
+                args = (
+                    json.loads(tc.function.arguments)
+                    if isinstance(tc.function.arguments, str)
+                    else tc.function.arguments
+                )
+                if name in ("move", "scan", "notify"):
+                    action = {"name": name, "params": args}
+                else:
+                    logger.warning("%s called unknown tool %r, ignoring", self.agent_id, name)
+
+            if action is None:
+                agent = self._world.get_agent(self.agent_id)
+                is_first_turn = not agent.get("memory")
+                if is_first_turn:
+                    logger.warning(
+                        "%s returned no tool call on first turn, falling back to scan",
+                        self.agent_id,
+                    )
+                    action = {"name": "scan", "params": {}}
+                else:
+                    raise RuntimeError(
+                        f"{self.agent_id} returned no valid tool action (thinking={thinking!r})"
+                    )
+
+            if thinking:
+                logger.info("Drone thinking: %s", thinking)
+
+            return {"thinking": thinking, "action": action}
+        except (HfHubHTTPError, InferenceTimeoutError, ConnectionError, TimeoutError) as exc:
+            logger.exception("Drone LLM turn failed for %s, using fallback", self.agent_id)
+            return self._fallback_turn(f"LLM unavailable ({type(exc).__name__})")
 
 
 class MockDroneAgent:
@@ -1259,6 +1414,24 @@ class DroneMistralLoop(DroneLoop):
         set_agent_model(self.agent_id, self._reasoner.model)
 
 
+class RoverHuggingFaceLoop(RoverLoop):
+    """Rover loop wired to HuggingFaceRoverReasoner."""
+
+    def __init__(
+        self, agent_id: str = "rover-huggingface", interval: float = 3.0, world: World | None = None
+    ):
+        super().__init__(agent_id=agent_id, interval=interval, world=world)
+        self._reasoner = HuggingFaceRoverReasoner(agent_id=self.agent_id, world=self._world)
+        set_agent_model(self.agent_id, self._reasoner.model)
+
+
+class DroneHuggingFaceLoop(DroneLoop):
+    """Drone loop wired to HuggingFaceDroneAgent."""
+
+    def __init__(self, interval: float = 2.0, world: World | None = None):
+        super().__init__(agent_id="drone-huggingface", interval=interval, world=world)
+        self._reasoner = HuggingFaceDroneAgent(agent_id=self.agent_id, world=self._world)
+        set_agent_model(self.agent_id, self._reasoner.model)
 # ── Station reactive loop ────────────────────────────────────────────────────────
 
 
