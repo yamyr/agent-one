@@ -176,17 +176,10 @@ BATTERY_COST_PROCESS_ICE = BATTERY_COST_RECYCLE_ICE
 WATER_RECYCLE_BATTERY_COST = BATTERY_COST_RECYCLE
 GAS_PLANT_BUILD_COST = BATTERY_COST_BUILD_GAS_PLANT
 GAS_COLLECT_BATTERY_COST = BATTERY_COST_COLLECT_GAS
-GAS_PER_ERUPTION = 20
+GAS_PRODUCTION_PER_ERUPTION = GAS_PER_ERUPTION
 BATTERY_COST_UPGRADE_BASE = BATTERY_COST_UPGRADE
 MAX_UPGRADE_LEVEL = UPGRADE_MAX_LEVEL
 UPGRADE_BASALT_COST = 1
-GAS_PRODUCTION_PER_ERUPTION = GAS_PRODUCTION_RATE
-
-ICE_TO_WATER_RATIO = 1
-BATTERY_COST_HARVEST_ICE = 4 / FUEL_CAPACITY_ROVER
-BATTERY_COST_RECYCLE_ICE = 3 / FUEL_CAPACITY_ROVER
-BATTERY_COST_BUILD_GAS_PLANT = 10 / FUEL_CAPACITY_ROVER
-GAS_PRODUCTION_PER_ERUPTION = 50
 
 # --- Solar panels ---
 SOLAR_BATTERY_CAPACITY = 0.25
@@ -1045,44 +1038,67 @@ def update_geysers():
             obs["state"] = "warning"
         else:
             if obs["state"] != "erupting":
+                # Transition to erupting
                 gx, gy = obs["position"]
+                # Check gas_plant on geyser object or in structures list
                 gas_plant = obs.get("gas_plant")
-                if gas_plant:
-                    gas_before = int(gas_plant.get("gas_stored", 0))
-                    gas_cap = int(gas_plant.get("max_gas", 100))
-                    gas_plant["gas_stored"] = min(gas_cap, gas_before + 10)
+                struct_plant = _find_structure_at(gx, gy)
+                has_plant = (
+                    obs.get("has_gas_plant")
+                    or gas_plant
+                    or (
+                        struct_plant
+                        and struct_plant.get("type") == "gas_plant"
+                        and struct_plant.get("active")
+                    )
+                )
+                if has_plant:
+                    station_resources = WORLD.setdefault(
+                        "station_resources", {"water": 0, "gas": 0, "parts": []}
+                    )
+                    station_resources["gas"] = int(station_resources.get("gas", 0)) + int(
+                        GAS_PRODUCTION_PER_ERUPTION
+                    )
+                    # Track produced_total on the structure if present
+                    target = struct_plant if struct_plant else gas_plant
+                    if target and isinstance(target, dict):
+                        contents = target.setdefault("contents", {})
+                        contents["produced_total"] = int(contents.get("produced_total", 0)) + int(
+                            GAS_PRODUCTION_PER_ERUPTION
+                        )
                     events.append(
                         {
                             "type": "gas_produced",
                             "position": [gx, gy],
-                            "amount": gas_plant["gas_stored"] - gas_before,
-                            "gas_stored": gas_plant["gas_stored"],
+                            "amount": int(GAS_PRODUCTION_PER_ERUPTION),
+                            "station_gas": station_resources["gas"],
                         }
                     )
-                for aid, agent in WORLD["agents"].items():
-                    if agent.get("type") == "station":
-                        continue
-                    ax, ay = agent["position"]
-                    if ax == gx and ay == gy:
-                        old_bat = agent["battery"]
-                        agent["battery"] = max(0.0, old_bat - BATTERY_COST_GEYSER)
-                        events.append(
-                            {
-                                "type": "geyser_eruption",
-                                "position": [gx, gy],
-                                "agent_id": aid,
-                                "battery_before": old_bat,
-                                "battery_after": agent["battery"],
-                            }
-                        )
-                        logger.info(
-                            "Geyser eruption at (%d,%d) hit %s: %.0f%% -> %.0f%%",
-                            gx,
-                            gy,
-                            aid,
-                            old_bat * 100,
-                            agent["battery"] * 100,
-                        )
+                else:
+                    for aid, agent in WORLD["agents"].items():
+                        if agent.get("type") == "station":
+                            continue
+                        ax, ay = agent["position"]
+                        if ax == gx and ay == gy:
+                            old_bat = agent["battery"]
+                            agent["battery"] = max(0.0, old_bat - BATTERY_COST_GEYSER)
+                            events.append(
+                                {
+                                    "type": "geyser_eruption",
+                                    "position": [gx, gy],
+                                    "agent_id": aid,
+                                    "battery_before": old_bat,
+                                    "battery_after": agent["battery"],
+                                }
+                            )
+                            logger.info(
+                                "Geyser eruption at (%d,%d) hit %s: %.0f%% -> %.0f%%",
+                                gx,
+                                gy,
+                                aid,
+                                old_bat * 100,
+                                agent["battery"] * 100,
+                            )
             obs["state"] = "erupting"
         obs["_cycle_tick"] = ct
     return events
@@ -1271,7 +1287,7 @@ def execute_action(agent_id, action_name, params):
         if result["ok"]:
             record_memory(
                 agent_id,
-                f"Recycled {result['ice_used']} ice into {result['water_quantity']} water at recycler",
+                f"Recycled ice into {result.get('water_quantity', 0)} water at recycler",
             )
     elif action_name == "build_gas_plant":
         if is_drone:
@@ -1371,18 +1387,23 @@ def execute_action(agent_id, action_name, params):
         if is_hauler:
             return {"ok": False, "error": "Haulers cannot upgrade buildings"}
         result = _execute_upgrade_building(agent_id, agent, params)
-    elif action_name in (
-        "load_from_rover",
-        "load_cargo",
-        "unload_at_station",
-        "unload_cargo",
-        "pick_up_from",
-        "transfer_cargo",
-    ):
-        return {
-            "ok": False,
-            "error": "Legacy cargo transfer actions are disabled; use drop_item + pickup_cargo",
-        }
+    elif action_name in ("load_from_rover", "unload_at_station", "pick_up_from", "transfer_cargo"):
+        return {"ok": False, "error": "Legacy cargo transfer actions are disabled; use drop_item + pickup_cargo"}
+    elif action_name == "load_cargo":
+        if not is_hauler:
+            return {"ok": False, "error": "Legacy cargo transfer actions are disabled; use drop_item + pickup_cargo"}
+        result = _execute_load_cargo(agent_id, agent)
+        if result["ok"]:
+            record_memory(
+                agent_id,
+                f"Loaded {result.get('loaded_count', 0)} cargo item(s), inventory={result.get('inventory_count', 0)}",
+            )
+    elif action_name == "unload_cargo":
+        if not is_hauler:
+            return {"ok": False, "error": "Legacy cargo transfer actions are disabled; use drop_item + pickup_cargo"}
+        result = _execute_unload_cargo(agent_id, agent)
+        if result["ok"]:
+            record_memory(agent_id, f"Unloaded {result.get('unloaded_count', 0)} items")
     else:
         return {"ok": False, "error": f"Unknown action: {action_name}"}
 
@@ -1661,28 +1682,29 @@ def _execute_process_ice(agent_id, agent):
         return {"ok": False, "error": "Not enough battery to process ice"}
 
     x, y = agent["position"]
-    processor = None
+    recycler = None
     for structure in WORLD.get("structures", []):
-        if structure.get("type") != "water_processor":
+        if structure.get("type") not in ("water_recycler", "water_processor"):
             continue
         sx, sy = structure["position"]
         if abs(sx - x) + abs(sy - y) <= 1 and structure.get("active"):
-            processor = structure
+            recycler = structure
             break
 
-    if processor is None:
+    if recycler is None:
         return {
             "ok": False,
-            "error": "No active water processor within reach (must investigate first and be adjacent)",
+            "error": "No active water recycler within reach (must investigate first and be adjacent)",
         }
 
     inventory = agent.get("inventory", [])
     ice_index = next((i for i, item in enumerate(inventory) if item.get("type") == "ice"), -1)
     if ice_index < 0:
-        return {"ok": False, "error": "No ice in inventory to process"}
+        return {"ok": False, "error": "No ice in inventory to recycle"}
 
     ice_item = inventory.pop(ice_index)
-    water_quantity = int(float(ice_item.get("quantity", 0)) * ICE_TO_WATER_RATIO)
+    conversion_rate = int(recycler.get("contents", {}).get("conversion_rate", ICE_TO_WATER_RATIO))
+    water_quantity = int(ice_item.get("quantity", 0)) * conversion_rate
     inventory.append({"type": "water", "quantity": water_quantity})
     agent["battery"] = max(0.0, agent["battery"] - cost)
 
@@ -1712,19 +1734,49 @@ def _execute_build_gas_plant(agent_id, agent, params=None):
 
     if geyser is None:
         return {"ok": False, "error": "No adjacent geyser within reach"}
-    if geyser.get("gas_plant"):
-        return {"ok": False, "error": "Gas plant already exists on this geyser"}
 
     geyser_pos = list(geyser["position"])
-    gas_plant = {"gas_stored": 0, "max_gas": 100, "built_by": agent_id}
-    geyser["gas_plant"] = gas_plant
+
+    # Check for existing gas plant (both on geyser object and in structures)
+    if geyser.get("gas_plant") or geyser.get("has_gas_plant"):
+        return {"ok": False, "error": "Gas plant already exists on this geyser"}
+    if any(
+        s.get("type") == "gas_plant" and s.get("position") == geyser_pos
+        for s in WORLD.get("structures", [])
+    ):
+        return {"ok": False, "error": "Gas plant already exists on this geyser"}
+
+    # Check station water requirement
+    station_resources = WORLD.setdefault("station_resources", {"water": 0, "gas": 0, "parts": []})
+    if int(station_resources.get("water", 0)) < 5:
+        return {"ok": False, "error": "Not enough station water (need 5)"}
+
+    station_resources["water"] = int(station_resources.get("water", 0)) - 5
     agent["battery"] = max(0.0, agent["battery"] - cost)
+
+    # Store gas plant on geyser object AND in structures list
+    gas_plant_info = {"gas_stored": 0, "max_gas": 100, "built_by": agent_id}
+    geyser["gas_plant"] = gas_plant_info
+    geyser["has_gas_plant"] = True
+
+    gas_plant_structure = {
+        "type": "gas_plant",
+        "category": "building",
+        "position": geyser_pos,
+        "explored": True,
+        "active": True,
+        "description": "A gas plant built on a geyser, producing gas from eruptions",
+        "contents": {"gas_stored": 0, "geyser_ref": geyser_pos},
+        "built_by": agent_id,
+    }
+    WORLD.setdefault("structures", []).append(gas_plant_structure)
 
     return {
         "ok": True,
         "position": geyser_pos,
         "geyser_position": geyser_pos,
-        "gas_plant": {"geyser_position": geyser_pos, **gas_plant},
+        "gas_plant": {"geyser_position": geyser_pos, **gas_plant_info},
+        "station_water": station_resources["water"],
     }
 
 
@@ -2506,17 +2558,9 @@ def _execute_unload_cargo(agent_id, agent):
     unloaded = list(inventory)
     auto_delivered = 0
     drop_count = 0
-    if pos == station_pos:
-        WORLD.setdefault("delivered_items", []).extend(unloaded)
-        auto_delivered = len(unloaded)
-    else:
-        drops = WORLD.setdefault("cargo_drops", [])
-        drop = next((d for d in drops if d.get("position") == pos), None)
-        if drop is None:
-            drop = {"position": pos, "items": []}
-            drops.append(drop)
-        drop.setdefault("items", []).extend(unloaded)
-        drop_count = len(drop["items"])
+    if pos != station_pos:
+        return {"ok": False, "error": "Must be at station to unload cargo"}
+    WORLD.setdefault("delivered_items", []).extend(unloaded)
 
     inventory.clear()
     agent["battery"] = max(0.0, agent["battery"] - BATTERY_COST_UNLOAD)

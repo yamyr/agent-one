@@ -126,6 +126,8 @@ class TestTaskSeparatorParsing(unittest.TestCase):
 class TestRoverContextDroneHotspot(unittest.TestCase):
     def setUp(self):
         self._orig_scans = world.state.get("drone_scans", [])
+        self._orig_upgrades = world.state.get("station_upgrades", {}).copy()
+        self._orig_stones = list(world.state.get("stones", []))
         world.state["agents"]["rover-mistral"]["position"] = [0, 0]
         world.state["agents"]["rover-mistral"]["battery"] = 1.0
         world.state["agents"]["rover-mistral"]["mission"] = {"objective": "Explore", "plan": []}
@@ -133,6 +135,8 @@ class TestRoverContextDroneHotspot(unittest.TestCase):
 
     def tearDown(self):
         world.state["drone_scans"] = self._orig_scans
+        world.state["station_upgrades"] = self._orig_upgrades
+        world.state["stones"] = self._orig_stones
 
     def test_hotspot_appears_in_context(self):
         world.state["drone_scans"] = [
@@ -161,14 +165,14 @@ class TestRoverContextDroneHotspot(unittest.TestCase):
                 "analyzed": True,
             }
         ]
-        world.state["station_upgrades"] = {"charge_bonus": 0.10, "upgrade_count": 2}
+        world.state["station_upgrades"] = {"charge_mk2": 1, "extended_fuel": 1}
         world.state["agents"]["rover-mistral"]["position"] = [0, 0]
 
         agent = MistralRoverReasoner()
         context = agent._build_context()
 
         self.assertIn("ice deposit", context)
-        self.assertIn("Station upgrades: 2", context)
+        self.assertIn("charge_mk2: level 1/1", context)
 
 
 class TestExecuteActionNoTaskUpdate(unittest.TestCase):

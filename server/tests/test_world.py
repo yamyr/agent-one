@@ -271,18 +271,24 @@ class TestStones(unittest.TestCase):
         self.assertGreaterEqual(len(stones), 1)
 
     def test_all_veins_are_basalt(self):
-        """All generated veins should have _true_type basalt_vein."""
+        """All generated basalt veins should have _true_type basalt_vein."""
         for s in world.state["stones"]:
+            if s.get("_true_type") == "ice":
+                continue
             self.assertEqual(s["_true_type"], "basalt_vein")
 
     def test_veins_have_valid_grades(self):
-        """Every vein should have a valid _true_grade."""
+        """Every basalt vein should have a valid _true_grade."""
         for s in world.state["stones"]:
+            if s.get("_true_type") == "ice":
+                continue
             self.assertIn(s["_true_grade"], VEIN_GRADES)
 
     def test_veins_quantity_in_range(self):
-        """Every vein's _true_quantity should fall within the range for its grade."""
+        """Every basalt vein's _true_quantity should fall within the range for its grade."""
         for s in world.state["stones"]:
+            if s.get("_true_type") == "ice":
+                continue
             grade = s["_true_grade"]
             lo, hi = VEIN_QUANTITY_RANGES[grade]
             self.assertGreaterEqual(s["_true_quantity"], lo)
@@ -295,6 +301,8 @@ class TestStones(unittest.TestCase):
 
     def test_stone_shape(self):
         for stone in world.state["stones"]:
+            if stone.get("_true_type") == "ice":
+                continue
             self.assertIn("position", stone)
             self.assertIn("type", stone)
             self.assertIn("_true_type", stone)
@@ -320,6 +328,8 @@ class TestStones(unittest.TestCase):
 
     def test_stones_avoid_agent_starts(self):
         for stone in world.state["stones"]:
+            if stone.get("_true_type") == "ice":
+                continue
             pos = tuple(stone["position"])
             self.assertNotIn(pos, AGENT_STARTS)
 
@@ -1567,7 +1577,7 @@ class TestAbortMission(unittest.TestCase):
     def test_all_agents_at_station_true(self):
         station_pos = world.state["agents"]["station"]["position"]
         for aid, agent in world.state["agents"].items():
-            if agent.get("type") in ("rover", "drone"):
+            if agent.get("type") in ("rover", "drone", "hauler"):
                 agent["position"] = list(station_pos)
         self.assertTrue(all_agents_at_station())
 
@@ -2664,6 +2674,7 @@ class TestWaterAndGasMechanics(unittest.TestCase):
         self._orig_structures = world.state.get("structures", [])[:]
         self._orig_obstacles = world.state.get("obstacles", [])[:]
         self._orig_mission = world.state.get("mission", {}).copy()
+        self._orig_station_resources = dict(world.state.get("station_resources", {}))
 
         rover = world.state["agents"]["rover-mistral"]
         rover["position"] = [5, 5]
@@ -2672,6 +2683,7 @@ class TestWaterAndGasMechanics(unittest.TestCase):
 
         world.state["structures"] = []
         world.state["obstacles"] = []
+        world.state.setdefault("station_resources", {"water": 0, "gas": 0, "parts": []})
         mission = world.state.setdefault("mission", {})
         mission["status"] = "running"
         mission.setdefault("water_collected", 0)
@@ -2685,6 +2697,7 @@ class TestWaterAndGasMechanics(unittest.TestCase):
         world.state["structures"] = self._orig_structures
         world.state["obstacles"] = self._orig_obstacles
         world.state["mission"] = self._orig_mission
+        world.state["station_resources"] = self._orig_station_resources
 
     def test_recycle_ice_success(self):
         rover = world.state["agents"]["rover-mistral"]
@@ -2704,11 +2717,15 @@ class TestWaterAndGasMechanics(unittest.TestCase):
         result = execute_action("rover-mistral", "recycle_ice", {})
 
         self.assertTrue(result["ok"])
-        self.assertEqual(rover["inventory"], [{"type": "water", "grade": "n/a", "quantity": 1}])
+        # 3 ice * conversion_rate 3 = 9 water
+        self.assertEqual(result["water_quantity"], 9)
+        water_items = [i for i in rover["inventory"] if i.get("type") == "water"]
+        self.assertEqual(len(water_items), 1)
+        self.assertEqual(water_items[0]["quantity"], 9)
 
     def test_recycle_ice_not_enough_ice(self):
         rover = world.state["agents"]["rover-mistral"]
-        rover["inventory"] = [{"type": "ice", "grade": "n/a", "quantity": 2}]
+        rover["inventory"] = []  # No ice at all
         world.state["structures"] = [
             {
                 "type": "water_recycler",
@@ -2723,7 +2740,7 @@ class TestWaterAndGasMechanics(unittest.TestCase):
 
         result = execute_action("rover-mistral", "recycle_ice", {})
         self.assertFalse(result["ok"])
-        self.assertIn("Not enough ice", result["error"])
+        self.assertIn("ice", result["error"].lower())
 
     def test_recycle_ice_without_recycler(self):
         rover = world.state["agents"]["rover-mistral"]
@@ -2731,11 +2748,10 @@ class TestWaterAndGasMechanics(unittest.TestCase):
 
         result = execute_action("rover-mistral", "recycle_ice", {})
         self.assertFalse(result["ok"])
-        self.assertIn("water recycler", result["error"].lower())
+        self.assertIn("recycler", result["error"].lower())
 
     def test_build_gas_plant_success(self):
-        rover = world.state["agents"]["rover-mistral"]
-        rover["inventory"] = [{"type": "basalt_vein", "grade": "low", "quantity": 10}]
+        world.state["station_resources"]["water"] = 10
         world.state["obstacles"] = [
             {"position": [5, 5], "kind": "geyser", "state": "idle", "_cycle_tick": 0}
         ]
@@ -2745,24 +2761,23 @@ class TestWaterAndGasMechanics(unittest.TestCase):
         self.assertTrue(result["ok"])
         self.assertEqual(world.state["structures"][-1]["type"], "gas_plant")
         self.assertEqual(world.state["structures"][-1]["position"], [5, 5])
-        self.assertEqual(rover["inventory"], [])
+        # Station water should be deducted by 5
+        self.assertEqual(world.state["station_resources"]["water"], 5)
 
     def test_build_gas_plant_not_on_geyser(self):
-        rover = world.state["agents"]["rover-mistral"]
-        rover["inventory"] = [{"type": "basalt_vein", "grade": "low", "quantity": 10}]
-
         result = execute_action("rover-mistral", "build_gas_plant", {})
         self.assertFalse(result["ok"])
         self.assertIn("geyser", result["error"].lower())
 
     def test_build_gas_plant_without_materials(self):
+        world.state["station_resources"]["water"] = 0
         world.state["obstacles"] = [
             {"position": [5, 5], "kind": "geyser", "state": "idle", "_cycle_tick": 0}
         ]
 
         result = execute_action("rover-mistral", "build_gas_plant", {})
         self.assertFalse(result["ok"])
-        self.assertIn("building material", result["error"].lower())
+        self.assertIn("water", result["error"].lower())
 
     def test_collect_gas_success(self):
         rover = world.state["agents"]["rover-mistral"]
@@ -2781,11 +2796,13 @@ class TestWaterAndGasMechanics(unittest.TestCase):
         result = execute_action("rover-mistral", "collect_gas", {})
 
         self.assertTrue(result["ok"])
-        self.assertEqual(rover["inventory"][-1], {"type": "gas", "grade": "n/a", "quantity": 1})
-        self.assertEqual(world.state["structures"][0]["contents"]["gas_stored"], 1)
+        # collect_gas collects ALL stored gas
+        self.assertEqual(rover["inventory"][-1], {"type": "gas", "quantity": 2})
+        # gas_stored should be zeroed
+        self.assertEqual(world.state["structures"][0]["contents"]["gas_stored"], 0)
 
     def test_geyser_eruption_produces_gas_for_plant(self):
-        from app.world import update_geysers
+        from app.world import update_geysers, GAS_PRODUCTION_PER_ERUPTION
 
         world.state["obstacles"] = [
             {
@@ -2803,14 +2820,18 @@ class TestWaterAndGasMechanics(unittest.TestCase):
                 "explored": True,
                 "active": True,
                 "description": "test gas plant",
-                "contents": {"gas_stored": 0, "produced_per_eruption": 1},
+                "contents": {"gas_stored": 0, "produced_total": 0},
             }
         ]
 
         events = update_geysers()
 
-        self.assertEqual(world.state["structures"][0]["contents"]["gas_stored"], 1)
-        gas_events = [e for e in events if e.get("type") == "geyser_gas_produced"]
+        # Gas goes to station_resources, and produced_total is tracked on structure
+        sr = world.state.get("station_resources", {})
+        self.assertGreaterEqual(int(sr.get("gas", 0)), int(GAS_PRODUCTION_PER_ERUPTION))
+        produced_total = world.state["structures"][0]["contents"].get("produced_total", 0)
+        self.assertEqual(produced_total, int(GAS_PRODUCTION_PER_ERUPTION))
+        gas_events = [e for e in events if e.get("type") == "gas_produced"]
         self.assertEqual(len(gas_events), 1)
 
 

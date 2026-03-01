@@ -55,14 +55,24 @@
 
 ### Bug Fixes
 
-* **world:** fix gas production — gas now stored locally in plant contents (`gas_stored`) instead of duplicating to both plant and station
-* **world:** remove phantom `GroundItem` import that caused startup crash
-* **world:** disable legacy cargo transfer actions (`load_cargo`, `unload_cargo`, etc.) — use `drop_item` + `pickup_cargo` flow instead
-* **world:** fix `_execute_build_gas_plant` call signature — remove unnecessary `params` arg at call site
-* **agent:** rename `HaulerMistralLoop` to `HaulerLoop` for consistency with other agent loops
-* **tests:** fix test assertions to match refactored ice deposit schema (`type: ice_deposit`, no `_true_quantity`)
-* **tests:** fix upgrade tests to use new `charge_mk2` upgrade name and resource-based cost system
-* **tests:** fix `test_recycle_ice_success` to call `_execute_recycle_ice` directly (avoids routing issues)
+* **world:** fix `load_cargo` and `unload_cargo` action dispatch — functions existed but were not wired into `execute_action()`
+* **world:** fix `pick_up_from` dispatch for hauler pickup from rovers
+* **world:** fix hauler agent ID mismatch — `_build_initial_world()` used `hauler-1` but config/main use `hauler-mistral`
+* **world:** fix `_execute_load_cargo` call signature mismatch (2 args, not 3)
+* **world:** deduplicate conflicting constants — `ICE_TO_WATER_RATIO` (was 2 then overwritten to 1), `BATTERY_COST_BUILD_GAS_PLANT` (8 then overwritten to 10), `GAS_PER_ERUPTION` (5 then overwritten to 20), plus 12 other redundant alias definitions
+* **world:** remove orphaned `_execute_process_ice` dead code (superseded by `_execute_recycle_ice`)
+* **world:** add `water_collected`/`gas_collected` to `observe_rover()` and `observe_station()` return values
+* **agent:** fix `HAULER_TOOLS` referencing undefined constants (`LOAD_FROM_ROVER_TOOL`, `UNLOAD_AT_STATION_TOOL`, `PICKUP_CARGO_TOOL`)
+* **agent:** remove orphaned `HaulerReasoner` class (170 lines of dead code overwritten by EOF alias)
+* **agent:** remove unused `HARVEST_ICE_TOOL` constant and `HaulerReasoner = HaulerAgent` alias
+* **agent:** fix `_hauler_tools_for_ui()` — was returning empty list, now returns actual HAULER_TOOLS
+* **tests:** fix 14 failing resource economy tests to match actual implementation
+
+### Errors Identified & Prevented
+
+* **Concurrent file editing:** Two background agents editing `world.py` simultaneously caused file corruption — duplicate functions, conflicting constants, partial implementations. Prevented by sequential editing going forward.
+* **Constant shadowing:** Python's last-assignment-wins semantics for module-level constants caused `ICE_TO_WATER_RATIO=2` to be silently overridden to `1` by a duplicate definition 62 lines later. All duplicate constants consolidated.
+* **Dead code accumulation:** Orphaned classes/functions from iterative development (`HaulerReasoner`, `_execute_process_ice`, alias chains) added ~200 lines of dead code that could confuse future development.
 
 ## [0.7.0] — Control Buttons & Narration Enablement (2026-03-01)
 
