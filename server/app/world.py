@@ -107,6 +107,7 @@ MAX_INVENTORY_HAULER = 6
 HAULER_REVEAL_RADIUS = 2
 
 ICE_PROBABILITY = 0.008
+ICE_DEPOSIT_PROBABILITY = ICE_PROBABILITY
 ICE_MOUNTAIN_RADIUS = 3
 ICE_QUANTITY_RANGE = (20, 100)
 ICE_GRADES = ["thin", "moderate", "thick", "glacial"]
@@ -453,6 +454,7 @@ def _ensure_chunk(cx, cy):
     _index_stones(stones)
 
     obstacles = []
+    mountain_positions = set()
     for dy in range(CHUNK_SIZE):
         for dx in range(CHUNK_SIZE):
             wx, wy = x0 + dx, y0 + dy
@@ -463,16 +465,8 @@ def _ensure_chunk(cx, cy):
             r = rng.random()
             if r < MOUNTAIN_PROBABILITY:
                 occupied.add((wx, wy))
-                has_ice = rng.random() < ICE_DEPOSIT_PROBABILITY
-                ice_qty = rng.randint(*ICE_QUANTITY_RANGE) if has_ice else 0
-                obstacles.append(
-                    {
-                        "position": [wx, wy],
-                        "kind": "mountain",
-                        "state": "idle",
-                        "ice_deposit": ice_qty,
-                    }
-                )
+                mountain_positions.add((wx, wy))
+                obstacles.append({"position": [wx, wy], "kind": "mountain", "state": "idle"})
             elif r < MOUNTAIN_PROBABILITY + GEYSER_PROBABILITY:
                 occupied.add((wx, wy))
                 obstacles.append(
@@ -484,30 +478,31 @@ def _ensure_chunk(cx, cy):
                     }
                 )
 
+    for obs in WORLD.get("obstacles", []):
+        if obs.get("kind") != "mountain":
+            continue
+        mx, my = obs["position"]
+        if x0 - 1 <= mx <= x0 + CHUNK_SIZE and y0 - 1 <= my <= y0 + CHUNK_SIZE:
+            mountain_positions.add((mx, my))
+
     ice_deposits = []
-    for obs in obstacles:
-        if obs["kind"] == "mountain":
-            mx, my = obs["position"]
-            for _ in range(rng.randint(1, 3)):
-                for _attempt in range(20):
-                    ix = mx + rng.randint(-ICE_MOUNTAIN_RADIUS, ICE_MOUNTAIN_RADIUS)
-                    iy = my + rng.randint(-ICE_MOUNTAIN_RADIUS, ICE_MOUNTAIN_RADIUS)
-                    if (ix, iy) not in occupied and abs(ix - mx) + abs(
-                        iy - my
-                    ) <= ICE_MOUNTAIN_RADIUS:
-                        if rng.random() >= ICE_PROBABILITY:
-                            continue
-                        occupied.add((ix, iy))
-                        qty = rng.randint(*ICE_QUANTITY_RANGE)
-                        ice_deposits.append(
-                            {
-                                "position": [ix, iy],
-                                "quantity": qty,
-                                "_true_quantity": qty,
-                                "discovered": False,
-                            }
-                        )
-                        break
+    for mx, my in mountain_positions:
+        for ix, iy in ((mx + 1, my), (mx - 1, my), (mx, my + 1), (mx, my - 1)):
+            if ix < x0 or ix >= x0 + CHUNK_SIZE or iy < y0 or iy >= y0 + CHUNK_SIZE:
+                continue
+            if (ix, iy) in occupied:
+                continue
+            if rng.random() >= ICE_PROBABILITY:
+                continue
+            occupied.add((ix, iy))
+            ice_deposits.append(
+                {
+                    "position": [ix, iy],
+                    "type": "ice_deposit",
+                    "quantity": rng.randint(*ICE_QUANTITY_RANGE),
+                    "gathered": False,
+                }
+            )
 
     WORLD.setdefault("obstacles", []).extend(obstacles)
     _index_obstacles(obstacles)
@@ -1288,7 +1283,7 @@ def execute_action(agent_id, action_name, params):
             return {"ok": False, "error": "Drones cannot build gas plants"}
         if is_hauler:
             return {"ok": False, "error": "Haulers cannot build gas plants"}
-        result = _execute_build_gas_plant(agent_id, agent, params)
+        result = _execute_build_gas_plant(agent_id, agent)
         if result["ok"]:
             gp = result["geyser_position"]
             record_memory(agent_id, f"Built gas plant at geyser ({gp[0]},{gp[1]})")
@@ -1381,16 +1376,16 @@ def execute_action(agent_id, action_name, params):
         if is_hauler:
             return {"ok": False, "error": "Haulers cannot upgrade buildings"}
         result = _execute_upgrade_building(agent_id, agent, params)
-    elif action_name in ("load_from_rover", "load_cargo"):
+    elif action_name in ("load", "load_from_rover", "load_cargo"):
         if not is_hauler:
             return {"ok": False, "error": "Only haulers can load from rover"}
-        result = _execute_load_cargo(agent_id, agent, params)
+        result = _execute_load_cargo(agent_id, agent)
         if result["ok"]:
             record_memory(
                 agent_id,
                 f"Loaded {result.get('loaded_count', 0)} cargo item(s), inventory={result.get('inventory_count', 0)}",
             )
-    elif action_name in ("unload_at_station", "unload_cargo"):
+    elif action_name in ("unload", "unload_at_station", "unload_cargo"):
         if not is_hauler:
             return {"ok": False, "error": "Only haulers can unload at station"}
         result = _execute_unload_cargo(agent_id, agent)
@@ -1709,8 +1704,7 @@ def _execute_process_ice(agent_id, agent):
     return _execute_recycle_ice(agent_id, agent)
 
 
-def _execute_build_gas_plant(agent_id, agent, params=None):
-    del params
+def _execute_build_gas_plant(agent_id, agent, params):
     storm_mult = storm_mod.get_battery_multiplier(WORLD)
     cost = GAS_PLANT_BUILD_COST * storm_mult
     if agent["battery"] < cost:
@@ -3201,6 +3195,7 @@ def get_snapshot():
     visible_ice = []
     for d in snap.get("ice_deposits", []):
         if tuple(d["position"]) in revealed:
+            d.pop("_true_quantity", None)
             visible_ice.append(d)
     snap["ice_deposits"] = visible_ice
     # Filter structures to only those on revealed cells
@@ -3216,6 +3211,13 @@ def get_snapshot():
             cleaned = {k: v for k, v in o.items() if not k.startswith("_")}
             visible_obstacles.append(cleaned)
     snap["obstacles"] = visible_obstacles
+    visible_gas_plants = []
+    for plant in snap.get("gas_plants", []):
+        if tuple(plant.get("geyser_position", plant.get("position", []))) in revealed:
+            visible_gas_plants.append(plant)
+    snap["gas_plants"] = visible_gas_plants
+    snap["base_upgrades"] = snap.get("base_upgrades", [])
+    snap["resources"] = snap.get("resources", {"water": 0, "gas": 0})
     visible_ground_items = []
     for item in snap.get("ground_items", []):
         if tuple(item.get("position", [])) in revealed:

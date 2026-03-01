@@ -9,7 +9,6 @@ from app.world import (
     _execute_build_gas_plant,
     _execute_upgrade_base,
 )
-from app.world import FUEL_CAPACITY_ROVER
 
 
 def _reset_agent(agent_id="rover-mistral", pos=None, battery=1.0):
@@ -204,22 +203,22 @@ class TestUpgradeBase(unittest.TestCase):
         WORLD["station_resources"] = self._orig_station_resources
         WORLD["station_upgrades"] = self._orig_station_upgrades
 
-    def test_upgrade_charge_speed(self):
-        result = _execute_upgrade_base("rover-mistral", self.agent, {"upgrade": "charge_speed"})
+    def test_upgrade_charge_mk2(self):
+        result = _execute_upgrade_base("rover-mistral", self.agent, {"upgrade": "charge_mk2"})
         self.assertTrue(result["ok"])
-        self.assertEqual(WORLD["station_upgrades"]["charge_speed"], 1)
+        self.assertEqual(WORLD["station_upgrades"]["charge_mk2"], 1)
 
     def test_upgrade_not_at_station(self):
         """Cannot upgrade when not at station."""
         self.agent["position"] = [5, 5]
-        result = _execute_upgrade_base("rover-mistral", self.agent, {"upgrade": "charge_speed"})
+        result = _execute_upgrade_base("rover-mistral", self.agent, {"upgrade": "charge_mk2"})
         self.assertFalse(result["ok"])
         self.assertIn("station", result["error"].lower())
 
     def test_upgrade_insufficient_resources(self):
         """Cannot upgrade without sufficient resources."""
         WORLD["station_resources"] = {"water": 0, "gas": 0, "parts": []}
-        result = _execute_upgrade_base("rover-mistral", self.agent, {"upgrade": "charge_speed"})
+        result = _execute_upgrade_base("rover-mistral", self.agent, {"upgrade": "charge_mk2"})
         self.assertFalse(result["ok"])
         self.assertIn("insufficient", result["error"].lower())
 
@@ -261,7 +260,7 @@ class TestGasProduction(unittest.TestCase):
 
     def test_gas_not_produced_on_idle_geyser(self):
         """Gas plant does NOT produce gas when geyser is idle."""
-        geyser = _place_geyser([10, 10], state="idle")
+        _place_geyser([10, 10], state="idle")
         geyser_idx = len(WORLD["obstacles"]) - 1
         WORLD["gas_plants"].append(
             {
