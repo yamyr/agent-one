@@ -290,6 +290,7 @@ class TestLoadCargo(unittest.TestCase):
         self.assertFalse(result["ok"])
         self.assertIn("battery", result["error"].lower())
 
+
 class TestUnloadCargo(unittest.TestCase):
     """Test hauler unload_cargo action at station."""
 
@@ -352,6 +353,7 @@ class TestCargoTransferActions(unittest.TestCase):
     def test_transfer_cargo_unknown(self):
         result = execute_action("hauler-mistral", "transfer_cargo", {})
         self.assertFalse(result["ok"])
+
 
 if __name__ == "__main__":
     unittest.main()

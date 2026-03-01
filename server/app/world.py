@@ -1388,10 +1388,16 @@ def execute_action(agent_id, action_name, params):
             return {"ok": False, "error": "Haulers cannot upgrade buildings"}
         result = _execute_upgrade_building(agent_id, agent, params)
     elif action_name in ("load_from_rover", "unload_at_station", "pick_up_from", "transfer_cargo"):
-        return {"ok": False, "error": "Legacy cargo transfer actions are disabled; use drop_item + pickup_cargo"}
+        return {
+            "ok": False,
+            "error": "Legacy cargo transfer actions are disabled; use drop_item + pickup_cargo",
+        }
     elif action_name == "load_cargo":
         if not is_hauler:
-            return {"ok": False, "error": "Legacy cargo transfer actions are disabled; use drop_item + pickup_cargo"}
+            return {
+                "ok": False,
+                "error": "Legacy cargo transfer actions are disabled; use drop_item + pickup_cargo",
+            }
         result = _execute_load_cargo(agent_id, agent)
         if result["ok"]:
             record_memory(
@@ -1400,7 +1406,10 @@ def execute_action(agent_id, action_name, params):
             )
     elif action_name == "unload_cargo":
         if not is_hauler:
-            return {"ok": False, "error": "Legacy cargo transfer actions are disabled; use drop_item + pickup_cargo"}
+            return {
+                "ok": False,
+                "error": "Legacy cargo transfer actions are disabled; use drop_item + pickup_cargo",
+            }
         result = _execute_unload_cargo(agent_id, agent)
         if result["ok"]:
             record_memory(agent_id, f"Unloaded {result.get('unloaded_count', 0)} items")
