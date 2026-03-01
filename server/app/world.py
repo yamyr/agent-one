@@ -58,7 +58,7 @@ AGENT_STARTS = {(0, 0)}
 
 # --- Vein grades (exponential rarity: weight = 200 * e^(-1.3 * index)) ---
 VEIN_GRADES = ["low", "medium", "high", "rich", "pristine"]
-VEIN_WEIGHTS = [200, 60, 16, 4, 1]  # approximate: 200*e^(-1.3*i)
+VEIN_WEIGHTS = [200, 90, 30, 10, 3]  # boosted higher grades for more rewarding exploration
 VEIN_QUANTITY_RANGES = {
     "low": (10, 50),
     "medium": (51, 150),
@@ -81,7 +81,7 @@ SOLAR_BATTERY_CAPACITY = 0.25
 MAX_SOLAR_PANELS = 2
 
 # --- Stone generation ---
-STONE_PROBABILITY = 0.015
+STONE_PROBABILITY = 0.025
 CORE_PROBABILITY = 0.3
 
 # --- Abandoned structures ---
@@ -122,8 +122,8 @@ BATTERY_COST_INVESTIGATE = 2 / FUEL_CAPACITY_ROVER  # 2 fuel units
 BATTERY_COST_USE_REFINERY = 5 / FUEL_CAPACITY_ROVER  # 5 fuel units
 
 # --- Obstacle generation ---
-MOUNTAIN_PROBABILITY = 0.008  # ~0.8% per tile
-GEYSER_PROBABILITY = 0.004  # ~0.4% per tile
+MOUNTAIN_PROBABILITY = 0.004  # ~0.4% per tile (halved to reduce agent confusion)
+GEYSER_PROBABILITY = 0.002  # ~0.2% per tile
 GEYSER_CYCLE_IDLE = 8  # ticks idle before warning
 GEYSER_CYCLE_WARNING = 2  # ticks in warning before erupting
 GEYSER_CYCLE_ERUPTING = 3  # ticks erupting
