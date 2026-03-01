@@ -34,6 +34,13 @@ export const AGENT_COLORS = {
 export const SOLAR_PANEL_COLOR = '#f0c040'
 export const SOLAR_PANEL_DEPLETED_COLOR = '#555555'
 
+export const OBSTACLE_COLORS = {
+  mountain: '#8899bb',
+  geyser_idle: '#447788',
+  geyser_warning: '#cc8844',
+  geyser_erupting: '#ee4444',
+}
+
 export function agentColor(id) {
   return AGENT_COLORS[id] || '#6c6'
 }
