@@ -1,5 +1,12 @@
 # Changelog
 
+
+## [Unreleased]
+
+### Tests
+
+* Add regression test for observe_rover at positions beyond legacy 20x20 grid and negative coordinates (#131)
+
 ## [0.7.0](https://github.com/yamyr/agent-one/compare/v0.6.0...v0.7.0) (2026-03-01)
 
 
