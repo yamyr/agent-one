@@ -513,7 +513,7 @@ class TestStreamingChunkBehavior(unittest.IsolatedAsyncioTestCase):
         async def _tagged_stream():
             event = MagicMock()
             event.data.choices = [MagicMock()]
-            event.data.choices[0].delta.content = "[laughs] That\'s funny"
+            event.data.choices[0].delta.content = "[laughs] That's funny"
             yield event
 
         mock_client = MagicMock()
@@ -582,9 +582,7 @@ class TestStreamingErrorHandling(unittest.IsolatedAsyncioTestCase):
     async def test_stream_async_exception_returns_none(self):
         """If stream_async raises, return None gracefully."""
         mock_client = MagicMock()
-        mock_client.chat.stream_async = AsyncMock(
-            side_effect=RuntimeError("API connection failed")
-        )
+        mock_client.chat.stream_async = AsyncMock(side_effect=RuntimeError("API connection failed"))
         self.narrator._mistral = mock_client
 
         result = await self.narrator._generate_text_streaming("test prompt")
