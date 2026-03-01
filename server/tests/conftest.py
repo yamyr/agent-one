@@ -1,6 +1,6 @@
 import unittest
 import subprocess
-import time
+import asyncio
 import os
 import socket
 
@@ -28,31 +28,36 @@ async def rut_session_setup():
     log_file_path = os.path.join(os.getcwd(), "test_surrealdb.log")
     _surreal_log_file = open(log_file_path, "w")
 
-    _surreal_process = subprocess.Popen(
-        [
-            "surreal",
-            "start",
-            "--log",
-            "error",
-            "--user",
-            "root",
-            "--pass",
-            "root",
-            "--bind",
-            f"127.0.0.1:{_test_port}",
-            "memory",
-        ],
-        stdout=_surreal_log_file,
-        stderr=_surreal_log_file,
-    )
+    try:
+        _surreal_process = subprocess.Popen(
+            [
+                "surreal",
+                "start",
+                "--log",
+                "error",
+                "--user",
+                "root",
+                "--pass",
+                "root",
+                "--bind",
+                f"127.0.0.1:{_test_port}",
+                "memory",
+            ],
+            stdout=_surreal_log_file,
+            stderr=_surreal_log_file,
+        )
 
-    for _ in range(30):  # 30 attempts × 0.2s = 6s max
-        if is_port_in_use(_test_port):
-            break
-        time.sleep(0.2)
-    else:
-        raise RuntimeError(f"SurrealDB failed to start on port {_test_port}")
-    print(f"Started in-memory SurrealDB on port {_test_port}")
+        for _ in range(30):  # 30 attempts × 0.2s = 6s max
+            if is_port_in_use(_test_port):
+                break
+            await asyncio.sleep(0.2)
+        else:
+            raise RuntimeError(f"SurrealDB failed to start on port {_test_port}")
+        print(f"Started in-memory SurrealDB on port {_test_port}")
+    except Exception:
+        _surreal_log_file.close()
+        _surreal_log_file = None
+        raise
 
 
 async def rut_session_teardown():

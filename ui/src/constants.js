@@ -50,6 +50,13 @@ export const STRUCTURE_LABELS = {
   'broken_manipulator': 'Broken Manipulator',
 }
 
+export const OBSTACLE_COLORS = {
+  mountain: '#8899bb',
+  geyser_idle: '#447788',
+  geyser_warning: '#cc8844',
+  geyser_erupting: '#ee4444',
+}
+
 export function agentColor(id) {
   return AGENT_COLORS[id] || '#6c6'
 }

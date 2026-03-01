@@ -3,11 +3,12 @@
 import json
 import logging
 
+from huggingface_hub import InferenceClient
 from mistralai import Mistral
 
 from .config import settings
 from .models import StationContext
-from .world import assign_mission, charge_rover
+from .world import assign_mission, charge_agent
 
 logger = logging.getLogger(__name__)
 
@@ -51,47 +52,63 @@ BROADCAST_ALERT_TOOL = {
     },
 }
 
-CHARGE_ROVER_TOOL = {
+CHARGE_AGENT_TOOL = {
     "type": "function",
     "function": {
-        "name": "charge_rover",
-        "description": "Recharge a rover's battery. The rover must be co-located with the station. Adds 20% charge per call (70 fuel units).",
+        "name": "charge_agent",
+        "description": "Recharge an agent's battery. The agent must be co-located with the station. Adds 20% charge per call (70 fuel units).",
         "parameters": {
             "type": "object",
             "properties": {
-                "rover_id": {
+                "agent_id": {
                     "type": "string",
-                    "description": "The rover agent to charge (e.g. 'rover-mistral').",
+                    "description": "The agent to charge (e.g. 'rover-mistral', 'drone-mistral').",
                 },
             },
-            "required": ["rover_id"],
+            "required": ["agent_id"],
         },
     },
 }
 
-STATION_TOOLS = [ASSIGN_MISSION_TOOL, BROADCAST_ALERT_TOOL, CHARGE_ROVER_TOOL]
+STATION_TOOLS = [ASSIGN_MISSION_TOOL, BROADCAST_ALERT_TOOL, CHARGE_AGENT_TOOL]
 
 SYSTEM_PROMPT = (
     "You are the Mars base station. You coordinate the Mars mission.\n"
-    "Your role is to assign missions to rover agents, respond to field reports, "
-    "and recharge rovers when they return to the station.\n"
-    "You have one rover available: 'rover-mistral' and one drone: 'drone-mistral'.\n"
+    "Your role is to assign missions to all field agents, respond to field reports, "
+    "and recharge agents when they return to the station.\n"
+    "\n"
+    "AGENT TYPES:\n"
+    "- Rovers: ground units that explore, analyze veins, dig basalt, and deliver to station.\n"
+    "- Drones: aerial scouts that fly fast and scan for basalt deposits. They cannot dig.\n"
+    "\n"
     "The mission goal is to collect basalt from veins. Each vein has a grade "
     "(low/medium/high/rich/pristine) that determines basalt quantity.\n"
     "Rovers must deliver enough basalt to the station to meet the target quantity.\n"
     "Keep responses short (1-2 sentences of reasoning, then act).\n"
-    "Always assign missions to at least one rover when defining the initial mission.\n"
-    "When a rover arrives at the station with low battery, charge it.\n"
+    "Always assign missions to all available agents when defining the initial mission.\n"
+    "When an agent arrives at the station with low battery, charge it.\n"
+    "\n"
+    "DRONE COORDINATION:\n"
+    "- When you have multiple drones, send each to a DIFFERENT sector of the map.\n"
+    "- Divide the grid into quadrants or sectors and assign one drone per sector.\n"
+    "- This maximizes scan coverage and avoids redundant overlapping scans.\n"
 )
 
 
 def _build_world_summary(context: StationContext):
     """Build a text summary of current world state for the station's context."""
     lines = [f"Grid: {context.grid_w}x{context.grid_h}"]
+    if context.tick:
+        lines.append(f"Tick: {context.tick}")
+    if context.mission_status:
+        lines.append(
+            f"Mission status: {context.mission_status} ({context.collected_quantity}/{context.target_quantity})"
+        )
     for rover in context.rovers:
         x, y = rover.position
+        label = "drone" if rover.agent_type == "drone" else "rover"
         lines.append(
-            f"  {rover.id}: pos=({x},{y}) battery={rover.battery:.0%} "
+            f"  {rover.id} ({label}): pos=({x},{y}) battery={rover.battery:.0%} "
             f'mission="{rover.mission.objective}" visited={rover.visited_count}'
         )
     lines.append(f"Veins on map: {len(context.stones)}")
@@ -117,8 +134,8 @@ def _parse_tool_calls(tool_calls):
             actions.append({"name": "assign_mission", "params": args})
         elif name == "broadcast_alert":
             actions.append({"name": "broadcast_alert", "params": args})
-        elif name == "charge_rover":
-            actions.append({"name": "charge_rover", "params": args})
+        elif name == "charge_agent":
+            actions.append({"name": "charge_agent", "params": args})
     return actions
 
 
@@ -128,8 +145,8 @@ def execute_action(action):
     params = action["params"]
     if name == "assign_mission":
         return assign_mission(params["agent_id"], params["objective"])
-    elif name == "charge_rover":
-        return charge_rover(params["rover_id"])
+    elif name == "charge_agent":
+        return charge_agent(params["agent_id"])
     elif name == "broadcast_alert":
         return {"ok": True, "message": params["message"]}
     return {"ok": False, "error": f"Unknown station action: {name}"}
@@ -142,6 +159,7 @@ class StationAgent:
         self.agent_id = agent_id
         self.model = model
         self._client = None
+        self._hf_client = None
 
     def _get_client(self):
         if self._client is None:
@@ -150,22 +168,59 @@ class StationAgent:
             self._client = Mistral(api_key=settings.mistral_api_key)
         return self._client
 
+    def _get_hf_client(self):
+        if self._hf_client is None:
+            if not settings.hugging_face_read:
+                raise RuntimeError("HUGGING_FACE_READ not set")
+            self._hf_client = InferenceClient(token=settings.hugging_face_read, provider="auto")
+        return self._hf_client
+
     def _build_context(self, context: StationContext):
-        return SYSTEM_PROMPT + "\n== Current world state ==\n" + _build_world_summary(context)
+        parts = [SYSTEM_PROMPT, "\n== Current world state ==\n" + _build_world_summary(context)]
+        if context.memory:
+            parts.append("\n== Field Reports (memory) ==")
+            for entry in context.memory:
+                parts.append(f"- {entry}")
+        return "\n".join(parts)
 
     def _call_llm(self, user_message, context: StationContext):
         """Single LLM call with tools. Returns {thinking, actions} dict."""
-        client = self._get_client()
         ctx_text = self._build_context(context)
         messages = [
             {"role": "system", "content": ctx_text},
             {"role": "user", "content": user_message},
         ]
         logger.info("Station LLM call: %s", user_message[:80])
-        response = client.chat.complete(
-            model=self.model,
+        effective_model = settings.fine_tuned_agent_model or self.model
+        try:
+            if settings.llm_provider == "huggingface":
+                hf_client = self._get_hf_client()
+                model = settings.huggingface_model or "Qwen/Qwen2.5-72B-Instruct"
+                response = hf_client.chat_completion(
+                    model=model,
+                    messages=messages,
+                    tools=STATION_TOOLS,
+                    tool_choice="auto",
+                )
+            else:
+                client = self._get_client()
+                response = client.chat.complete(
+                    model=effective_model,
+                    messages=messages,
+                    tools=STATION_TOOLS,
+                )
+        except Exception as e:
+            logger.exception("Station LLM API failed: %s", e)
+            return {"thinking": None, "actions": [], "context_text": ctx_text}
+
+        from .training import collector
+
+        collector.record_agent_interaction(
+            agent_id=self.agent_id,
+            agent_type="station",
             messages=messages,
             tools=STATION_TOOLS,
+            response=response,
         )
         choice = response.choices[0]
         thinking = choice.message.content or None
@@ -180,10 +235,21 @@ class StationAgent:
         return {"thinking": thinking, "actions": actions, "context_text": ctx_text}
 
     def define_mission(self, context: StationContext):
-        """Called at startup to define initial missions for rovers."""
+        """Called at startup to define initial missions for all field agents."""
+        rover_count = sum(1 for r in context.rovers if r.agent_type != "drone")
+        drone_count = sum(1 for r in context.rovers if r.agent_type == "drone")
+        agent_hint = f" You have {rover_count} rover(s) and {drone_count} drone(s)."
+        if drone_count > 0 and rover_count > 0:
+            agent_hint += (
+                " Assign rovers and drones to DIFFERENT sectors so they don't overlap."
+                " Mention specific directions in each objective (e.g. 'Scout north and east sectors',"
+                " 'Explore south and west quadrant')."
+            )
+        if drone_count > 1:
+            agent_hint += f" You have {drone_count} drones — send each to a different sector."
         return self._call_llm(
             "The mission is starting. Review the world state and assign initial "
-            "missions to the rovers. Consider the vein locations and grid layout.",
+            "missions to ALL agents (rovers and drones)." + agent_hint,
             context,
         )
 
@@ -193,5 +259,21 @@ class StationAgent:
             f"Field report from {event['source']}: {event['name']}\n"
             f"Details: {json.dumps(event.get('payload', {}))}\n"
             "Decide how to respond. You may reassign missions or broadcast alerts."
+        )
+        return self._call_llm(prompt, context)
+
+    def evaluate_situation(self, context: StationContext, events: list[dict]):
+        """Periodic evaluation of recent field events. Called by StationLoop."""
+        if events:
+            event_lines = "\n".join(
+                f"- {e.get('source', '?')}: {e.get('name', '?')} — {json.dumps(e.get('payload', {}))}"
+                for e in events[-10:]
+            )
+        else:
+            event_lines = "(no recent events)"
+        prompt = (
+            f"Tick {context.tick} — periodic situation evaluation.\n"
+            f"Recent field events:\n{event_lines}\n"
+            "Evaluate the situation. Reassign missions, broadcast alerts, or charge rovers as needed."
         )
         return self._call_llm(prompt, context)

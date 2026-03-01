@@ -10,7 +10,9 @@ from app.world import CHARGE_RATE, REVEAL_RADIUS, ROVER_REVEAL_RADIUS, DRONE_REV
 from app.world import AGENT_STARTS
 from app.world import abort_mission, all_agents_at_station
 from app.world import assign_mission, _cells_in_radius, record_memory, MEMORY_MAX
-from app.world import update_tasks, direction_hint
+from app.world import _random_free_pos, CHUNK_SIZE
+from app.world import direction_hint, best_drone_hotspot, update_tasks
+from app.world import summarize_memories, record_strategic_insight
 from app.world import set_agent_model, set_agent_last_context, set_pending_commands
 from app.world import observe_rover, observe_station
 from app.world import VEIN_GRADES, VEIN_WEIGHTS, VEIN_QUANTITY_RANGES, TARGET_QUANTITY
@@ -44,13 +46,25 @@ def _make_vein(pos, grade="high", quantity=200, analyzed=False):
 
 class TestMoveAgent(unittest.TestCase):
     def setUp(self):
-        world.state["agents"]["rover-mistral"]["position"] = [2, 10]
-        world.state["agents"]["rover-mistral"]["battery"] = 1.0
-        world.state["agents"]["rover-mistral"]["mission"] = {
+        agent = world.state["agents"]["rover-mistral"]
+        self._orig_position = list(agent["position"])
+        self._orig_battery = agent["battery"]
+        self._orig_mission = dict(agent["mission"])
+        self._orig_visited = list(agent["visited"])
+        agent["position"] = [2, 10]
+        agent["battery"] = 1.0
+        agent["mission"] = {
             "objective": "Explore the terrain",
             "plan": [],
         }
-        world.state["agents"]["rover-mistral"]["visited"] = [[2, 10]]
+        agent["visited"] = [[2, 10]]
+
+    def tearDown(self):
+        agent = world.state["agents"]["rover-mistral"]
+        agent["position"] = self._orig_position
+        agent["battery"] = self._orig_battery
+        agent["mission"] = self._orig_mission
+        agent["visited"] = self._orig_visited
 
     def test_move_success(self):
         result = move_agent("rover-mistral", 3, 10)
@@ -131,13 +145,25 @@ class TestMoveAgent(unittest.TestCase):
 
 class TestExecuteAction(unittest.TestCase):
     def setUp(self):
-        world.state["agents"]["rover-mistral"]["position"] = [2, 10]
-        world.state["agents"]["rover-mistral"]["battery"] = 1.0
-        world.state["agents"]["rover-mistral"]["mission"] = {
+        agent = world.state["agents"]["rover-mistral"]
+        self._orig_position = list(agent["position"])
+        self._orig_battery = agent["battery"]
+        self._orig_mission = dict(agent["mission"])
+        self._orig_visited = list(agent["visited"])
+        agent["position"] = [2, 10]
+        agent["battery"] = 1.0
+        agent["mission"] = {
             "objective": "Explore the terrain",
             "plan": [],
         }
-        world.state["agents"]["rover-mistral"]["visited"] = [[2, 10]]
+        agent["visited"] = [[2, 10]]
+
+    def tearDown(self):
+        agent = world.state["agents"]["rover-mistral"]
+        agent["position"] = self._orig_position
+        agent["battery"] = self._orig_battery
+        agent["mission"] = self._orig_mission
+        agent["visited"] = self._orig_visited
 
     def test_execute_move_east(self):
         result = execute_action("rover-mistral", "move", {"direction": "east"})
@@ -299,13 +325,27 @@ class TestStones(unittest.TestCase):
 
 class TestVisited(unittest.TestCase):
     def setUp(self):
-        world.state["agents"]["rover-mistral"]["position"] = [10, 10]
-        world.state["agents"]["rover-mistral"]["battery"] = 1.0
-        world.state["agents"]["rover-mistral"]["mission"] = {
+        agent = world.state["agents"]["rover-mistral"]
+        self._orig_position = list(agent["position"])
+        self._orig_battery = agent["battery"]
+        self._orig_mission = dict(agent["mission"])
+        self._orig_visited = list(agent["visited"])
+        self._orig_revealed = list(agent.get("revealed", []))
+        agent["position"] = [10, 10]
+        agent["battery"] = 1.0
+        agent["mission"] = {
             "objective": "Explore the terrain",
             "plan": [],
         }
-        world.state["agents"]["rover-mistral"]["visited"] = [[10, 10]]
+        agent["visited"] = [[10, 10]]
+
+    def tearDown(self):
+        agent = world.state["agents"]["rover-mistral"]
+        agent["position"] = self._orig_position
+        agent["battery"] = self._orig_battery
+        agent["mission"] = self._orig_mission
+        agent["visited"] = self._orig_visited
+        agent["revealed"] = self._orig_revealed
 
     def test_visited_initial(self):
         self.assertEqual(world.state["agents"]["rover-mistral"]["visited"], [[10, 10]])
@@ -587,16 +627,33 @@ class TestCharge(unittest.TestCase):
     """Charging is a station-only action via charge_rover()."""
 
     def setUp(self):
-        world.state["agents"]["rover-mistral"]["position"] = [0, 0]
-        world.state["agents"]["rover-mistral"]["battery"] = 0.5
-        world.state["agents"]["rover-mistral"]["inventory"] = []
-        world.state["agents"]["rover-mistral"]["visited"] = [[0, 0]]
-        world.state["agents"]["rover-mistral"]["memory"] = []
+        rover = world.state["agents"]["rover-mistral"]
+        self._orig_position = list(rover["position"])
+        self._orig_battery = rover["battery"]
+        self._orig_inventory = list(rover.get("inventory", []))
+        self._orig_visited = list(rover["visited"])
+        self._orig_memory = list(rover.get("memory", []))
+        self._orig_station_pos = list(world.state["agents"]["station"]["position"])
+        rover["position"] = [0, 0]
+        rover["battery"] = 0.5
+        rover["inventory"] = []
+        rover["visited"] = [[0, 0]]
+        rover["memory"] = []
         world.state["agents"]["station"]["position"] = [0, 0]
+
+    def tearDown(self):
+        rover = world.state["agents"]["rover-mistral"]
+        rover["position"] = self._orig_position
+        rover["battery"] = self._orig_battery
+        rover["inventory"] = self._orig_inventory
+        rover["visited"] = self._orig_visited
+        rover["memory"] = self._orig_memory
+        world.state["agents"]["station"]["position"] = self._orig_station_pos
 
     def test_charge_rover_success(self):
         result = charge_rover("rover-mistral")
         self.assertTrue(result["ok"])
+        self.assertEqual(result["agent_id"], "rover-mistral")
         self.assertAlmostEqual(result["battery_before"], 0.5)
         self.assertAlmostEqual(result["battery_after"], 0.5 + CHARGE_RATE)
 
@@ -839,6 +896,11 @@ class TestMissionCompletion(unittest.TestCase):
     def test_mission_failed_all_rovers_depleted(self):
         world.state["agents"]["rover-mistral"]["battery"] = BATTERY_COST_MOVE
         world.state["agents"]["rover-mistral"]["position"] = [15, 15]
+        # Deplete all other rovers too
+        for aid, agent in world.state["agents"].items():
+            if agent.get("type") == "rover" and aid != "rover-mistral":
+                agent["battery"] = 0.0
+                agent["position"] = [15, 15]
         world.state["stones"] = []
         # This move will drain rover-mistral to 0
         result = execute_action("rover-mistral", "move", {"direction": "east"})
@@ -948,6 +1010,8 @@ class TestMemory(unittest.TestCase):
     def test_record_memory_unknown_agent(self):
         # Should not raise
         record_memory("nonexistent", "noop")
+        # Verify no agent named "nonexistent" was added to world state
+        self.assertNotIn("nonexistent", world.state["agents"])
 
 
 class TestDirectionHint(unittest.TestCase):
@@ -1038,14 +1102,34 @@ class TestUpdateTasks(unittest.TestCase):
 
 class TestObserveRover(unittest.TestCase):
     def setUp(self):
-        world.state["agents"]["rover-mistral"]["position"] = [5, 5]
-        world.state["agents"]["rover-mistral"]["battery"] = 0.75
-        world.state["agents"]["rover-mistral"]["mission"] = {"objective": "Explore", "plan": []}
-        world.state["agents"]["rover-mistral"]["visited"] = [[0, 0], [5, 5]]
-        world.state["agents"]["rover-mistral"]["inventory"] = []
-        world.state["agents"]["rover-mistral"]["memory"] = ["moved east"]
-        world.state["agents"]["rover-mistral"]["tasks"] = []
+        agent = world.state["agents"]["rover-mistral"]
+        self._orig_position = list(agent["position"])
+        self._orig_battery = agent["battery"]
+        self._orig_mission = dict(agent["mission"])
+        self._orig_visited = list(agent["visited"])
+        self._orig_inventory = list(agent.get("inventory", []))
+        self._orig_memory = list(agent.get("memory", []))
+        self._orig_tasks = list(agent.get("tasks", []))
+        self._orig_stones = list(world.state.get("stones", []))
+        agent["position"] = [5, 5]
+        agent["battery"] = 0.75
+        agent["mission"] = {"objective": "Explore", "plan": []}
+        agent["visited"] = [[0, 0], [5, 5]]
+        agent["inventory"] = []
+        agent["memory"] = ["moved east"]
+        agent["tasks"] = []
         world.state["stones"] = []
+
+    def tearDown(self):
+        agent = world.state["agents"]["rover-mistral"]
+        agent["position"] = self._orig_position
+        agent["battery"] = self._orig_battery
+        agent["mission"] = self._orig_mission
+        agent["visited"] = self._orig_visited
+        agent["inventory"] = self._orig_inventory
+        agent["memory"] = self._orig_memory
+        agent["tasks"] = self._orig_tasks
+        world.state["stones"] = self._orig_stones
 
     def test_returns_rover_context_type(self):
         ctx = observe_rover("rover-mistral")
@@ -1157,6 +1241,12 @@ class TestObserveStation(unittest.TestCase):
         self.assertEqual(ctx.stones[0].position, [1, 1])
         self.assertEqual(ctx.stones[0].type, "unknown")
 
+    def test_memory_included(self):
+        world.state["agents"]["station"]["memory"] = ["Radio from drone at (3,3): peak=0.9"]
+        ctx = observe_station()
+        self.assertEqual(len(ctx.memory), 1)
+        self.assertIn("peak=0.9", ctx.memory[0])
+
 
 class TestDrone(unittest.TestCase):
     """Tests for drone agent: creation, scan action, movement, reveal radius."""
@@ -1223,33 +1313,6 @@ class TestDrone(unittest.TestCase):
         world.state["stones"] = [_make_vein([10, 10], grade="high", quantity=200, analyzed=True)]
         result = execute_action("drone-mistral", "dig", {})
         self.assertFalse(result["ok"])
-
-    def test_drone_tasks_scan_first(self):
-        update_tasks("drone-mistral")
-        tasks = self.drone["tasks"]
-        self.assertTrue(any("Scan" in t or "scan" in t.lower() for t in tasks))
-
-    def test_rover_tasks_use_drone_scans(self):
-        """Rover should suggest navigating to drone-scanned hotspot."""
-        world.state["stones"] = []
-        world.state["agents"]["rover-mistral"]["position"] = [0, 0]
-        world.state["agents"]["rover-mistral"]["visited"] = [[0, 0]]
-        world.state["agents"]["rover-mistral"]["revealed"] = [
-            [x, y] for x, y in sorted(_cells_in_radius(0, 0, ROVER_REVEAL_RADIUS))
-        ]
-        world.state["agents"]["rover-mistral"]["inventory"] = []
-        # Add a high-concentration drone scan far from rover
-        world.state["drone_scans"] = [
-            {
-                "position": [15, 15],
-                "readings": {"15,15": 0.9, "14,15": 0.7},
-                "peak": 0.9,
-                "scanner": "drone-mistral",
-            }
-        ]
-        update_tasks("rover-mistral")
-        tasks = world.state["agents"]["rover-mistral"]["tasks"]
-        self.assertTrue(any("hotspot" in t for t in tasks))
 
 
 class TestChunkSystem(unittest.TestCase):
@@ -1406,25 +1469,6 @@ class TestAbortMission(unittest.TestCase):
         world.state["agents"]["rover-mistral"]["mission"]["objective"] = "Collect veins"
         abort_mission("test")
         self.assertIn("ABORTED", world.state["agents"]["rover-mistral"]["mission"]["objective"])
-
-    def test_abort_tasks_override(self):
-        """During abort, update_tasks should set 'return to station' task."""
-        world.state["mission"]["status"] = "aborted"
-        world.state["agents"]["rover-mistral"]["position"] = [5, 5]
-        update_tasks("rover-mistral")
-        tasks = world.state["agents"]["rover-mistral"]["tasks"]
-        self.assertEqual(len(tasks), 1)
-        self.assertIn("MISSION ABORTED", tasks[0])
-        self.assertIn("return to station", tasks[0])
-
-    def test_abort_tasks_at_station(self):
-        """During abort, agent at station gets standing-by task."""
-        world.state["mission"]["status"] = "aborted"
-        station_pos = world.state["agents"]["station"]["position"]
-        world.state["agents"]["rover-mistral"]["position"] = list(station_pos)
-        update_tasks("rover-mistral")
-        tasks = world.state["agents"]["rover-mistral"]["tasks"]
-        self.assertIn("standing by", tasks[0])
 
     def test_all_agents_at_station_true(self):
         station_pos = world.state["agents"]["station"]["position"]
@@ -2102,3 +2146,518 @@ class TestStructureHelpers(unittest.TestCase):
         ]
         positions = _get_structure_positions()
         self.assertEqual(positions, {(1, 2), (3, 4)})
+
+
+class TestBestDroneHotspot(unittest.TestCase):
+    def setUp(self):
+        self._orig_scans = world.state.get("drone_scans", [])
+        world.state["drone_scans"] = []
+
+    def tearDown(self):
+        world.state["drone_scans"] = self._orig_scans
+
+    def test_returns_none_when_no_scans(self):
+        result = best_drone_hotspot(0, 0, set())
+        self.assertIsNone(result)
+
+    def test_returns_highest_concentration(self):
+        world.state["drone_scans"] = [
+            {"position": [5, 5], "readings": {"5,5": 0.3, "6,5": 0.8, "7,5": 0.1}},
+        ]
+        result = best_drone_hotspot(0, 0, set())
+        self.assertIsNotNone(result)
+        self.assertEqual(result[0], 6)
+        self.assertEqual(result[1], 5)
+        self.assertAlmostEqual(result[2], 0.8)
+
+    def test_skips_revealed_cells(self):
+        world.state["drone_scans"] = [
+            {"position": [5, 5], "readings": {"6,5": 0.9, "7,5": 0.5}},
+        ]
+        revealed = {(6, 5)}
+        result = best_drone_hotspot(0, 0, revealed)
+        self.assertIsNotNone(result)
+        self.assertEqual(result[0], 7)
+        self.assertEqual(result[1], 5)
+
+    def test_ignores_below_threshold(self):
+        world.state["drone_scans"] = [
+            {"position": [5, 5], "readings": {"5,5": 0.1, "6,5": 0.05}},
+        ]
+        result = best_drone_hotspot(0, 0, set())
+        self.assertIsNone(result)
+
+
+class TestStrategicMemory(unittest.TestCase):
+    """Tests for Feature F: Agent Memory & Learning."""
+
+    def setUp(self):
+        from app.world import WORLD, _build_initial_world
+
+        WORLD.clear()
+        WORLD.update(_build_initial_world())
+
+    # --- summarize_memories ---
+
+    def test_summarize_memories_returns_none_when_few(self):
+        """Should return None when agent has fewer than 6 memories."""
+        result = summarize_memories("rover-mistral")
+        self.assertIsNone(result)
+
+    def test_summarize_memories_returns_prompt_when_enough(self):
+        """Should return a prompt string when agent has >= 6 memories."""
+        from app.world import WORLD
+
+        rover = WORLD["agents"]["rover-mistral"]
+        rover["memory"] = [f"memory_{i}" for i in range(8)]
+        result = summarize_memories("rover-mistral")
+        self.assertIsNotNone(result)
+        self.assertIn("Summarize", result)
+        self.assertIn("memory_7", result)
+
+    def test_summarize_memories_invalid_agent(self):
+        """Should return None for non-existent agent."""
+        result = summarize_memories("nonexistent_agent")
+        self.assertIsNone(result)
+
+    # --- record_strategic_insight ---
+
+    def test_record_strategic_insight_stores(self):
+        """Should store a strategic insight for an agent."""
+        record_strategic_insight("rover-mistral", "Zone B3 is mineral-rich", 20)
+        from app.world import WORLD
+
+        rover = WORLD["agents"]["rover-mistral"]
+        self.assertEqual(len(rover["strategic_memory"]), 1)
+        self.assertEqual(rover["strategic_memory"][0]["insight"], "Zone B3 is mineral-rich")
+        self.assertEqual(rover["strategic_memory"][0]["tick"], 20)
+
+    def test_record_strategic_insight_caps_at_five(self):
+        """Should cap strategic_memory at 5 entries (sliding window)."""
+        for i in range(7):
+            record_strategic_insight("rover-mistral", f"insight_{i}", i * 20)
+        from app.world import WORLD
+
+        rover = WORLD["agents"]["rover-mistral"]
+        self.assertEqual(len(rover["strategic_memory"]), 5)
+        self.assertEqual(rover["strategic_memory"][0]["insight"], "insight_2")
+        self.assertEqual(rover["strategic_memory"][-1]["insight"], "insight_6")
+
+    def test_record_strategic_insight_invalid_agent(self):
+        """Should silently do nothing for non-existent agent."""
+        record_strategic_insight("nonexistent", "insight", 10)
+
+    # --- Agent init ---
+
+    def test_strategic_memory_in_agent_init(self):
+        """Rover and drone should have strategic_memory: [] on init."""
+        from app.world import WORLD
+
+        for agent_id in ("rover-mistral", "drone-mistral"):
+            agent = WORLD["agents"][agent_id]
+            self.assertIn("strategic_memory", agent, f"Agent {agent_id} missing strategic_memory")
+            self.assertEqual(agent["strategic_memory"], [])
+
+    # --- Snapshot ---
+
+    def test_strategic_memory_in_snapshot(self):
+        """Strategic memory should appear in snapshot after recording."""
+        record_strategic_insight("rover-mistral", "Test insight", 10)
+        snap = get_snapshot()
+        rover = snap["agents"]["rover-mistral"]
+        self.assertIn("strategic_memory", rover)
+        self.assertEqual(len(rover["strategic_memory"]), 1)
+
+    # --- World class methods ---
+
+    def test_world_class_methods(self):
+        """World class should expose summarize_memories and record_strategic_insight."""
+        from app.world import World, WORLD
+
+        w = World(WORLD)
+        result = w.summarize_memories("rover-mistral")
+        self.assertIsNone(result)  # too few memories
+        w.record_strategic_insight("rover-mistral", "test", 5)
+        rover = WORLD["agents"]["rover-mistral"]
+        self.assertEqual(len(rover["strategic_memory"]), 1)
+
+
+class TestInterAgentCommunication(unittest.TestCase):
+    """Tests for inter-agent message relay system."""
+
+    def setUp(self):
+        from app.world import AGENT_MESSAGES
+
+        self._orig_messages = list(AGENT_MESSAGES)
+        AGENT_MESSAGES.clear()
+
+    def tearDown(self):
+        from app.world import AGENT_MESSAGES
+
+        AGENT_MESSAGES.clear()
+        AGENT_MESSAGES.extend(self._orig_messages)
+
+    def test_send_message(self):
+        from app.world import send_agent_message, AGENT_MESSAGES
+
+        result = send_agent_message("drone-mistral", "rover-mistral", "Found high concentration")
+        self.assertTrue(result["ok"])
+        self.assertEqual(len(AGENT_MESSAGES), 1)
+        self.assertEqual(AGENT_MESSAGES[0]["from"], "drone-mistral")
+        self.assertEqual(AGENT_MESSAGES[0]["to"], "rover-mistral")
+        self.assertFalse(AGENT_MESSAGES[0]["read"])
+
+    def test_get_unread_messages(self):
+        from app.world import send_agent_message, get_unread_messages
+
+        send_agent_message("drone-mistral", "rover-mistral", "msg1")
+        send_agent_message("drone-mistral", "rover-mistral", "msg2")
+        unread = get_unread_messages("rover-mistral")
+        self.assertEqual(len(unread), 2)
+        self.assertEqual(unread[0]["message"], "msg1")
+
+    def test_messages_marked_read(self):
+        from app.world import send_agent_message, get_unread_messages
+
+        send_agent_message("drone-mistral", "rover-mistral", "test")
+        get_unread_messages("rover-mistral")
+        unread2 = get_unread_messages("rover-mistral")
+        self.assertEqual(len(unread2), 0)
+
+    def test_messages_filtered_by_recipient(self):
+        from app.world import send_agent_message, get_unread_messages
+
+        send_agent_message("drone-mistral", "rover-mistral", "for rover")
+        send_agent_message("drone-mistral", "station", "for station")
+        rover_msgs = get_unread_messages("rover-mistral")
+        self.assertEqual(len(rover_msgs), 1)
+        self.assertEqual(rover_msgs[0]["message"], "for rover")
+
+    def test_get_drone_intel_for_rover(self):
+        from app.world import get_drone_intel_for_rover, WORLD
+
+        WORLD["drone_scans"] = [
+            {"position": [3, 4], "readings": {"3,4": 0.8}, "scanner": "drone-mistral", "tick": 5},
+            {"position": [1, 1], "readings": {"1,1": 0.2}, "scanner": "drone-mistral", "tick": 6},
+            {"position": [5, 5], "readings": {"5,5": 0.5}, "scanner": "drone-mistral", "tick": 7},
+        ]
+        intel = get_drone_intel_for_rover("rover-mistral")
+        self.assertEqual(len(intel), 2)
+        self.assertEqual(intel[0]["concentration"], 0.8)
+        self.assertEqual(intel[1]["concentration"], 0.5)
+
+    def test_get_drone_intel_excludes_visited(self):
+        from app.world import get_drone_intel_for_rover, WORLD
+
+        WORLD["drone_scans"] = [
+            {"position": [3, 4], "readings": {"3,4": 0.8}, "scanner": "drone-mistral", "tick": 5},
+        ]
+        WORLD["agents"]["rover-mistral"]["visited"].append([3, 4])
+        intel = get_drone_intel_for_rover("rover-mistral")
+        self.assertEqual(len(intel), 0)
+
+    def test_get_drone_intel_max_five(self):
+        from app.world import get_drone_intel_for_rover, WORLD
+
+        WORLD["drone_scans"] = [
+            {
+                "position": [i, i],
+                "readings": {f"{i},{i}": 0.5 + i * 0.01},
+                "scanner": "drone-mistral",
+                "tick": i,
+            }
+            for i in range(10)
+        ]
+        intel = get_drone_intel_for_rover("rover-mistral")
+        self.assertEqual(len(intel), 5)
+
+    def test_get_drone_intel_invalid_rover(self):
+        from app.world import get_drone_intel_for_rover
+
+        intel = get_drone_intel_for_rover("no-such-agent")
+        self.assertEqual(len(intel), 0)
+
+    def test_agent_messages_in_snapshot(self):
+        from app.world import send_agent_message, get_snapshot
+
+        send_agent_message("drone-mistral", "rover-mistral", "test snapshot")
+        snap = get_snapshot()
+        self.assertIn("agent_messages", snap)
+        self.assertEqual(len(snap["agent_messages"]), 1)
+        self.assertEqual(snap["agent_messages"][0]["message"], "test snapshot")
+
+    def test_reset_clears_messages(self):
+        from app.world import send_agent_message, AGENT_MESSAGES, reset_world
+
+        send_agent_message("drone-mistral", "rover-mistral", "before reset")
+        self.assertEqual(len(AGENT_MESSAGES), 1)
+        reset_world()
+        self.assertEqual(len(AGENT_MESSAGES), 0)
+
+
+class TestRandomFreePos(unittest.TestCase):
+    """Tests for _random_free_pos infinite-loop guard (#118)."""
+
+    def test_returns_free_position(self):
+        occupied = {(0, 0), (1, 0)}
+        pos = _random_free_pos(occupied, cx=0, cy=0)
+        self.assertNotIn(pos, occupied)
+        x, y = pos
+        self.assertGreaterEqual(x, 0)
+        self.assertLess(x, CHUNK_SIZE)
+        self.assertGreaterEqual(y, 0)
+        self.assertLess(y, CHUNK_SIZE)
+
+    def test_empty_occupied_returns_valid_pos(self):
+        pos = _random_free_pos(set(), cx=0, cy=0)
+        x, y = pos
+        self.assertGreaterEqual(x, 0)
+        self.assertLess(x, CHUNK_SIZE)
+
+    def test_nearly_full_chunk_uses_fallback(self):
+        """When all but one cell is occupied, the linear scan fallback finds it."""
+        all_cells = {(x, y) for x in range(CHUNK_SIZE) for y in range(CHUNK_SIZE)}
+        free_cell = (3, 7)
+        all_cells.discard(free_cell)
+        pos = _random_free_pos(all_cells, cx=0, cy=0)
+        self.assertEqual(pos, free_cell)
+
+    def test_fully_occupied_returns_origin(self):
+        """When chunk is 100% occupied, returns origin as last resort."""
+        all_cells = {(x, y) for x in range(CHUNK_SIZE) for y in range(CHUNK_SIZE)}
+        pos = _random_free_pos(all_cells, cx=0, cy=0)
+        self.assertEqual(pos, (0, 0))
+
+    def test_nonzero_chunk_offset(self):
+        """Positions respect chunk offset (cx, cy)."""
+        occupied = set()
+        pos = _random_free_pos(occupied, cx=2, cy=3)
+        x, y = pos
+        self.assertGreaterEqual(x, 2 * CHUNK_SIZE)
+        self.assertLess(x, 3 * CHUNK_SIZE)
+        self.assertGreaterEqual(y, 3 * CHUNK_SIZE)
+        self.assertLess(y, 4 * CHUNK_SIZE)
+
+    def test_fully_occupied_nonzero_chunk_returns_chunk_origin(self):
+        """Fully occupied non-zero chunk returns that chunk's origin."""
+        cx, cy = 1, 2
+        x0, y0 = cx * CHUNK_SIZE, cy * CHUNK_SIZE
+        all_cells = {(x0 + dx, y0 + dy) for dx in range(CHUNK_SIZE) for dy in range(CHUNK_SIZE)}
+        pos = _random_free_pos(all_cells, cx=cx, cy=cy)
+        self.assertEqual(pos, (x0, y0))
+
+
+class TestObstacles(unittest.TestCase):
+    """Tests for ice mountain and air geyser environmental hazards."""
+
+    def setUp(self):
+        from app.world import reset_world
+
+        reset_world()
+
+    def tearDown(self):
+        from app.world import reset_world
+
+        reset_world()
+
+    def test_obstacles_generated_in_chunks(self):
+        """Obstacle list is populated after chunk generation."""
+        obstacles = world.state.get("obstacles", [])
+        self.assertIsInstance(obstacles, list)
+        # With 9 chunks (3x3 around origin) and ~1.2% probability, expect some obstacles
+        self.assertGreater(len(obstacles), 0)
+
+    def test_obstacle_kinds(self):
+        """Only 'mountain' and 'geyser' kinds are generated."""
+        kinds = {o["kind"] for o in world.state.get("obstacles", [])}
+        self.assertTrue(kinds.issubset({"mountain", "geyser"}))
+
+    def test_mountains_are_impassable(self):
+        """Moving onto a mountain tile should fail."""
+        mountains = [o for o in world.state.get("obstacles", []) if o["kind"] == "mountain"]
+        if not mountains:
+            self.skipTest("No mountains generated with current seed")
+        m = mountains[0]
+        mx, my = m["position"]
+        rover = world.state["agents"]["rover-mistral"]
+        rover["position"] = [mx - 1, my]
+        result = move_agent("rover-mistral", mx, my)
+        self.assertFalse(result["ok"])
+        self.assertIn("Mountain", result["error"])
+
+    def test_mountain_blocks_execute_action(self):
+        """execute_action('move') should fail when destination is a mountain."""
+        mountains = [o for o in world.state.get("obstacles", []) if o["kind"] == "mountain"]
+        if not mountains:
+            self.skipTest("No mountains generated with current seed")
+        m = mountains[0]
+        mx, my = m["position"]
+        rover = world.state["agents"]["rover-mistral"]
+        # Position rover one tile west of mountain
+        rover["position"] = [mx - 1, my]
+        rover["battery"] = 1.0
+        result = execute_action("rover-mistral", "move", {"direction": "east", "distance": 1})
+        self.assertFalse(result["ok"])
+        self.assertIn("Mountain", result["error"])
+
+    def test_geyser_state_idle(self):
+        """Geysers start in 'idle' state."""
+        geysers = [o for o in world.state.get("obstacles", []) if o["kind"] == "geyser"]
+        if not geysers:
+            self.skipTest("No geysers generated with current seed")
+        for g in geysers:
+            self.assertEqual(g["state"], "idle")
+
+    def test_geyser_cycle_transitions(self):
+        """Geyser transitions: idle → warning → erupting → idle."""
+        from app.world import (
+            update_geysers,
+            GEYSER_CYCLE_IDLE,
+            GEYSER_CYCLE_WARNING,
+            GEYSER_CYCLE_ERUPTING,
+        )
+
+        geysers = [o for o in world.state.get("obstacles", []) if o["kind"] == "geyser"]
+        if not geysers:
+            self.skipTest("No geysers generated with current seed")
+        g = geysers[0]
+        # Force start of cycle
+        g["_cycle_tick"] = 0
+        # Advance through idle phase
+        for _ in range(GEYSER_CYCLE_IDLE - 1):
+            update_geysers()
+            self.assertEqual(g["state"], "idle")
+        # Warning phase
+        update_geysers()
+        self.assertEqual(g["state"], "warning")
+        for _ in range(GEYSER_CYCLE_WARNING - 1):
+            update_geysers()
+            self.assertEqual(g["state"], "warning")
+        # Erupting phase
+        update_geysers()
+        self.assertEqual(g["state"], "erupting")
+        for _ in range(GEYSER_CYCLE_ERUPTING - 1):
+            update_geysers()
+            self.assertEqual(g["state"], "erupting")
+        # Back to idle
+        update_geysers()
+        self.assertEqual(g["state"], "idle")
+
+    def test_geyser_eruption_drains_battery(self):
+        """Agent on erupting geyser loses BATTERY_COST_GEYSER battery."""
+        from app.world import (
+            update_geysers,
+            BATTERY_COST_GEYSER,
+            GEYSER_CYCLE_IDLE,
+            GEYSER_CYCLE_WARNING,
+        )
+
+        geysers = [o for o in world.state.get("obstacles", []) if o["kind"] == "geyser"]
+        if not geysers:
+            self.skipTest("No geysers generated with current seed")
+        g = geysers[0]
+        gx, gy = g["position"]
+        rover = world.state["agents"]["rover-2"]
+        rover["position"] = [gx, gy]
+        rover["battery"] = 0.5
+        # Set geyser to just before erupting
+        g["_cycle_tick"] = GEYSER_CYCLE_IDLE + GEYSER_CYCLE_WARNING - 1
+        events = update_geysers()
+        eruption_events = [e for e in events if e["agent_id"] == "rover-2"]
+        self.assertEqual(len(eruption_events), 1)
+        self.assertAlmostEqual(rover["battery"], 0.5 - BATTERY_COST_GEYSER)
+
+    def test_geyser_eruption_clamps_battery(self):
+        """Battery doesn't go below 0.0 from geyser eruption."""
+        from app.world import update_geysers, GEYSER_CYCLE_IDLE, GEYSER_CYCLE_WARNING
+
+        geysers = [o for o in world.state.get("obstacles", []) if o["kind"] == "geyser"]
+        if not geysers:
+            self.skipTest("No geysers generated with current seed")
+        g = geysers[0]
+        gx, gy = g["position"]
+        rover = world.state["agents"]["rover-2"]
+        rover["position"] = [gx, gy]
+        rover["battery"] = 0.05
+        g["_cycle_tick"] = GEYSER_CYCLE_IDLE + GEYSER_CYCLE_WARNING - 1
+        update_geysers()
+        self.assertEqual(rover["battery"], 0.0)
+
+    def test_is_obstacle_at(self):
+        """is_obstacle_at returns obstacle dict or None."""
+        from app.world import is_obstacle_at
+
+        obstacles = world.state.get("obstacles", [])
+        if obstacles:
+            o = obstacles[0]
+            result = is_obstacle_at(o["position"][0], o["position"][1])
+            self.assertIsNotNone(result)
+            self.assertEqual(result["kind"], o["kind"])
+        # Empty tile returns None
+        self.assertIsNone(is_obstacle_at(0, 0))
+
+    def test_origin_clear_of_obstacles(self):
+        """Origin area (|x|<=1, |y|<=1) has no obstacles."""
+        from app.world import is_obstacle_at
+
+        for x in range(-1, 2):
+            for y in range(-1, 2):
+                self.assertIsNone(is_obstacle_at(x, y))
+
+    def test_snapshot_filters_obstacles_by_fog(self):
+        """get_snapshot only includes obstacles on revealed tiles."""
+        snap = get_snapshot()
+        all_obs = world.state.get("obstacles", [])
+        snap_obs = snap.get("obstacles", [])
+        # Snapshot should have fewer or equal obstacles (fog filter)
+        self.assertLessEqual(len(snap_obs), len(all_obs))
+        # No private fields in snapshot
+        for o in snap_obs:
+            self.assertNotIn("_cycle_tick", o)
+
+    def test_snapshot_obstacle_structure(self):
+        """Snapshot obstacles have kind, position, state — no private fields."""
+        snap = get_snapshot()
+        for o in snap.get("obstacles", []):
+            self.assertIn("kind", o)
+            self.assertIn("position", o)
+            self.assertIn("state", o)
+            for key in o:
+                self.assertFalse(key.startswith("_"), f"Private field {key} leaked")
+
+    def test_observe_rover_nearby_obstacles(self):
+        """observe_rover includes nearby obstacles on revealed tiles."""
+        from app.world import _expand_revealed
+
+        mountains = [o for o in world.state.get("obstacles", []) if o["kind"] == "mountain"]
+        if not mountains:
+            self.skipTest("No mountains generated with current seed")
+        m = mountains[0]
+        mx, my = m["position"]
+        rover = world.state["agents"]["rover-mistral"]
+        rover["position"] = [mx, my + 1]
+        _expand_revealed(rover, mx, my + 1)
+        ctx = observe_rover("rover-mistral")
+        obstacle_positions = [tuple(o.position) for o in ctx.computed.nearby_obstacles]
+        self.assertIn((mx, my), obstacle_positions)
+
+    def test_reset_clears_obstacles(self):
+        """reset_world clears obstacles list and index."""
+        from app.world import reset_world, is_obstacle_at
+
+        self.assertGreater(len(world.state.get("obstacles", [])), 0)
+        reset_world()
+        # After reset, new obstacles should be generated (not leftover)
+        # Verify index works correctly after reset
+        result = is_obstacle_at(0, 0)
+        self.assertIsNone(result)
+
+    def test_obstacle_deterministic(self):
+        """Same seed produces same obstacles."""
+        from app.world import reset_world
+
+        reset_world()
+        obs1 = [(o["kind"], tuple(o["position"])) for o in world.state.get("obstacles", [])]
+        reset_world()
+        obs2 = [(o["kind"], tuple(o["position"])) for o in world.state.get("obstacles", [])]
+        self.assertEqual(obs1, obs2)

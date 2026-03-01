@@ -2,6 +2,7 @@
 import { computed } from 'vue'
 import MapLegend from './MapLegend.vue'
 import { VIEWPORT_W, VIEWPORT_H, VEIN_COLORS, agentColor } from '../constants.js'
+import { useRevealedSet } from '../composables/useRevealedSet.js'
 
 const props = defineProps({
   worldState: {
@@ -51,16 +52,7 @@ const bounds = computed(() => {
 const mapW = computed(() => (bounds.value.max_x - bounds.value.min_x + 1) * MINI_TILE)
 const mapH = computed(() => (bounds.value.max_y - bounds.value.min_y + 1) * MINI_TILE)
 
-const revealedSet = computed(() => {
-  const set = new Set()
-  if (!props.worldState) return set
-  for (const agent of Object.values(props.worldState.agents)) {
-    for (const cell of (agent.revealed || [])) {
-      set.add(`${cell[0]},${cell[1]}`)
-    }
-  }
-  return set
-})
+const { revealedSet } = useRevealedSet(() => props.worldState)
 
 const revealedTiles = computed(() => {
   const tiles = []
@@ -119,7 +111,12 @@ function onClick(e) {
       v-if="worldState"
       :viewBox="`0 0 ${mapW} ${mapH}`"
       class="minimap-svg"
+      role="img"
+      aria-label="Minimap overview — click to navigate"
+      tabindex="0"
       @click="onClick"
+      @keydown.enter="onClick"
+      @keydown.space.prevent="onClick"
     >
       <!-- Background -->
       <rect

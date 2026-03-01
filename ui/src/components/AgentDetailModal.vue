@@ -15,12 +15,12 @@ const props = defineProps({
 const emit = defineEmits(['close'])
 
 function position() {
-  if (!props.agent) return '?'
+  if (!props.agent?.position) return '?'
   return `(${props.agent.position[0]}, ${props.agent.position[1]})`
 }
 
 function batteryPct() {
-  if (!props.agent) return '?'
+  if (!props.agent || props.agent.battery == null) return '?'
   return Math.round(props.agent.battery * 100) + '%'
 }
 </script>
@@ -65,7 +65,7 @@ function batteryPct() {
             Mission
           </div>
           <div class="modal-value">
-            {{ agent.mission.objective }}
+            {{ agent.mission?.objective ?? 'None' }}
           </div>
         </div>
         <div
@@ -100,7 +100,7 @@ function batteryPct() {
             Tiles visited
           </div>
           <div class="modal-value">
-            {{ agent.visited.length }}
+            {{ (agent.visited || []).length }}
           </div>
         </div>
         <div
@@ -165,6 +165,24 @@ function batteryPct() {
               class="memory-entry"
             >
               {{ m }}
+            </div>
+          </div>
+        </div>
+        <div
+          v-if="agent.strategic_memory && agent.strategic_memory.length"
+          class="modal-section"
+        >
+          <div class="modal-label">
+            💡 Strategic Insights
+          </div>
+          <div class="modal-memory">
+            <div
+              v-for="s in agent.strategic_memory"
+              :key="s.tick"
+              class="insight-entry"
+            >
+              <span class="insight-tick">Tick {{ s.tick }}</span>
+              <span>{{ s.insight }}</span>
             </div>
           </div>
         </div>
@@ -333,6 +351,21 @@ function batteryPct() {
   background: var(--bg-revealed);
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-sm);
+}
+
+.insight-entry {
+  font-size: 0.7rem;
+  color: #f59e0b;
+  padding: 0.2rem 0.4rem;
+  background: rgba(245, 158, 11, 0.08);
+  border-left: 2px solid #f59e0b;
+  border-radius: var(--radius-sm);
+}
+
+.insight-tick {
+  font-size: 0.6rem;
+  color: var(--text-muted);
+  margin-right: 0.4rem;
 }
 
 .modal-context {

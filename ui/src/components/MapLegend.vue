@@ -86,6 +86,39 @@ function toggle() {
             </div>
           </div>
         </div>
+        <div class="legend-section">
+          <h4>Communication</h4>
+          <div class="legend-grid comm-grid">
+            <div class="legend-item">
+              <span
+                class="comm-swatch"
+                style="background: #44ccaa"
+              />
+              <span>Intel relay</span>
+            </div>
+            <div class="legend-item">
+              <span
+                class="comm-swatch"
+                style="background: #cc8844"
+              />
+              <span>Command</span>
+            </div>
+            <div class="legend-item">
+              <span
+                class="comm-swatch"
+                style="background: #cc4444"
+              />
+              <span>Alert</span>
+            </div>
+            <div class="legend-item">
+              <span
+                class="comm-swatch"
+                style="background: #4488cc"
+              />
+              <span>Notification</span>
+            </div>
+          </div>
+        </div>
       </div>
     </Transition>
   </div>
@@ -186,6 +219,18 @@ h4 {
 
 .grade-label {
   text-transform: capitalize;
+}
+
+.comm-swatch {
+  width: 14px;
+  height: 2px;
+  flex-shrink: 0;
+  border-radius: 1px;
+  opacity: 0.9;
+}
+
+.comm-grid {
+  grid-template-columns: 1fr;
 }
 
 /* Transitions */

@@ -8,7 +8,11 @@ import asyncio
 import json
 import logging
 import random
+import re
+import time
 
+from huggingface_hub import InferenceClient
+from huggingface_hub.errors import HfHubHTTPError, InferenceTimeoutError
 from mistralai import Mistral, SDKError
 
 from .base_agent import BaseAgent
@@ -16,17 +20,100 @@ from .broadcast import broadcaster
 from .config import settings
 from .protocol import make_message
 from .world import World, world as default_world
-from .world import GRID_W, GRID_H, DIRECTIONS, MAX_MOVE_DISTANCE, MAX_MOVE_DISTANCE_DRONE
+from .world import DIRECTIONS, MAX_MOVE_DISTANCE, MAX_MOVE_DISTANCE_DRONE
 from .world import FUEL_CAPACITY_ROVER, FUEL_CAPACITY_DRONE, DRONE_REVEAL_RADIUS
 from .world import BATTERY_COST_MOVE, BATTERY_COST_MOVE_DRONE, BATTERY_COST_DIG
 from .world import BATTERY_COST_ANALYZE, BATTERY_COST_SCAN, BATTERY_COST_NOTIFY
 from .world import MAX_INVENTORY_ROVER
 from .world import BATTERY_COST_INVESTIGATE, BATTERY_COST_USE_REFINERY
-from .world import check_ground, direction_hint
+from .world import check_ground, direction_hint, best_drone_hotspot, observe_rover
+from .world import get_drone_intel_for_rover, get_unread_messages, send_agent_message
 from .world import set_agent_model
-from .world import execute_action, get_snapshot, charge_agent, next_tick
+from .world import execute_action, get_snapshot, charge_agent, next_tick, update_geysers
+from .world import is_obstacle_at
+from .station import StationAgent
+from .training_logger import training_logger
+from .training_models import TrainingTurn, TurnWorldSnapshot
 
 logger = logging.getLogger(__name__)
+
+STRUCTURED_REASONING_PROMPT = "\n\nBefore acting, output: SITUATION: <state> | OPTIONS: <a, b> | DECISION: <choice + why> | RISK: low/medium/high"
+
+
+def _build_turn_snapshot(agent_state: dict, world) -> TurnWorldSnapshot:
+    """Build a TurnWorldSnapshot from agent state and world model."""
+    station = world.get_agents().get("station")
+    station_pos = (
+        station["position"]
+        if station
+        and isinstance(station.get("position"), (list, tuple))
+        and len(station["position"]) >= 2
+        else [0, 0]
+    )
+    pos = agent_state.get("position", [0, 0])
+    if not isinstance(pos, (list, tuple)) or len(pos) < 2:
+        pos = [0, 0]
+    x, y = pos[0], pos[1]
+    dist = abs(x - station_pos[0]) + abs(y - station_pos[1])
+    mission = world.get_mission()
+    battery = agent_state.get("battery", 0)
+    if not isinstance(battery, (int, float)):
+        battery = 0
+    return TurnWorldSnapshot(
+        agent_position=[x, y],
+        agent_battery=battery,
+        agent_inventory=agent_state.get("inventory", [])
+        if isinstance(agent_state.get("inventory"), list)
+        else [],
+        agent_memory=agent_state.get("memory", [])[-5:]
+        if isinstance(agent_state.get("memory"), list)
+        else [],
+        agent_tasks=agent_state.get("tasks", [])
+        if isinstance(agent_state.get("tasks"), list)
+        else [],
+        visible_stones=[],
+        mission_status=mission.get("status", "running") if isinstance(mission, dict) else "running",
+        collected_quantity=mission.get("collected", 0) if isinstance(mission, dict) else 0,
+        target_quantity=mission.get("target_quantity", 100) if isinstance(mission, dict) else 100,
+        distance_to_station=dist,
+    )
+
+
+def _parse_structured_thinking(raw_thinking: str) -> dict:
+    """Extract structured reasoning fields from LLM output."""
+    result = {"situation": "", "options": [], "decision": "", "risk": "low"}
+    if not raw_thinking:
+        return result
+    for field in ("situation", "decision", "risk"):
+        m = re.search(rf"(?i)^{field}:\s*(.+)$", raw_thinking, re.MULTILINE)
+        if m:
+            result[field] = m.group(1).strip()
+    m = re.search(r"(?i)^OPTIONS:\s*(.+)$", raw_thinking, re.MULTILINE)
+    if m:
+        result["options"] = [o.strip() for o in m.group(1).split(",") if o.strip()]
+    if result["risk"] not in ("low", "medium", "high"):
+        logger.debug("Unrecognized risk level %r, defaulting to 'low'", result["risk"])
+        result["risk"] = "low"
+    return result
+
+
+TASK_SEPARATOR = "---TASK---"
+
+
+def parse_task_separator(text):
+    """Split LLM text on ---TASK--- separator.
+
+    Returns (thinking, task) where task is None if no separator found.
+    """
+    if not text:
+        return (None, None)
+    if TASK_SEPARATOR in text:
+        parts = text.split(TASK_SEPARATOR, 1)
+        thinking = parts[0].strip() or None
+        task = parts[1].strip() or None
+        return (thinking, task)
+    return (text.strip() or None, None)
+
 
 MOVE_TOOL = {
     "type": "function",
@@ -177,7 +264,7 @@ class MistralRoverReasoner:
         unvisited_dirs = []
         for name, (dx, dy) in DIRECTIONS.items():
             nx, ny = x + dx, y + dy
-            if 0 <= nx < GRID_W and 0 <= ny < GRID_H and (nx, ny) not in visited_set:
+            if (nx, ny) not in visited_set:
                 unvisited_dirs.append(name)
 
         # Vein at current tile
@@ -237,7 +324,17 @@ class MistralRoverReasoner:
             "- Use investigate_structure when adjacent (1 tile) to unexplored structures to reveal their contents and activate them.\n"
             "- Use use_refinery when adjacent to an active refinery with basalt in inventory for +50% bonus material extraction.\n"
             "- Solar panel structures and accumulators provide passive charging — stay near them when battery is low.\n"
-            "- Follow your current tasks list. It tells you exactly what to do next.".format(
+            "- Follow your current tasks list. It tells you exactly what to do next.\n"
+            "\n"
+            f"- MOVEMENT EFFICIENCY: You can move up to {MAX_MOVE_DISTANCE} tiles per move action.\n"
+            f"  When heading to a known target, ALWAYS set distance={MAX_MOVE_DISTANCE} (or the remaining distance if closer).\n"
+            "  Moving 1 tile at a time wastes turns. Use the full distance.\n"
+            "\n"
+            "HAZARDS:\n"
+            "- ICE MOUNTAINS: Impassable terrain. You cannot move onto a mountain tile.\n"
+            "  If a move is blocked by a mountain, choose a different direction.\n"
+            "- AIR GEYSERS: Cycle through idle → warning → erupting. Avoid erupting geysers.\n"
+            "  Standing on an erupting geyser drains 10% battery. Move away from warning geysers.".format(
                 sx=station_pos[0], sy=station_pos[1]
             )
         )
@@ -250,13 +347,9 @@ class MistralRoverReasoner:
             + ("\n🏁 INVENTORY FULL — RETURN TO STATION NOW TO DELIVER!" if inventory_full else "")
         )
 
-        tasks = agent.get("tasks", [])
-        if tasks:
-            parts.append("\n== Current Tasks ==")
-            for i, task in enumerate(tasks, 1):
-                parts.append(f"{i}. {task}")
-        else:
-            parts.append("\n== Current Tasks ==\n1. Explore unvisited tiles to find veins")
+        current_task = agent.get("tasks", [None])[0] if agent.get("tasks") else None
+        if current_task:
+            parts.append(f"\n== Current Task ==\n{current_task}")
 
         safety_margin = dist_to_station + 5
         battery_critical = moves_on_battery <= safety_margin
@@ -330,7 +423,7 @@ class MistralRoverReasoner:
 
         parts.append(
             f"\n== Environment ==\n"
-            f"Grid: {GRID_W}x{GRID_H}\n"
+            f"World: chunk-based (infinite terrain)\n"
             f"Tiles visited: {len(agent.get('visited', []))}\n"
             f"Unvisited neighbors: {', '.join(unvisited_dirs) if unvisited_dirs else 'none'}\n"
             f"Vein here: {stone_line}"
@@ -340,11 +433,48 @@ class MistralRoverReasoner:
             for vs in visible_stones:
                 parts.append(f"  - {vs}")
 
+        # Nearby hazards from world state
+        ctx = observe_rover(self.agent_id)
+        if ctx.computed.nearby_obstacles:
+            parts.append("\n== Hazards ==")
+            for obs in ctx.computed.nearby_obstacles:
+                dist = abs(obs.position[0] - x) + abs(obs.position[1] - y)
+                hint = direction_hint(obs.position[0] - x, obs.position[1] - y)
+                if obs.kind == "mountain":
+                    parts.append(
+                        f"  - ICE MOUNTAIN at ({obs.position[0]},{obs.position[1]}) — {hint}, {dist} tiles (impassable)"
+                    )
+                elif obs.kind == "geyser":
+                    state_warn = " ⚠️ MOVE AWAY!" if obs.state in ("warning", "erupting") else ""
+                    parts.append(
+                        f"  - AIR GEYSER at ({obs.position[0]},{obs.position[1]}) — {hint}, {dist} tiles, state: {obs.state}{state_warn}"
+                    )
+
+        # Drone scan hotspots — areas discovered by aerial scans not yet visited by rover
+        hotspot = best_drone_hotspot(x, y, revealed_set)
+        if hotspot:
+            hx, hy, conc = hotspot
+            hdx, hdy = hx - x, hy - y
+            hint = direction_hint(hdx, hdy)
+            dist = abs(hdx) + abs(hdy)
+            parts.append(
+                f"\n== Drone Scan Hotspots ==\n"
+                f"Hotspot at ({hx},{hy}) — {hint}, {dist} tiles (concentration: {conc:.3f})\n"
+                "Consider navigating toward this drone-discovered area for potential veins."
+            )
+
         if memory:
             recent = memory[-5:]
             parts.append("\n== Recent actions ==")
             for entry in recent:
                 parts.append(f"- {entry}")
+
+        # --- Strategic Insights ---
+        sm = agent.get("strategic_memory", [])
+        if sm:
+            parts.append("# Strategic Insights (from past experience)")
+            for s in sm:
+                parts.append(f"- [tick {s['tick']}] {s['insight']}")
 
         # Urgent commands from Host inbox
         pending = agent.get("pending_commands", [])
@@ -359,6 +489,29 @@ class MistralRoverReasoner:
                     parts.append(f"NEW MISSION: {objective}")
                 else:
                     parts.append(f"{cmd['name'].upper()}: {cmd.get('payload', {})}")
+
+        # Drone intel: hotspots from drone scans
+        drone_intel = get_drone_intel_for_rover(self.agent_id)
+        if drone_intel:
+            parts.append("\n== DRONE INTEL (high-concentration scan results) ==")
+            for di in drone_intel:
+                parts.append(
+                    f"  \U0001f4e1 [{di['position'][0]},{di['position'][1]}] "
+                    f"concentration={di['concentration']} "
+                    f"(scanned by {di['scanned_by']} at tick {di['tick']})"
+                )
+            parts.append("Consider moving toward high-concentration sites.")
+
+        # Incoming messages from other agents
+        incoming = get_unread_messages(self.agent_id)
+        if incoming:
+            parts.append("\n== INCOMING MESSAGES ==")
+            for msg in incoming:
+                parts.append(
+                    f"  \U0001f4e8 From {msg['from']} (tick {msg['tick']}): {msg['message']}"
+                )
+
+        parts.append(STRUCTURED_REASONING_PROMPT)
 
         return "\n".join(parts)
 
@@ -375,18 +528,24 @@ class MistralRoverReasoner:
             ]
 
             logger.info("Calling Mistral (%s) for %s", self.model, self.agent_id)
+            effective_model = settings.fine_tuned_agent_model or self.model
             response = client.chat.complete(
-                model=self.model,
+                model=effective_model,
                 messages=messages,
                 tools=ROVER_TOOLS,
             )
-            choice = response.choices[0]
+            from .training import collector
 
+            collector.record_agent_interaction(
+                agent_id=self.agent_id,
+                agent_type="rover",
+                messages=messages,
+                tools=ROVER_TOOLS,
+                response=response,
+            )
+            choice = response.choices[0]
             thinking = choice.message.content or None
             action = None
-
-            if thinking:
-                logger.info("Rover thinking: %s", thinking)
 
             if choice.message.tool_calls:
                 tc = choice.message.tool_calls[0]
@@ -411,15 +570,15 @@ class MistralRoverReasoner:
                     logger.warning("%s called unknown tool %r, ignoring", self.agent_id, name)
 
             if action is None:
-                logger.warning(
-                    "%s returned no valid tool action (thinking=%r), using fallback",
-                    self.agent_id,
-                    thinking,
+                raise RuntimeError(
+                    f"{self.agent_id} returned no valid tool action (thinking={thinking!r})"
                 )
-                return self._fallback_turn("No valid tool action from model")
+
+            if thinking:
+                logger.info("Rover thinking: %s", thinking)
 
             return {"thinking": thinking, "action": action}
-        except (SDKError, ConnectionError, TimeoutError, RuntimeError) as exc:
+        except (SDKError, ConnectionError, TimeoutError) as exc:
             logger.exception("Rover LLM turn failed for %s, using fallback", self.agent_id)
             return self._fallback_turn(f"LLM unavailable ({type(exc).__name__})")
 
@@ -432,10 +591,22 @@ class MistralRoverReasoner:
         valid = []
         for name, (dx, dy) in DIRECTIONS.items():
             nx, ny = x + dx, y + dy
+            # Skip tiles blocked by mountains
+            obs = is_obstacle_at(nx, ny)
+            if obs and obs["kind"] == "mountain":
+                continue
             valid.append((name, nx, ny))
             if (nx, ny) not in visited_set:
                 unvisited.append((name, nx, ny))
         candidates = unvisited if unvisited else valid
+        if not candidates:
+            # All neighbors are mountains — try any direction
+            direction = random.choice(list(DIRECTIONS.keys()))
+            dx, dy = DIRECTIONS[direction]
+            return {
+                "thinking": f"LLM fallback: {reason}. All neighbors blocked, trying {direction}.",
+                "action": {"name": "move", "params": {"direction": direction}},
+            }
         direction, tx, ty = random.choice(candidates)
         thinking = f"LLM fallback: {reason}. Moving {direction} to ({tx},{ty})."
         return {
@@ -446,6 +617,80 @@ class MistralRoverReasoner:
 
 # Backward-compat aliases
 RoverAgent = MistralRoverReasoner
+
+
+class HuggingFaceRoverReasoner(MistralRoverReasoner):
+    """Rover reasoner using HuggingFace Inference API. Inherits context/fallback from Mistral variant."""
+
+    def __init__(self, agent_id="rover-huggingface", model=None, world: World | None = None):
+        super().__init__(
+            agent_id=agent_id,
+            model=model or settings.huggingface_model or "Qwen/Qwen2.5-72B-Instruct",
+            world=world,
+        )
+
+    def _get_client(self):
+        if self._client is None:
+            if not settings.hugging_face_read:
+                raise RuntimeError("HUGGING_FACE_READ not set")
+            self._client = InferenceClient(token=settings.hugging_face_read, provider="auto")
+        return self._client
+
+    def run_turn(self):
+        """Single-shot LLM call via HuggingFace. Returns {thinking, action} dict."""
+        try:
+            client = self._get_client()
+            context = self._build_context()
+            self._world.set_agent_last_context(self.agent_id, context)
+
+            messages = [
+                {"role": "system", "content": context},
+                {"role": "user", "content": "Observe your surroundings and decide your next move."},
+            ]
+
+            logger.info("Calling HuggingFace (%s) for %s", self.model, self.agent_id)
+            response = client.chat_completion(
+                model=self.model,
+                messages=messages,
+                tools=ROVER_TOOLS,
+                tool_choice="auto",
+            )
+            choice = response.choices[0]
+            thinking = choice.message.content or None
+            action = None
+
+            if choice.message.tool_calls:
+                tc = choice.message.tool_calls[0]
+                name = tc.function.name
+                args = (
+                    json.loads(tc.function.arguments)
+                    if isinstance(tc.function.arguments, str)
+                    else tc.function.arguments
+                )
+                if name in (
+                    "move",
+                    "dig",
+                    "analyze",
+                    "deploy_solar_panel",
+                    "use_solar_battery",
+                    "notify",
+                ):
+                    action = {"name": name, "params": args}
+                else:
+                    logger.warning("%s called unknown tool %r, ignoring", self.agent_id, name)
+
+            if action is None:
+                raise RuntimeError(
+                    f"{self.agent_id} returned no valid tool action (thinking={thinking!r})"
+                )
+
+            if thinking:
+                logger.info("Rover thinking: %s", thinking)
+
+            return {"thinking": thinking, "action": action}
+        except (HfHubHTTPError, InferenceTimeoutError, ConnectionError, TimeoutError) as exc:
+            logger.exception("Rover LLM turn failed for %s, using fallback", self.agent_id)
+            return self._fallback_turn(f"LLM unavailable ({type(exc).__name__})")
 
 
 # ── Drone Reasoners ──
@@ -522,19 +767,38 @@ class DroneAgent:
         dist_to_station = abs(x - station_pos[0]) + abs(y - station_pos[1])
         moves_on_battery = int(battery / BATTERY_COST_MOVE_DRONE)
 
-        visited_set = {tuple(p) for p in agent.get("visited", [])}
-        unvisited_dirs = []
-        for name, (dx, dy) in DIRECTIONS.items():
-            nx, ny = x + dx, y + dy
-            if 0 <= nx < GRID_W and 0 <= ny < GRID_H and (nx, ny) not in visited_set:
-                unvisited_dirs.append(name)
-
         scanned_positions = {tuple(s["position"]) for s in self._world.get_drone_scans()}
-        total_tiles = GRID_W * GRID_H
-        coverage = len(scanned_positions) / total_tiles * 100
+
+        # Safety margin — same logic as rover
+        safety_margin = dist_to_station + 5
+        battery_critical = moves_on_battery <= safety_margin
+
+        # Nearest unscanned area hint (same logic as MockDroneAgent)
+        search_radius = 30
+        best_target = None
+        best_dist = float("inf")
+        for gx in range(x - search_radius, x + search_radius + 1):
+            for gy in range(y - search_radius, y + search_radius + 1):
+                if (gx, gy) in scanned_positions:
+                    continue
+                min_scan_dist = min(
+                    (abs(gx - sp[0]) + abs(gy - sp[1]) for sp in scanned_positions),
+                    default=search_radius * 2,
+                )
+                if min_scan_dist < DRONE_REVEAL_RADIUS:
+                    continue
+                d = abs(gx - x) + abs(gy - y)
+                if d < best_dist:
+                    best_dist = d
+                    best_target = (gx, gy)
+
+        # Last scan result
+        drone_scans = self._world.get_drone_scans()
+        last_scan = drone_scans[-1] if drone_scans else None
 
         parts = []
 
+        # -- Instructions --
         parts.append(
             f"You are {self.agent_id}, an autonomous Mars drone scout.\n"
             "Your job: fly over the terrain and SCAN areas to detect basalt vein deposits.\n"
@@ -549,58 +813,77 @@ class DroneAgent:
             "- Use 'scan' to sample concentration readings at your current position.\n"
             "- Readings range 0.0-1.0. Higher values indicate high-grade basalt veins nearby.\n"
             "- Scan data is shared with rovers automatically — they will navigate to hotspots you find.\n"
-            "- Try to cover the map systematically. Don't scan the same area twice.\n"
-            "- Prioritize scanning unexplored areas far from previous scan positions.\n"
+            "- Scan outward from station in expanding rings. Cover NEARBY areas first, then push further.\n"
+            "- Don't fly far when there are unscanned areas close by. Check 'Nearest unscanned area' below.\n"
+            "- Don't scan the same area twice.\n"
             "\n"
             "RADIO (notify tool):\n"
-            f"- Costs 2 fuel units (~{BATTERY_COST_NOTIFY:.2%} battery). Use it — your scan findings are critical.\n"
-            "- Notify station after every scan that finds a hotspot (peak > 0.5).\n"
+            f"- Costs 2 fuel units (~{BATTERY_COST_NOTIFY:.2%} battery).\n"
+            "- MANDATORY: After any scan with peak >= 0.5, you MUST call notify BEFORE moving.\n"
             "  Include the position and peak reading so station can dispatch rovers.\n"
-            "- Notify station when you have completed a sweep of a region.\n"
-            "- Notify station if your battery is low and you cannot cover remaining areas.\n"
+            "- Also notify station when your battery is low or you have completed a sweep.\n"
             "- You are the eyes of the mission. Rovers are blind without your reports.\n"
             "\n"
             "RULES:\n"
-            f"- Battery: move costs 1 fuel unit/tile (~{BATTERY_COST_MOVE_DRONE:.2%}), scan costs 2 fuel units (~{BATTERY_COST_SCAN:.2%}), notify costs 2 fuel units (~{BATTERY_COST_NOTIFY:.2%}). You can fly up to {MAX_MOVE_DISTANCE_DRONE} tiles per move.\n"
-            "- Station is at ({sx},{sy}). Return when battery is low for recharge.\n"
-            "- ALWAYS keep enough battery to return to station.\n"
-            "- Follow your current tasks list.".format(sx=station_pos[0], sy=station_pos[1])
+            f"- Battery: move costs 3 fuel units/tile (~{BATTERY_COST_MOVE_DRONE:.2%}), scan costs 2 fuel units (~{BATTERY_COST_SCAN:.2%}), notify costs 2 fuel units (~{BATTERY_COST_NOTIFY:.2%}). You can fly up to {MAX_MOVE_DISTANCE_DRONE} tiles per move.\n"
+            "- Station is at ({sx},{sy}). Return there when battery is low — "
+            "the station will recharge you automatically.\n"
+            "- ALWAYS keep enough battery to return to station. Check 'moves remaining' vs 'distance to station'.\n"
+            "  If moves remaining <= distance to station + 5 (safety margin), return to station IMMEDIATELY.\n"
+            "- Prefer unvisited areas when exploring. Don't backtrack aimlessly.".format(
+                sx=station_pos[0], sy=station_pos[1]
+            )
         )
 
+        # -- Mission --
         parts.append(
             f"\n== Mission ==\n"
             f"Objective: {mission['objective']}\n"
-            f"Scan coverage: {coverage:.0f}% of map"
+            f"Scans performed: {len(drone_scans)}"
         )
 
-        tasks = agent.get("tasks", [])
-        if tasks:
-            parts.append("\n== Current Tasks ==")
-            for i, task in enumerate(tasks, 1):
-                parts.append(f"{i}. {task}")
-        else:
-            parts.append(
-                "\n== Current Tasks ==\n1. Scan current area, then fly to unscanned regions"
-            )
+        current_task = agent.get("tasks", [None])[0] if agent.get("tasks") else None
+        if current_task:
+            parts.append(f"\n== Current Task ==\n{current_task}")
 
+        # -- State --
         parts.append(
             f"\n== State ==\n"
             f"Position: ({x}, {y})\n"
             f"Battery: {battery:.0%} ({moves_on_battery} moves remaining, {FUEL_CAPACITY_DRONE} fuel capacity)\n"
-            f"Distance to station: {dist_to_station} tiles\n"
-            f"Tiles visited: {len(agent.get('visited', []))}\n"
-            f"Scans performed: {len(self._world.get_drone_scans())}"
+            f"Distance to station: {dist_to_station} tiles (need {safety_margin} moves to return safely)\n"
+            f"Tiles visited: {len(agent.get('visited', []))}"
+            + ("\n⚠️ BATTERY CRITICAL — return to station now!" if battery_critical else "")
         )
 
+        # -- Last Scan --
+        if last_scan:
+            scan_pos = last_scan["position"]
+            scan_peak = last_scan["peak"]
+            parts.append(
+                f"\n== Last Scan ==\n"
+                f"Position: ({scan_pos[0]}, {scan_pos[1]}), peak concentration: {scan_peak:.2f}"
+            )
+            # Check if hotspot was notified
+            if scan_peak >= 0.5:
+                last_action_was_notify = memory and "notify" in memory[-1].lower()
+                if not last_action_was_notify:
+                    parts.append("⚠️ HOTSPOT — notify station before moving!")
+
+        # -- Environment --
         parts.append(
             f"\n== Environment ==\n"
-            f"Grid: {GRID_W}x{GRID_H}\n"
-            f"Unvisited neighbors: {', '.join(unvisited_dirs) if unvisited_dirs else 'none'}\n"
             f"Already scanned here: {'yes' if (x, y) in scanned_positions else 'no'}"
         )
+        if best_target:
+            tx, ty = best_target
+            hint = direction_hint(tx - x, ty - y)
+            parts.append(f"Nearest unscanned area: ({tx},{ty}) — {hint}, {best_dist} tiles")
+        else:
+            parts.append("Nearest unscanned area: none within range")
 
         hot_scans = []
-        for scan in self._world.get_drone_scans()[-5:]:
+        for scan in drone_scans[-5:]:
             if scan["peak"] > 0.2:
                 hot_scans.append(
                     f"  - ({scan['position'][0]},{scan['position'][1]}): peak={scan['peak']:.2f}"
@@ -614,6 +897,29 @@ class DroneAgent:
             parts.append("\n== Recent actions ==")
             for entry in recent:
                 parts.append(f"- {entry}")
+
+        # --- Strategic Insights ---
+        sm = agent.get("strategic_memory", [])
+        if sm:
+            parts.append("# Strategic Insights (from past experience)")
+            for s in sm:
+                parts.append(f"- [tick {s['tick']}] {s['insight']}")
+
+        # -- Urgent commands from Host inbox --
+        pending = agent.get("pending_commands", [])
+        if pending:
+            parts.append("\n== URGENT COMMANDS ==")
+            for cmd in pending:
+                if cmd["name"] == "recall":
+                    reason = cmd.get("payload", {}).get("reason", "No reason given")
+                    parts.append(f"RECALL: Return to station immediately. Reason: {reason}")
+                elif cmd["name"] == "assign_mission":
+                    objective = cmd.get("payload", {}).get("objective", "")
+                    parts.append(f"NEW MISSION: {objective}")
+                else:
+                    parts.append(f"{cmd['name'].upper()}: {cmd.get('payload', {})}")
+
+        parts.append(STRUCTURED_REASONING_PROMPT)
 
         return "\n".join(parts)
 
@@ -633,18 +939,24 @@ class DroneAgent:
             ]
 
             logger.info("Calling Mistral (%s) for %s", self.model, self.agent_id)
+            effective_model = settings.fine_tuned_agent_model or self.model
             response = client.chat.complete(
-                model=self.model,
+                model=effective_model,
                 messages=messages,
                 tools=DRONE_TOOLS,
             )
-            choice = response.choices[0]
+            from .training import collector
 
+            collector.record_agent_interaction(
+                agent_id=self.agent_id,
+                agent_type="drone",
+                messages=messages,
+                tools=DRONE_TOOLS,
+                response=response,
+            )
+            choice = response.choices[0]
             thinking = choice.message.content or None
             action = None
-
-            if thinking:
-                logger.info("Drone thinking: %s", thinking)
 
             if choice.message.tool_calls:
                 tc = choice.message.tool_calls[0]
@@ -660,14 +972,24 @@ class DroneAgent:
                     logger.warning("%s called unknown tool %r, ignoring", self.agent_id, name)
 
             if action is None:
-                logger.warning(
-                    "%s returned no valid tool action, using fallback",
-                    self.agent_id,
-                )
-                return self._fallback_turn("No valid tool action from model")
+                agent = self._world.get_agent(self.agent_id)
+                is_first_turn = not agent.get("memory")
+                if is_first_turn:
+                    logger.warning(
+                        "%s returned no tool call on first turn, falling back to scan",
+                        self.agent_id,
+                    )
+                    action = {"name": "scan", "params": {}}
+                else:
+                    raise RuntimeError(
+                        f"{self.agent_id} returned no valid tool action (thinking={thinking!r})"
+                    )
+
+            if thinking:
+                logger.info("Drone thinking: %s", thinking)
 
             return {"thinking": thinking, "action": action}
-        except (SDKError, ConnectionError, TimeoutError, RuntimeError) as exc:
+        except (SDKError, ConnectionError, TimeoutError) as exc:
             logger.exception("Drone LLM turn failed for %s, using fallback", self.agent_id)
             return self._fallback_turn(f"LLM unavailable ({type(exc).__name__})")
 
@@ -677,6 +999,85 @@ class DroneAgent:
         prefix = f"LLM fallback: {reason}. "
         fallback["thinking"] = (prefix + fallback_thinking).strip()
         return fallback
+
+
+class HuggingFaceDroneAgent(DroneAgent):
+    """Drone agent using HuggingFace Inference API. Inherits context/fallback from Mistral variant."""
+
+    def __init__(self, agent_id="drone-huggingface", model=None, world: World | None = None):
+        super().__init__(
+            agent_id=agent_id,
+            model=model or settings.huggingface_model or "Qwen/Qwen2.5-72B-Instruct",
+            world=world,
+        )
+
+    def _get_client(self):
+        if self._client is None:
+            if not settings.hugging_face_read:
+                raise RuntimeError("HUGGING_FACE_READ not set")
+            self._client = InferenceClient(token=settings.hugging_face_read, provider="auto")
+        return self._client
+
+    def run_turn(self):
+        """Single-shot LLM call for drone via HuggingFace. Returns {thinking, action} dict."""
+        try:
+            client = self._get_client()
+            context = self._build_context()
+            self._world.set_agent_last_context(self.agent_id, context)
+
+            messages = [
+                {"role": "system", "content": context},
+                {
+                    "role": "user",
+                    "content": "Observe your surroundings and decide your next action.",
+                },
+            ]
+
+            logger.info("Calling HuggingFace (%s) for %s", self.model, self.agent_id)
+            response = client.chat_completion(
+                model=self.model,
+                messages=messages,
+                tools=DRONE_TOOLS,
+                tool_choice="auto",
+            )
+            choice = response.choices[0]
+            thinking = choice.message.content or None
+            action = None
+
+            if choice.message.tool_calls:
+                tc = choice.message.tool_calls[0]
+                name = tc.function.name
+                args = (
+                    json.loads(tc.function.arguments)
+                    if isinstance(tc.function.arguments, str)
+                    else tc.function.arguments
+                )
+                if name in ("move", "scan", "notify"):
+                    action = {"name": name, "params": args}
+                else:
+                    logger.warning("%s called unknown tool %r, ignoring", self.agent_id, name)
+
+            if action is None:
+                agent = self._world.get_agent(self.agent_id)
+                is_first_turn = not agent.get("memory")
+                if is_first_turn:
+                    logger.warning(
+                        "%s returned no tool call on first turn, falling back to scan",
+                        self.agent_id,
+                    )
+                    action = {"name": "scan", "params": {}}
+                else:
+                    raise RuntimeError(
+                        f"{self.agent_id} returned no valid tool action (thinking={thinking!r})"
+                    )
+
+            if thinking:
+                logger.info("Drone thinking: %s", thinking)
+
+            return {"thinking": thinking, "action": action}
+        except (HfHubHTTPError, InferenceTimeoutError, ConnectionError, TimeoutError) as exc:
+            logger.exception("Drone LLM turn failed for %s, using fallback", self.agent_id)
+            return self._fallback_turn(f"LLM unavailable ({type(exc).__name__})")
 
 
 class MockDroneAgent:
@@ -841,16 +1242,40 @@ class RoverLoop(BaseAgent):
             logger.info("Agent %s at station — abort complete", self.agent_id)
             return
 
+        # ── Training: capture pre-state ──
+        pre_rover = self._world.get_agents().get(self.agent_id) or {}
+        pre_position = list(pre_rover.get("position", [0, 0]))
+        pre_battery = pre_rover.get("battery", 1.0)
+        world_snap = (
+            _build_turn_snapshot(pre_rover, self._world) if pre_rover else TurnWorldSnapshot()
+        )
+        context_text = pre_rover.get("last_context", "")
+        t0 = time.monotonic()
         turn = await asyncio.to_thread(self._reasoner.run_turn)
+        llm_ms = int((time.monotonic() - t0) * 1000)
         next_tick()
+        geyser_events = update_geysers()
         messages = []
+
+        # Broadcast geyser eruption events
+        for ge in geyser_events:
+            msg = make_message(
+                source="world",
+                type="event",
+                name="geyser_eruption",
+                payload=ge,
+            )
+            messages.append(msg)
 
         if turn["thinking"]:
             msg = make_message(
                 source=self.agent_id,
                 type="event",
                 name="thinking",
-                payload={"text": turn["thinking"]},
+                payload={
+                    "text": turn["thinking"],
+                    "structured": _parse_structured_thinking(turn["thinking"]),
+                },
             )
             messages.append(msg)
 
@@ -879,15 +1304,24 @@ class RoverLoop(BaseAgent):
                     )
                     messages.append(check_msg)
 
-                # Emit notify event for station routing
+                # Save notify to station memory and emit station thinking log
                 if turn["action"]["name"] == "notify" and result.get("message"):
-                    notify_msg = make_message(
-                        source=self.agent_id,
+                    pos = result["position"]
+                    station_state = self._world.get_agents().get("station")
+                    if station_state:
+                        mem = station_state.setdefault("memory", [])
+                        mem.append(
+                            f"Radio from {self.agent_id} at ({pos[0]},{pos[1]}): {result['message']}"
+                        )
+                    station_log = make_message(
+                        source="station",
                         type="event",
-                        name="notify",
-                        payload={"message": result["message"], "position": result["position"]},
+                        name="thinking",
+                        payload={
+                            "text": f"Radio from {self.agent_id} at ({pos[0]},{pos[1]}): {result['message']}"
+                        },
                     )
-                    messages.append(notify_msg)
+                    messages.append(station_log)
 
                 # Don't check mission success/failure during abort
                 if mission_status != "aborted":
@@ -901,20 +1335,94 @@ class RoverLoop(BaseAgent):
                         )
                         messages.append(mission_msg)
 
-                task_text = result.get("task_update")
-                if task_text:
-                    task_msg = make_message(
-                        source=self.agent_id,
-                        type="event",
-                        name="task_update",
-                        payload={"task": task_text},
-                    )
-                    messages.append(task_msg)
+        # LLM-owned task: update agent tasks from LLM output
+        llm_task = turn.get("task")
+        if llm_task is not None:
+            agent_state = self._world.get_agent(self.agent_id)
+            old_task = agent_state.get("tasks", [None])[0]
+            if llm_task != old_task:
+                agent_state["tasks"] = [llm_task]
+                task_msg = make_message(
+                    source=self.agent_id,
+                    type="event",
+                    name="task_update",
+                    payload={"task": llm_task},
+                )
+                messages.append(task_msg)
 
         for msg in messages:
             await host.broadcast(msg.to_dict())
 
         await broadcaster.send(make_message("world", "event", "state", get_snapshot()).to_dict())
+
+        # ── Training: log agent turn ──
+        action_result_data = {}
+        action_ok = False
+        action_name = ""
+        action_params = {}
+        if turn["action"]:
+            action_name = turn["action"]["name"]
+            action_params = turn["action"]["params"]
+            # Find the result from the execute_action call above
+            for m in messages:
+                md = m.to_dict() if hasattr(m, "to_dict") else m
+                if md.get("type") == "action" and md.get("name") == action_name:
+                    action_result_data = md.get("payload", {})
+                    action_ok = action_result_data.get("ok", False)
+                    break
+        post_rover = self._world.get_agents().get(self.agent_id) or {}
+        is_fallback = "fallback" in (turn.get("thinking") or "").lower()
+        current_tick = self._world.get_tick()
+        training_turn = TrainingTurn(
+            tick=current_tick,
+            agent_id=self.agent_id,
+            agent_type="rover",
+            context=context_text,
+            world_snapshot=world_snap,
+            thinking=turn.get("thinking"),
+            action_name=action_name,
+            action_params=action_params,
+            action_result=action_result_data,
+            action_ok=action_ok,
+            battery_before=pre_battery,
+            battery_after=post_rover.get("battery", 1.0),
+            position_before=pre_position,
+            position_after=list(post_rover.get("position", [0, 0])),
+            model=getattr(self._reasoner, "model", ""),
+            is_fallback=is_fallback,
+            llm_duration_ms=llm_ms,
+        )
+        training_logger.log_turn(training_turn)
+        training_logger.log_world_snapshot(current_tick, get_snapshot())
+
+        # --- Periodic memory summarization ---
+        current_tick = self._world.get_tick()
+        if current_tick % 20 == 0:
+            from .world import summarize_memories, record_strategic_insight
+
+            prompt = summarize_memories(self.agent_id)
+            if prompt:
+                try:
+                    client = Mistral(api_key=settings.mistral_api_key)
+                    resp = await asyncio.to_thread(
+                        client.chat.complete,
+                        model="mistral-small-latest",
+                        messages=[{"role": "user", "content": prompt}],
+                        max_tokens=150,
+                    )
+                    insight_text = resp.choices[0].message.content.strip()
+                    record_strategic_insight(self.agent_id, insight_text, current_tick)
+                    await broadcaster.send(
+                        {
+                            "type": "event",
+                            "name": "insight",
+                            "source": self.agent_id,
+                            "payload": {"text": insight_text},
+                        }
+                    )
+                    logger.info("Strategic insight for %s: %s", self.agent_id, insight_text)
+                except Exception as exc:
+                    logger.warning("Memory summarization failed for %s: %s", self.agent_id, exc)
 
         # Auto-charge rover when it arrives at station
         rover = self._world.get_agents().get(self.agent_id)
@@ -929,7 +1437,7 @@ class RoverLoop(BaseAgent):
                 charge_msg = make_message(
                     source="station",
                     type="action",
-                    name="charge_rover",
+                    name="charge_agent",
                     payload=charge_result,
                 )
                 await host.broadcast(charge_msg.to_dict())
@@ -938,8 +1446,10 @@ class RoverLoop(BaseAgent):
 class RoverMistralLoop(RoverLoop):
     """Rover loop wired to MistralRoverReasoner."""
 
-    def __init__(self, interval: float = 3.0, world: World | None = None):
-        super().__init__(agent_id="rover-mistral", interval=interval, world=world)
+    def __init__(
+        self, agent_id: str = "rover-mistral", interval: float = 3.0, world: World | None = None
+    ):
+        super().__init__(agent_id=agent_id, interval=interval, world=world)
         self._reasoner = MistralRoverReasoner(agent_id=self.agent_id, world=self._world)
         set_agent_model(self.agent_id, self._reasoner.model)
 
@@ -971,7 +1481,15 @@ class DroneLoop(BaseAgent):
                 [{"name": "recall", "payload": {"reason": "Mission aborted — return to station"}}],
             )
 
+        # ── Training: capture pre-state ──
+        _drone_state = self._world.get_agents().get(self.agent_id, {})
+        _pre_position = list(_drone_state.get("position", [0, 0]))
+        _pre_battery = _drone_state.get("battery", 1.0)
+        _t0 = time.monotonic()
         turn = await asyncio.to_thread(self._reasoner.run_turn)
+        _llm_ms = int((time.monotonic() - _t0) * 1000)
+        _action_result = {}
+        _action_ok = False
         next_tick()
         messages = []
 
@@ -980,7 +1498,10 @@ class DroneLoop(BaseAgent):
                 source=self.agent_id,
                 type="event",
                 name="thinking",
-                payload={"text": turn["thinking"]},
+                payload={
+                    "text": turn["thinking"],
+                    "structured": _parse_structured_thinking(turn["thinking"]),
+                },
             )
             messages.append(msg)
 
@@ -990,6 +1511,8 @@ class DroneLoop(BaseAgent):
                 turn["action"]["name"],
                 turn["action"]["params"],
             )
+            _action_result = result
+            _action_ok = result.get("ok", False)
             if result["ok"]:
                 action_msg = make_message(
                     source=self.agent_id,
@@ -999,30 +1522,91 @@ class DroneLoop(BaseAgent):
                 )
                 messages.append(action_msg)
 
-                # Emit notify event for station routing
+                # Save notify to station memory and emit station thinking log
                 if turn["action"]["name"] == "notify" and result.get("message"):
-                    notify_msg = make_message(
-                        source=self.agent_id,
+                    pos = result["position"]
+                    station_state = self._world.get_agents().get("station")
+                    if station_state:
+                        mem = station_state.setdefault("memory", [])
+                        mem.append(
+                            f"Radio from {self.agent_id} at ({pos[0]},{pos[1]}): {result['message']}"
+                        )
+                    station_log = make_message(
+                        source="station",
                         type="event",
-                        name="notify",
-                        payload={"message": result["message"], "position": result["position"]},
+                        name="thinking",
+                        payload={
+                            "text": f"Radio from {self.agent_id} at ({pos[0]},{pos[1]}): {result['message']}"
+                        },
                     )
-                    messages.append(notify_msg)
+                    messages.append(station_log)
 
-                task_text = result.get("task_update")
-                if task_text:
-                    task_msg = make_message(
+                # Auto-relay high-concentration scan results to rover
+                if turn["action"]["name"] == "scan" and result.get("concentration", 0) > 0.5:
+                    relay_msg = send_agent_message(
+                        self.agent_id,
+                        "rover-mistral",
+                        f"High concentration {result['concentration']:.2f} at {result.get('position', '?')}",
+                    )
+                    relay_event = make_message(
                         source=self.agent_id,
                         type="event",
-                        name="task_update",
-                        payload={"task": task_text},
+                        name="intel_relay",
+                        payload={
+                            "from": self.agent_id,
+                            "to": "rover-mistral",
+                            "message": relay_msg["message"],
+                        },
                     )
-                    messages.append(task_msg)
+                    messages.append(relay_event)
+
+        # LLM-owned task: update agent tasks from LLM output
+        llm_task = turn.get("task")
+        if llm_task is not None:
+            agent_state = self._world.get_agent(self.agent_id)
+            old_task = agent_state.get("tasks", [None])[0]
+            if llm_task != old_task:
+                agent_state["tasks"] = [llm_task]
+                task_msg = make_message(
+                    source=self.agent_id,
+                    type="event",
+                    name="task_update",
+                    payload={"task": llm_task},
+                )
+                messages.append(task_msg)
 
         for msg in messages:
             await host.broadcast(msg.to_dict())
 
         await broadcaster.send(make_message("world", "event", "state", get_snapshot()).to_dict())
+
+        # ── Training: log drone turn ──
+        try:
+            _post_drone = self._world.get_agents().get(self.agent_id, {})
+            _action = turn.get("action") or {}
+            training_turn = TrainingTurn(
+                tick=self._world.get_tick(),
+                agent_id=self.agent_id,
+                agent_type="drone",
+                context=getattr(self._reasoner, "last_context", ""),
+                world_snapshot=_build_turn_snapshot(_drone_state, self._world),
+                thinking=turn.get("thinking"),
+                action_name=_action.get("name", ""),
+                action_params=_action.get("params", {}),
+                action_result=_action_result,
+                action_ok=_action_ok,
+                battery_before=_pre_battery,
+                battery_after=_post_drone.get("battery", 1.0),
+                position_before=_pre_position,
+                position_after=list(_post_drone.get("position", [0, 0])),
+                model=getattr(self._reasoner, "model", ""),
+                is_fallback=turn.get("is_fallback", False),
+                llm_duration_ms=_llm_ms,
+            )
+            training_logger.log_turn(training_turn)
+            training_logger.log_world_snapshot(self._world.get_tick(), get_snapshot())
+        except Exception:
+            logger.warning("Training turn logging failed for %s", self.agent_id, exc_info=True)
 
         # Auto-charge drone when at station
         drone = self._world.get_agents().get(self.agent_id)
@@ -1037,7 +1621,7 @@ class DroneLoop(BaseAgent):
                 charge_msg = make_message(
                     source="station",
                     type="action",
-                    name="charge_rover",
+                    name="charge_agent",
                     payload=charge_result,
                 )
                 await host.broadcast(charge_msg.to_dict())
@@ -1050,3 +1634,141 @@ class DroneMistralLoop(DroneLoop):
         super().__init__(agent_id="drone-mistral", interval=interval, world=world)
         self._reasoner = DroneAgent(agent_id=self.agent_id, world=self._world)
         set_agent_model(self.agent_id, self._reasoner.model)
+
+
+class RoverHuggingFaceLoop(RoverLoop):
+    """Rover loop wired to HuggingFaceRoverReasoner."""
+
+    def __init__(
+        self, agent_id: str = "rover-huggingface", interval: float = 3.0, world: World | None = None
+    ):
+        super().__init__(agent_id=agent_id, interval=interval, world=world)
+        self._reasoner = HuggingFaceRoverReasoner(agent_id=self.agent_id, world=self._world)
+        set_agent_model(self.agent_id, self._reasoner.model)
+
+
+class DroneHuggingFaceLoop(DroneLoop):
+    """Drone loop wired to HuggingFaceDroneAgent."""
+
+    def __init__(self, interval: float = 2.0, world: World | None = None):
+        super().__init__(agent_id="drone-huggingface", interval=interval, world=world)
+        self._reasoner = HuggingFaceDroneAgent(agent_id=self.agent_id, world=self._world)
+        set_agent_model(self.agent_id, self._reasoner.model)
+
+
+# ── Station reactive loop ────────────────────────────────────────────────────────
+
+
+class StationLoop(BaseAgent):
+    """Station periodic evaluation loop — monitors field events and coordinates agents."""
+
+    INTERESTING_EVENTS = frozenset(
+        {
+            "thinking",
+            "notify",
+            "check",
+            "dig",
+            "analyze",
+            "scan",
+            "world_event",
+            "mission_success",
+            "mission_failed",
+            "mission_aborted",
+            "charge_agent",
+            "deploy_solar_panel",
+            "use_solar_battery",
+        }
+    )
+
+    def __init__(self, interval: float = 20.0, world: World | None = None):
+        super().__init__(agent_id="station-loop", interval=interval, world=world)
+        self._station = StationAgent()
+        self._event_buffer: list[dict] = []
+
+    def buffer_event(self, event: dict):
+        """Buffer a field event for next evaluation cycle."""
+        self._event_buffer.append(event)
+        if len(self._event_buffer) > 50:
+            self._event_buffer = self._event_buffer[-50:]
+
+    async def tick(self, host) -> None:
+        if not self._event_buffer:
+            return
+
+        context = self._world.observe_station()
+
+        # ── Training: capture pre-state ──
+        try:
+            _agents = self._world.get_agents()
+            station_state = _agents.get("station") or {} if isinstance(_agents, dict) else {}
+            pre_position = (
+                list(station_state.get("position", [0, 0]))
+                if isinstance(station_state, dict)
+                else [0, 0]
+            )
+            pre_battery = (
+                station_state.get("battery", 1.0) if isinstance(station_state, dict) else 1.0
+            )
+        except Exception:
+            station_state, pre_position, pre_battery = {}, [0, 0], 1.0
+        context_text = str(context) if context else ""
+        t0 = time.monotonic()
+        result = await asyncio.to_thread(
+            self._station.evaluate_situation, context, self._event_buffer
+        )
+        llm_ms = int((time.monotonic() - t0) * 1000)
+        self._event_buffer.clear()
+
+        if result.get("thinking"):
+            msg = make_message(
+                source="station",
+                type="event",
+                name="thinking",
+                payload={"text": result["thinking"]},
+            )
+            await host.broadcast(msg.to_dict())
+
+        # Execute actions through Host routing (ensures world-effect)
+        await host.route_station_actions(result)
+
+        # ── Training: log station turn ──
+        try:
+            actions = result.get("actions", [])
+            action_name = actions[0]["name"] if actions else ""
+            action_params = actions[0].get("params", {}) if actions else {}
+            current_tick = self._world.get_tick()
+            _post_agents = self._world.get_agents()
+            post_station = (
+                _post_agents.get("station") or {} if isinstance(_post_agents, dict) else {}
+            )
+            training_turn = TrainingTurn(
+                tick=current_tick,
+                agent_id=getattr(self, "agent_id", "station-loop"),
+                agent_type="station",
+                context=context_text,
+                world_snapshot=_build_turn_snapshot(station_state, self._world)
+                if isinstance(station_state, dict) and station_state
+                else TurnWorldSnapshot(),
+                thinking=result.get("thinking"),
+                action_name=action_name,
+                action_params=action_params,
+                action_result={"actions": [a["name"] for a in actions]},
+                action_ok=bool(actions),
+                battery_before=pre_battery,
+                battery_after=post_station.get("battery", 1.0)
+                if isinstance(post_station, dict)
+                else 1.0,
+                position_before=pre_position,
+                position_after=list(post_station.get("position", [0, 0]))
+                if isinstance(post_station, dict)
+                else [0, 0],
+                model=getattr(self._station, "model", "")
+                if isinstance(getattr(self._station, "model", None), str)
+                else "",
+                is_fallback=False,
+                llm_duration_ms=llm_ms,
+            )
+            training_logger.log_turn(training_turn)
+            training_logger.log_world_snapshot(current_tick, get_snapshot())
+        except Exception:
+            logger.warning("Training turn logging failed for station", exc_info=True)

@@ -1,6 +1,6 @@
 [project]
 name = "mars"
-version = "0.2.0"
+version = "0.5.0"
 description = "Multi-Agent Mars Mission Simulation"
 requires-python = ">=3.14"
 dependencies = [
@@ -9,9 +9,11 @@ dependencies = [
     "surrealdb>=1.0.7",
     "pydantic-settings>=2.0.0",
     "python-dotenv>=1.0.0",
+    "python-multipart>=0.0.9",
     "rich>=13.0.0",
     "mistralai>=1.0.0",
     "elevenlabs>=1.0.0",
+    "huggingface-hub>=0.25.0",
 ]
 
 [tool.uv]

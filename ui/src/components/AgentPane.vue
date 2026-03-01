@@ -1,6 +1,7 @@
 <script setup>
 import { computed } from 'vue'
 import BatteryBar from './BatteryBar.vue'
+import ReasoningCard from './ReasoningCard.vue'
 
 const props = defineProps({
   agentId: {
@@ -39,6 +40,10 @@ const props = defineProps({
     type: String,
     default: '',
   },
+  messageCount: {
+    type: Number,
+    default: 0,
+  },
 })
 
 const emit = defineEmits(['select-agent'])
@@ -52,7 +57,7 @@ const mergedEvents = computed(() => {
     if (e.name === 'thinking') {
       const next = raw[i + 1]
       if (next && next.name !== 'thinking') {
-        result.push({ ...next, reason: e.payload?.text || '' })
+        result.push({ ...next, reason: e.payload?.text || '', structured: e.payload?.structured || null })
         i++
       }
       // Drop orphan thinking events (no following action)
@@ -64,6 +69,9 @@ const mergedEvents = computed(() => {
 })
 
 function eventText(e) {
+  if (e.name === 'insight') {
+    return `💡 ${e.payload?.text || ''}`
+  }
   if (e.name === 'move' && e.payload?.from) {
     return `(${e.payload.from[0]},${e.payload.from[1]}) → (${e.payload.to[0]},${e.payload.to[1]})`
   }
@@ -76,8 +84,13 @@ function eventText(e) {
   <div class="agent-pane">
     <div
       class="agent-header"
+      role="button"
+      tabindex="0"
+      :aria-label="`View details for ${agentId}`"
       style="cursor:pointer"
       @click="emit('select-agent', agentId)"
+      @keydown.enter="emit('select-agent', agentId)"
+      @keydown.space.prevent="emit('select-agent', agentId)"
     >
       <div class="agent-row-1">
         <span
@@ -122,6 +135,12 @@ function eventText(e) {
           {{ e.payload?.task || '' }}
         </div>
         <div
+          v-else-if="e.name === 'insight'"
+          class="ae-insight"
+        >
+          💡 {{ e.payload?.text || '' }}
+        </div>
+        <div
           v-else
           class="agent-event"
         >
@@ -131,8 +150,12 @@ function eventText(e) {
             v-if="e.reason"
             class="ae-reason"
           >{{ e.reason }}</span>
+          <ReasoningCard
+            v-if="e.structured?.situation"
+            :structured="e.structured"
+          />
           <div
-            v-if="e.reason"
+            v-if="e.reason && !e.structured?.situation"
             class="ae-tooltip"
           >
             {{ e.reason }}
@@ -172,6 +195,20 @@ function eventText(e) {
   margin-top: 0.15rem;
 }
 
+.message-badge {
+  background: #f59e0b;
+  color: #000;
+  border-radius: 10px;
+  padding: 1px 7px;
+  font-size: 0.72rem;
+  margin-left: 6px;
+  animation: badge-pulse 2s ease-in-out infinite;
+}
+@keyframes badge-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.6; }
+}
+
 .agent-name {
   font-size: 0.8rem;
   font-weight: bold;
@@ -208,6 +245,7 @@ function eventText(e) {
   font-size: 0.75rem;
   border-bottom: 1px solid var(--border-dim);
   display: flex;
+  flex-wrap: wrap;
   gap: 0.4rem;
   align-items: baseline;
   position: relative;
@@ -280,6 +318,18 @@ function eventText(e) {
   border: 1px solid rgba(224, 160, 64, 0.25);
   border-radius: 9999px;
   padding: 0.15rem 0.6rem;
+  margin: 0.2rem 0.1rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ae-insight {
+  font-size: 0.65rem;
+  color: #f59e0b;
+  background: rgba(245, 158, 11, 0.1);
+  border-left: 2px solid #f59e0b;
+  padding: 0.2rem 0.4rem;
   margin: 0.2rem 0.1rem;
   white-space: nowrap;
   overflow: hidden;

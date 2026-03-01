@@ -1,8 +1,279 @@
 # Changelog
 
+## [0.5.0](https://github.com/mhack-agent-one/agent-one/compare/v0.4.0...v0.5.0) (2026-03-01)
+
+
+### Features
+
+* add environmental hazards — ice mountains and air geysers ([#220](https://github.com/mhack-agent-one/agent-one/issues/220)) ([f36cbdd](https://github.com/mhack-agent-one/agent-one/commit/f36cbdd9886865c40738a7fafeba45db543283cd))
+* add SurrealDB training data logging for agent decision replay and fine-tuning ([#212](https://github.com/mhack-agent-one/agent-one/issues/212)) ([98b2d75](https://github.com/mhack-agent-one/agent-one/commit/98b2d75ebaadcee2ae16f2b26c1b2a7d13d95883))
+* **ui:** add obstacle visualization to WorldMap SVG ([#221](https://github.com/mhack-agent-one/agent-one/issues/221)) ([36c9dfa](https://github.com/mhack-agent-one/agent-one/commit/36c9dfa50229778e404dd1580cd0ae6968bb2431))
+
+
+### Bug Fixes
+
+* **ci:** resolve 3 CI failures blocking all branches ([#216](https://github.com/mhack-agent-one/agent-one/issues/216)) ([eddcddd](https://github.com/mhack-agent-one/agent-one/commit/eddcdddea7a781ee3a9d755157e0f9fbb6ab637d))
+* correct SyntaxError in training_logger, improve logging, add tests ([#218](https://github.com/mhack-agent-one/agent-one/issues/218)) ([8adfe61](https://github.com/mhack-agent-one/agent-one/commit/8adfe61aa0a7aad0543408f2f6151b9ad3d7be9f))
+* resolve PR [#145](https://github.com/mhack-agent-one/agent-one/issues/145) runtime crashes in memory summarization ([b7642d1](https://github.com/mhack-agent-one/agent-one/commit/b7642d12ff7085f22ac695ed41276c006e9922a7))
+* resolve PR [#145](https://github.com/mhack-agent-one/agent-one/issues/145) runtime crashes in memory summarization ([#210](https://github.com/mhack-agent-one/agent-one/issues/210)) ([94e5914](https://github.com/mhack-agent-one/agent-one/commit/94e59141db2fb7d0a6c0542e3d68dd83be27889c))
+* resolve production site issues — PORT, SPA routing, WS initial state ([#219](https://github.com/mhack-agent-one/agent-one/issues/219)) ([a64700f](https://github.com/mhack-agent-one/agent-one/commit/a64700f1bbc9f9bad2268ecf906ac6dc0e77badd))
+* **tests:** add assertions to tests that verified nothing ([#142](https://github.com/mhack-agent-one/agent-one/issues/142)) ([8323908](https://github.com/mhack-agent-one/agent-one/commit/8323908815889655a0396a97f41097ca2b2329ee))
+* **ui:** guard AgentDetailModal against null properties ([#89](https://github.com/mhack-agent-one/agent-one/issues/89)) ([#217](https://github.com/mhack-agent-one/agent-one/issues/217)) ([2d73524](https://github.com/mhack-agent-one/agent-one/commit/2d7352475718d7204ce102a5495579371bf3342a))
+
+## [Unreleased]
+
+### Features
+
+* **world:** add environmental hazards — ice mountains (impassable terrain) and air geysers (cyclical eruptions) ([#106](https://github.com/mhack-agent-one/agent-one/pull/106))
+  - Mountains block agent movement; deterministic per-chunk generation (~0.8% per tile)
+  - Geysers cycle through idle → warning → erupting states; eruptions drain 10% battery from agents on the tile
+  - Origin area (|x|≤1, |y|≤1) kept clear of obstacles for safe agent spawning
+  - Fog-of-war filtering: obstacles only visible on revealed tiles
+  - `observe_rover()` includes nearby obstacles for LLM decision-making
+  - `is_obstacle_at()` public API for O(1) obstacle lookups via spatial index
+* **agent:** add hazard awareness to rover AI
+  - System prompt includes HAZARDS section explaining mountain/geyser rules
+  - `_build_context()` adds `== Hazards ==` section listing nearby obstacles with distance and state
+  - `_fallback_turn()` skips mountain-blocked directions when choosing random moves
+  - Geyser eruption events broadcast via WebSocket for real-time UI updates
+* **models:** add `ObstacleInfo` pydantic model and `nearby_obstacles` field on `RoverComputed`
+* **ui:** add obstacle visualization to WorldMap SVG
+  - Mountains rendered as blue-grey triangles; geysers as circles colored by state (idle/warning/erupting)
+  - Erupting geysers animate with a pulse effect
+  - `OBSTACLE_COLORS` constant for consistent styling
+  - Screen positions pre-computed via `visibleObstacles` computed property for rendering performance
+
+### Tests
+
+* **world:** add 15 obstacle tests covering generation, mountain blocking, geyser state machine, battery drain, snapshot filtering, origin protection, and deterministic seeding
+* **ui:** add 11 obstacle rendering tests covering mountain/geyser SVG output, color mapping, radius sizing, pulse animation class, mixed rendering, and empty state
+
+### Bug Fixes
+
+* **production:** fix Dockerfile to respect Railway `$PORT` env var — hardcoded `--port 4009` prevented Railway from routing traffic to the container
+* **production:** add SPA catch-all route for Vue Router history mode — direct navigation to `/app` returned 404 instead of serving the Vue app
+* **production:** send initial world state snapshot immediately on WebSocket connect — new clients no longer wait for the next agent tick to receive state
+* **config:** add production domain to default `cors_origins` to prevent CORS issues on fresh deploys
+
+### Tests
+
+* **production:** add tests for SPA fallback route, API route preservation, and WebSocket initial state
+
+### Bug Fixes
+
+* **training-logger:** fix critical `SyntaxError` in `_safe_json_str()` — `except TypeError, ValueError:` is invalid Python 3 syntax, changed to `except (TypeError, ValueError):` with `# fmt: skip` to prevent ruff from reverting
+* **agent:** upgrade training turn logging from `debug` to `warning` level for production observability
+
+### Tests
+
+* **training-logger:** add 7 new tests for `_safe_json_str` (4 tests) and `_build_turn_snapshot` (3 tests) — total training tests now 18
+
+### Bug Fixes
+
+* **ci:** fix 3 CI failures blocking all branches — remove broken `training_logger` import, fix `client` variable scoping in narrator streaming, apply `ruff format` to 5 unformatted files
+* **narrator:** fix `UnboundLocalError` in `_generate_text_streaming()` — remove dead duplicate code block, add proper `client = self._get_mistral()` in Mistral branch
+* **tests:** fix `test_generate_text_streaming_mistral_by_default` mock to use `AsyncMock` with `stream_async`
+
+### Bug Fixes
+
+* **ui:** guard AgentDetailModal against null `mission`, `visited`, `position`, and `battery` properties ([#89](https://github.com/mhack-agent-one/agent-one/issues/89))
+  - `position()` and `batteryPct()` now return `'?'` when data is missing instead of crashing
+  - Prevents `Cannot read properties of undefined` runtime errors for station agent or agents between missions
+
+### Testing
+
+* **ui:** add Vitest + @vue/test-utils test infrastructure with 15 tests for AgentDetailModal null safety
+* **ci:** add `npm run test` step to `ui-lint-build` job
+
+### Documentation
+
+* **roadmap:** update ROADMAP.md milestone checkboxes to reflect current implementation state ([#74](https://github.com/mhack-agent-one/agent-one/issues/74))
+  - M0: mark protocol types and BaseAgent as done
+  - M2: split station tools (charge_agent ✅, broadcast_alert ✅, allocate_power ❌), fix tool names
+  - M3: mark all Drone items as done, correct tool names (`scan`, `move`, `notify`)
+  - M4: mark voice commands as done (Voxtral STT)
+  - M5: mark pre-seeded world, UI polish, LLM fallback, cancel as done
+  - Stretch Voice: mark all three items done (TTS, STT, narrator voices)
+  - Stretch Visual UI: add reasoning panel, comm visualization, landing page
+  - Dependencies: update Python 3.12+ → 3.14+, pip → uv, add Node.js 24+, ElevenLabs, SurrealDB
+
+### Lessons Learned
+
+* Never merge PRs that import modules from unmerged feature branches
+* Always run `ruff format` before committing — enforce via pre-commit hook
+* Review HuggingFace provider additions carefully for duplicate code blocks and proper if/else scoping
+
+## [0.4.0](https://github.com/mhack-agent-one/agent-one/compare/v0.3.0...v0.4.0) (2026-03-01)
+
+
+### Features
+
+* add HuggingFace Inference API as alternative LLM provider ([#182](https://github.com/mhack-agent-one/agent-one/issues/182)) ([937e572](https://github.com/mhack-agent-one/agent-one/commit/937e572570abb845804bddd9a17fa5789159deba))
+* add landing page with i18n, routing, and Three.js Mars globe ([#206](https://github.com/mhack-agent-one/agent-one/issues/206)) ([e174c49](https://github.com/mhack-agent-one/agent-one/commit/e174c49f71a644bd00fff42fea5f62532821760b))
+
+
+### Bug Fixes
+
+* **agent:** fix PR #145 memory summarization crashes — `self.rover_id` → `self.agent_id` (5 places), `broadcaster.broadcast()` → `broadcaster.send()` ([#210](https://github.com/mhack-agent-one/agent-one/issues/210))
+* address remaining bugs from stale PRs ([#110](https://github.com/mhack-agent-one/agent-one/issues/110), [#152](https://github.com/mhack-agent-one/agent-one/issues/152), [#81](https://github.com/mhack-agent-one/agent-one/issues/81), [#78](https://github.com/mhack-agent-one/agent-one/issues/78)) ([#211](https://github.com/mhack-agent-one/agent-one/issues/211)) ([755e227](https://github.com/mhack-agent-one/agent-one/commit/755e2274b4f3a10e80c0de827066dc75ddc3a005))
+* fix remaining charge_rover references to charge_agent ([#68](https://github.com/mhack-agent-one/agent-one/issues/68)) ([8afa9f3](https://github.com/mhack-agent-one/agent-one/commit/8afa9f3639e180022d93280481659a02dc0f8731))
+* fix remaining charge_rover references to charge_agent ([#68](https://github.com/mhack-agent-one/agent-one/issues/68)) ([a4bbebe](https://github.com/mhack-agent-one/agent-one/commit/a4bbebe0e08d3f65b824c6a76afe5e70f9aab60f))
+* **narrator:** use async streaming to prevent event loop blocking ([#203](https://github.com/mhack-agent-one/agent-one/issues/203)) ([cbe5b7b](https://github.com/mhack-agent-one/agent-one/commit/cbe5b7ba9300b6a4dfd79f4370d81c1381670ae3))
+* **ui:** preserve event log and simulation state on WebSocket reconnect ([#72](https://github.com/mhack-agent-one/agent-one/issues/72)) ([#209](https://github.com/mhack-agent-one/agent-one/issues/209)) ([14e8f0a](https://github.com/mhack-agent-one/agent-one/commit/14e8f0a81ba636ead1c62bc2c7a02cecf9d15979)), closes [#87](https://github.com/mhack-agent-one/agent-one/issues/87)
+* use Settings.drone_turn_interval_seconds instead of hardcoded 2.0 ([#98](https://github.com/mhack-agent-one/agent-one/issues/98)) ([#208](https://github.com/mhack-agent-one/agent-one/issues/208)) ([51f29ea](https://github.com/mhack-agent-one/agent-one/commit/51f29eadf663f8c1887c174ea00e000bb6922dde))
+
+## [0.3.0](https://github.com/mhack-agent-one/agent-one/compare/v0.2.0...v0.3.0) (2026-03-01)
+
+
+### Features
+
+* add landing page with i18n, Vue Router, and Three.js Mars globe ([#206](https://github.com/mhack-agent-one/agent-one/pull/206)) ([e174c49](https://github.com/mhack-agent-one/agent-one/commit/e174c49)) — 11 landing components, vue-i18n v11 (10 locales), lazy-loaded routes, useRevealOnScroll composable, scoped CSS tokens
+* add agent memory & learning system (Feature F) ([4b32a9d](https://github.com/mhack-agent-one/agent-one/commit/4b32a9d37512c00d98059f9eea22bb2b506a8ca7))
+* add agent reasoning transparency panel (Feature C) ([64f333b](https://github.com/mhack-agent-one/agent-one/commit/64f333b8439458f8ada0208c6a8b233041df8360))
+* add live inter-agent communication (Feature A) ([#150](https://github.com/mhack-agent-one/agent-one/issues/150)) ([cf0ba69](https://github.com/mhack-agent-one/agent-one/commit/cf0ba69dbad11743649b91e8c15dbb8ff25046bf))
+* add Station Reactive Intelligence (Feature E) ([638fcbc](https://github.com/mhack-agent-one/agent-one/commit/638fcbcee18d238990cf0e58bdb15ea78e1beb7d))
+* add world-data fine-tuning pipeline for continuous model improvement ([80cd54c](https://github.com/mhack-agent-one/agent-one/commit/80cd54c95ff81f67b79c59a41d3ab88efa8877ed))
+* add world-data fine-tuning pipeline for continuous model improvement ([707d84c](https://github.com/mhack-agent-one/agent-one/commit/707d84c73d2009316e12fb7fb799de45977dea46))
+* Agent Memory & Learning (Feature F) ([c7a1d06](https://github.com/mhack-agent-one/agent-one/commit/c7a1d06a949a111b57783dc007e24388e79c59ad))
+* Agent Reasoning Transparency Panel (Feature C) ([24145b9](https://github.com/mhack-agent-one/agent-one/commit/24145b95d11713ecf2b21e46b81111b864e05eec))
+* Station Reactive Intelligence (Feature E) — periodic LLM evaluation & coordination ([1363a90](https://github.com/mhack-agent-one/agent-one/commit/1363a90b46cf58f84a42f152d75cdb5be0a960c3))
+* **ui:** add communication visualization on map ([#126](https://github.com/mhack-agent-one/agent-one/issues/126)) ([72bfd50](https://github.com/mhack-agent-one/agent-one/commit/72bfd50a54d562a5be418d827ce966a2cb059670))
+* **voice:** add /api/voice-command endpoint with Voxtral transcription and LLM command parsing ([#191](https://github.com/mhack-agent-one/agent-one/issues/191)) ([ebfe37f](https://github.com/mhack-agent-one/agent-one/commit/ebfe37f0ffbc9119e1786cbd94aa2bfac3d5f9b4))
+
+
+### Bug Fixes
+
+* **config:** use configurable `drone_turn_interval_seconds` instead of hardcoded 2.0 ([#98](https://github.com/mhack-agent-one/agent-one/issues/98))
+* add thread-safe guards to Broadcaster disconnect/send ([#100](https://github.com/mhack-agent-one/agent-one/issues/100)) ([09e106a](https://github.com/mhack-agent-one/agent-one/commit/09e106a080bd34a9759d35bb5fa579dc94826c86))
+* add thread-safe guards to Broadcaster disconnect/send ([#100](https://github.com/mhack-agent-one/agent-one/issues/100)) ([e45c809](https://github.com/mhack-agent-one/agent-one/commit/e45c80920edf667c23cc0a2d78034603f8152e4b))
+* **ci:** apply ruff format to 7 unformatted files to fix server-lint ([#185](https://github.com/mhack-agent-one/agent-one/issues/185)) ([aa3f1a3](https://github.com/mhack-agent-one/agent-one/commit/aa3f1a36d4fad26c980a4ee0c9645d4425423cd0))
+* **config:** add pydantic Field validation for ports and intervals ([f5d4502](https://github.com/mhack-agent-one/agent-one/commit/f5d4502d424a06c0cb4c325f61ee83cd2a99d455))
+* **config:** add pydantic Field validation for ports and intervals ([4d456f1](https://github.com/mhack-agent-one/agent-one/commit/4d456f14f0aa809c88370007c960281bb72c94df)), closes [#119](https://github.com/mhack-agent-one/agent-one/issues/119)
+* **docker:** add PYTHONUNBUFFERED and PYTHONDONTWRITEBYTECODE env vars ([#180](https://github.com/mhack-agent-one/agent-one/issues/180)) ([0936d2c](https://github.com/mhack-agent-one/agent-one/commit/0936d2c48723e48276096309bf727b8b89cdc3f7))
+* **docker:** add PYTHONUNBUFFERED and PYTHONDONTWRITEBYTECODE env vars ([#180](https://github.com/mhack-agent-one/agent-one/issues/180)) ([45567f7](https://github.com/mhack-agent-one/agent-one/commit/45567f75cefc625996fd5128dc429d00cf1a6efc))
+* ensure WebSocket disconnect cleanup via finally block ([#101](https://github.com/mhack-agent-one/agent-one/issues/101)) ([a195262](https://github.com/mhack-agent-one/agent-one/commit/a195262efb9c6324cdb4b2c1d05454fae5a6e23b))
+* ensure WebSocket disconnect cleanup via finally block ([#101](https://github.com/mhack-agent-one/agent-one/issues/101)) ([09d31da](https://github.com/mhack-agent-one/agent-one/commit/09d31da390b9a7ca345ab26c6584ebaa0c74e7ea))
+* guard _random_free_pos against infinite loop ([#118](https://github.com/mhack-agent-one/agent-one/issues/118)) ([d663924](https://github.com/mhack-agent-one/agent-one/commit/d66392467e7a8e05dbf4a67a0cbd1d8c8ca932ed))
+* guard _random_free_pos against infinite loop ([#118](https://github.com/mhack-agent-one/agent-one/issues/118)) ([ccc2af4](https://github.com/mhack-agent-one/agent-one/commit/ccc2af416c36f8a7eab77960338c56e499635bde))
+* harden Dockerfile with non-root user, pinned uv, and HEALTHCHECK ([#117](https://github.com/mhack-agent-one/agent-one/issues/117)) ([520ba45](https://github.com/mhack-agent-one/agent-one/commit/520ba4569d53c5d0beedfadc44a22d6d6252917a))
+* harden Dockerfile with non-root user, pinned uv, and HEALTHCHECK ([#117](https://github.com/mhack-agent-one/agent-one/issues/117)) ([c846bde](https://github.com/mhack-agent-one/agent-one/commit/c846bdea89f7e295017f8e19e080d734213089c9))
+* remove legacy GRID_W/GRID_H boundary checks from rover _build_context() ([085c7b2](https://github.com/mhack-agent-one/agent-one/commit/085c7b2417e50e51556765241b46facff45689fe)), closes [#172](https://github.com/mhack-agent-one/agent-one/issues/172)
+* remove legacy GRID_W/GRID_H boundary checks from rover context ([#172](https://github.com/mhack-agent-one/agent-one/issues/172)) ([0bfffe1](https://github.com/mhack-agent-one/agent-one/commit/0bfffe1eec207d3559b7216c01a9db26ccdd263f))
+* replace f-string logging and print() with lazy logger ([#134](https://github.com/mhack-agent-one/agent-one/issues/134), [#135](https://github.com/mhack-agent-one/agent-one/issues/135)) ([2b2be67](https://github.com/mhack-agent-one/agent-one/commit/2b2be673d6d8ce51be87cb9c87fbb17e09bcd716))
+* replace f-string logging and print() with lazy logger ([#134](https://github.com/mhack-agent-one/agent-one/issues/134), [#135](https://github.com/mhack-agent-one/agent-one/issues/135)) ([36307ac](https://github.com/mhack-agent-one/agent-one/commit/36307ac1401156b5946dbcc7d0eb916730b4d183))
+* **tests:** add tearDown to 5 test classes to prevent state leakage ([4a3fa86](https://github.com/mhack-agent-one/agent-one/commit/4a3fa866bec3887b9c562c7c24f6d3fd30822297))
+* **tests:** add tearDown to 5 test classes to prevent state leakage ([#174](https://github.com/mhack-agent-one/agent-one/issues/174)) ([ce07ce7](https://github.com/mhack-agent-one/agent-one/commit/ce07ce7ea324e7f131fb3c9ac8068967c607b61c))
+* **tests:** replace blocking sleep with asyncio.sleep, add file leak guard ([#162](https://github.com/mhack-agent-one/agent-one/issues/162)) ([8c2e1c3](https://github.com/mhack-agent-one/agent-one/commit/8c2e1c3245313f615f3994f31b8570b30a8a30e4))
+* **tests:** replace blocking sleep with asyncio.sleep, add file leak guard ([#162](https://github.com/mhack-agent-one/agent-one/issues/162)) ([86cbda3](https://github.com/mhack-agent-one/agent-one/commit/86cbda3556588d380b6b1575761d4800acb647ac))
+* **ui:** add cleanup for audio, toast timers, and animation timers on unmount ([#94](https://github.com/mhack-agent-one/agent-one/issues/94)) ([7ff9fd6](https://github.com/mhack-agent-one/agent-one/commit/7ff9fd6cf8edc167477bac0cf0cfa646b4c6f3d2))
+* **ui:** add cleanup for audio, toast timers, and animation timers on unmount ([#94](https://github.com/mhack-agent-one/agent-one/issues/94)) ([92f61d0](https://github.com/mhack-agent-one/agent-one/commit/92f61d0c66da71241137fc8d3d3c46032686baa9))
+* **ui:** add error handling for WS JSON.parse and fetch calls ([#95](https://github.com/mhack-agent-one/agent-one/issues/95)) ([166525a](https://github.com/mhack-agent-one/agent-one/commit/166525ad8132f66c50a8945e322f46087cee90ca))
+* **ui:** add error handling for WS JSON.parse and fetch calls ([#95](https://github.com/mhack-agent-one/agent-one/issues/95)) ([93ba50b](https://github.com/mhack-agent-one/agent-one/commit/93ba50b024b359f6a7fb5ac23acbc215c818ba3c))
+* **ui:** add error handling to SimulationPage fetch calls ([5325720](https://github.com/mhack-agent-one/agent-one/commit/532572062c0962cbed99f3f07adddcd6b692d78b))
+* **ui:** add error handling to SimulationPage fetch calls ([1ff2d34](https://github.com/mhack-agent-one/agent-one/commit/1ff2d34e3fa13a3c2e9eda6eda892c16877a92ba)), closes [#121](https://github.com/mhack-agent-one/agent-one/issues/121)
+* **ui:** add exponential backoff to WebSocket reconnect ([68b8d73](https://github.com/mhack-agent-one/agent-one/commit/68b8d732ff50fde1e73ae4f10e6a74e5b8b26a5f))
+* **ui:** add exponential backoff to WebSocket reconnect ([bfd93ed](https://github.com/mhack-agent-one/agent-one/commit/bfd93ed3e7ff8d63e2274222eebf21df0b620498)), closes [#122](https://github.com/mhack-agent-one/agent-one/issues/122)
+* **ui:** add flex-wrap and mobile breakpoint to MissionBar ([#163](https://github.com/mhack-agent-one/agent-one/issues/163)) ([7fe89e7](https://github.com/mhack-agent-one/agent-one/commit/7fe89e7389dc4dd05729440936c87bd3045f1daf))
+* **ui:** add flex-wrap and mobile breakpoint to MissionBar ([#163](https://github.com/mhack-agent-one/agent-one/issues/163)) ([268d721](https://github.com/mhack-agent-one/agent-one/commit/268d721c44be1feab2c4aa286e4d497cf4fcf3fe))
+* **ui:** add missing accessibility attributes across 5 components ([c7e25e7](https://github.com/mhack-agent-one/agent-one/commit/c7e25e7ea65ef48fdc39f5583983d2a4af44b5c3))
+* **ui:** add missing accessibility attributes across 5 components ([01d6111](https://github.com/mhack-agent-one/agent-one/commit/01d61111474cf5341495698d6863cf962204c041)), closes [#140](https://github.com/mhack-agent-one/agent-one/issues/140)
+* **ui:** batch accessibility, perf, and reactivity fixes ([#164](https://github.com/mhack-agent-one/agent-one/issues/164)) ([bf3cb8f](https://github.com/mhack-agent-one/agent-one/commit/bf3cb8fbe4ca48b4aa6a27c79cf15686d3ea49b4))
+* **ui:** batch accessibility, perf, and reactivity fixes ([#164](https://github.com/mhack-agent-one/agent-one/issues/164)) ([fb42308](https://github.com/mhack-agent-one/agent-one/commit/fb423088bb7387ab93552ed530fbb556acadc6d3))
+* **ui:** floor camera coordinates in WorldMap tile computation ([4f7de25](https://github.com/mhack-agent-one/agent-one/commit/4f7de25971917e68217d00a2b0cd876a658a7af6))
+* **ui:** floor camera coordinates in WorldMap tile computation ([3097dfd](https://github.com/mhack-agent-one/agent-one/commit/3097dfda8b47a1400191486799ca9abc87154544)), closes [#120](https://github.com/mhack-agent-one/agent-one/issues/120)
+* **ui:** guard AgentDetailModal against null mission and visited ([#157](https://github.com/mhack-agent-one/agent-one/issues/157)) ([1554b7b](https://github.com/mhack-agent-one/agent-one/commit/1554b7bb8414352a4c5b90eca1a49ee4af8d3869))
+* **ui:** guard AgentDetailModal against null mission and visited ([#157](https://github.com/mhack-agent-one/agent-one/issues/157)) ([c524165](https://github.com/mhack-agent-one/agent-one/commit/c52416507eb9cfdffcd3a368496aba8d42829cb1))
+
+
+### Performance Improvements
+
+* **ui:** stop WorldMap rAF loop when camera is idle ([#158](https://github.com/mhack-agent-one/agent-one/issues/158)) ([f463f1d](https://github.com/mhack-agent-one/agent-one/commit/f463f1d093b4b4bbe148366f971456e9e3f1638d))
+* **ui:** stop WorldMap rAF loop when camera is idle ([#158](https://github.com/mhack-agent-one/agent-one/issues/158)) ([d887a91](https://github.com/mhack-agent-one/agent-one/commit/d887a9198c06e22493e84efbef077d70d6502672))
+* use spatial hash for WorldMap tileConcentration — O(tiles+stones) ([0ba0157](https://github.com/mhack-agent-one/agent-one/commit/0ba015726ca498a821a86a0602d88bbe08388d59)), closes [#141](https://github.com/mhack-agent-one/agent-one/issues/141)
+* **world:** add spatial index for O(1) stone lookups ([38a5075](https://github.com/mhack-agent-one/agent-one/commit/38a50752b2e145c48aa652716e3b69dbea620d2f))
+* **world:** add spatial index for O(1) stone lookups ([#176](https://github.com/mhack-agent-one/agent-one/issues/176)) ([fbf4b70](https://github.com/mhack-agent-one/agent-one/commit/fbf4b70502a2f289312412f2fc52fdfc814bc97b))
+* WorldMap tileConcentration spatial hash — O(tiles+stones) ([bf64b8b](https://github.com/mhack-agent-one/agent-one/commit/bf64b8bc49c5c9500fc7c54c3262f061b6ab4d84))
+
+## [Unreleased]
+
+### Fixed
+- **WebSocket reconnect (#72)**: Event log and simulation state are no longer reset on reconnect — only on initial page load. Simulation reset and event clearing now guarded by `isFirstConnect` flag in `useWebSocket.js` and `SimulationPage.vue`
+
+### Added
+- **Agent Reasoning Transparency Panel (Feature C)**: Structured reasoning output from LLM agents with visual card display
+- **Training Data Logging**: Comprehensive SurrealDB-backed training data collection system that records every agent decision, world state evolution, and session parameter for replay, fine-tuning, and analysis
+  - `TrainingLogger` class (`training_logger.py`) with SurrealDB v3 persistence — session lifecycle, turn logging, event logging, periodic world snapshots
+  - Pydantic models (`training_models.py`): `TrainingSession`, `TrainingTurn`, `TrainingEvent`, `TrainingWorldSnapshot`, `TurnWorldSnapshot`, `SessionConfig`, `SessionResult`
+  - 4 SurrealDB tables: `training_session`, `training_turn`, `training_event`, `training_world_snapshot` — auto-created via `init_schema()`
+  - Integrated into `Host.start()`/`Host.stop()` for session lifecycle, `broadcast()` for event logging
+  - Integrated into `RoverLoop.tick()`, `DroneLoop.tick()`, `StationLoop.tick()` for per-agent turn logging with world snapshots
+  - 6 REST API endpoints: list sessions, get session detail, get turns/events/snapshots, export session as JSONL
+  - Config: `training_snapshot_interval` (default 10 ticks between world snapshots)
+  - All training code wrapped in `try/except` to never break simulation
+  - 11 unit tests, 441 total tests passing
+
+### Fixed
+- **Charge event naming (#68)**: Fix remaining `charge_rover` reference in StationLoop.INTERESTING_EVENTS to `charge_agent`; fix narrator comment
+- **Broadcaster safety guards (#100)**: Guard `disconnect()` against double-disconnect `ValueError`, iterate copy in `send()` to prevent mutation-during-iteration, guard dead connection cleanup with membership check. 6 new unit tests.
+- **Infinite loop guard in `_random_free_pos` (#118)**: Replace unbounded `while True` with bounded random attempts (`CHUNK_SIZE²×2`), deterministic linear scan fallback, and last-resort origin return with warning log. Added 6 unit tests.
+- **Logging hygiene (#134, #135)**: Replace f-string formatting in `broadcast.py` logger calls with lazy `%s` formatting; replace bare `print()` in `db.py` with proper `logger.info()`/`logger.warning()` using lazy formatting
+  - Compressed `STRUCTURED_REASONING_PROMPT` appended to rover and drone `_build_context()` — agents output SITUATION/OPTIONS/DECISION/RISK fields
+  - `_parse_structured_thinking()` parser extracts structured fields with graceful fallback defaults
+  - Risk-level logging: unrecognized risk values logged at DEBUG before defaulting to "low"
+  - `ReasoningCard.vue` component: risk-based color coding (green/amber/red), word-boundary option matching, fade-in animation
+  - `AgentPane.vue` integration: structured reasoning card shown when available, raw text tooltip fallback otherwise
+  - 6 unit tests for parser (full parse, defaults, partial, risk normalization, empty input, invalid risk warning)
+- **Agent Memory & Learning (Feature F)**: Persistent strategic memory system where agents periodically summarize exploration memories into strategic insights via LLM
+  - `summarize_memories()` generates summary prompts from agent memories (triggers when >= 6 memories)
+  - `record_strategic_insight()` stores insights with sliding window (capped at 5)
+  - Strategic insights injected into rover and drone `_build_context()` for LLM reasoning
+  - Auto-summarization every 20 ticks via `mistral-small-latest`
+  - Insight events broadcast via WebSocket with 💡 icon and gold styling
+  - Strategic Insights section in Agent Detail Modal
+  - 9 unit tests for all memory functions
+
 All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
+
+## [Unreleased]
+
+### Added
+- **Live Inter-Agent Communication (Feature A)**: Drone scan intel wired into rover LLM context, inter-agent message relay system, auto-relay of high-concentration scans.
+
+### Fixed
+- **narrator:** use async streaming (`stream_async`) to prevent event loop blocking ([#92](https://github.com/mhack-agent-one/agent-one/issues/92))
+  - Replaced synchronous `client.chat.stream()` with `await client.chat.stream_async()`
+  - Changed `for event in stream:` to `async for event in stream:`
+  - Added empty-choices guard to handle heartbeat/usage-only stream events
+  - Added 16 regression tests covering async streaming, chunk ordering, error handling
+- `world.py`: `AGENT_MESSAGES`, `send_agent_message()`, `get_unread_messages()`, `get_drone_intel_for_rover()`
+- `agent.py`: Rover context injects drone intel hotspots and incoming messages; DroneLoop auto-relays scans
+- UI: `intel_relay` event rendering, message badge on agent panes
+- 10 new inter-agent communication tests
+
+* **station-loop:** Station Reactive Intelligence (Feature E) — periodic LLM evaluation of field events with reactive coordination
+* **station-loop:** `StationLoop` BaseAgent subclass with 20s evaluation interval and event buffering (max 50)
+* **station:** `StationAgent.evaluate_situation()` method for periodic LLM-based field assessment
+* **models:** `StationContext` extended with `tick`, `mission_status`, `collected_quantity`, `target_quantity`
+* **host:** interesting field events (dig, scan, notify, etc.) automatically routed to station loop
+* **tests:** 18 new tests (7 station + 11 host integration)
+* **voice:** add `/api/voice-command` endpoint — accepts audio uploads, transcribes via Mistral Voxtral, parses structured commands (recall_rover, abort_mission, pause/resume, etc.) via LLM, routes through Host, and broadcasts events via WebSocket
+* **voice:** new `VoiceCommandProcessor` class with lazy Mistral client, Mars domain context bias terms, and JSON command extraction
+* **voice:** add `voice_transcription_model` and `voice_command_model` settings to `config.py`
+* **deps:** add `python-multipart>=0.0.9` for `UploadFile` support
+* **tests:** 32 comprehensive tests for voice module (transcription, command parsing, pipeline, endpoint)
+* **fine-tuning:** world-data fine-tuning pipeline — captures all LLM interactions (rover, drone, station, narrator) as JSONL training data for Mistral fine-tuning
+* **fine-tuning:** `TrainingDataCollector` singleton records system prompts, user messages, assistant responses with tool_calls across simulation generations
+* **fine-tuning:** `FineTuningManager` wraps Mistral SDK for file upload, job creation/monitoring/cancellation, and model activation
+* **fine-tuning:** 7 REST endpoints for fine-tuning lifecycle management (`/fine-tuning/status`, `/fine-tuning/data`, `/fine-tuning/jobs` CRUD, `/fine-tuning/jobs/{id}/activate`)
+* **fine-tuning:** model switching support — activate fine-tuned models at runtime for agents and narrator
+* **world:** `generation_id` tracking across simulation resets for multi-generation training data
+* **config:** 4 new settings: `training_data_enabled`, `training_data_dir`, `fine_tuned_agent_model`, `fine_tuned_narration_model`
+
+### Fixed
+
+* **ci:** apply ruff format to 7 unformatted files (agent.py, main.py, station.py, world.py, test_narrator.py, test_station.py, test_world.py) to fix server-lint CI failure
 
 ## [Unreleased] — Abandoned Buildings & Vehicles
 
@@ -38,6 +309,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Features
 
+* **ui:** add communication visualization on map — animated SVG lines between agents on comm events (intel relay, command, alert, notify) with 3s fade-out and traveling pulse dots
 * add ABORT mission feature. ([05015a6](https://github.com/mhack-agent-one/agent-one/commit/05015a674767facad137062ebdaf487702844e6f))
 * add drone scout agent with aerial scanning capability ([1c1ab77](https://github.com/mhack-agent-one/agent-one/commit/1c1ab77788c9a147a96496ec35636f98a4adc7f5))
 * add ElevenLabs AI narration for real-time Mars mission commentary ([1b4d19a](https://github.com/mhack-agent-one/agent-one/commit/1b4d19a6723b7f7c32437117027ef141ea4eb5d0))
@@ -150,6 +422,24 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added (HuggingFace Integration)
+
+- **HuggingFace Inference API** as alternative LLM provider alongside Mistral — agents can now use models hosted on HuggingFace via config-driven provider selection (`LLM_PROVIDER=huggingface`)
+- Config fields: `HUGGING_FACE_READ`, `HUGGING_FACE_WRITE`, `LLM_PROVIDER`, `HUGGINGFACE_MODEL`, `HUGGINGFACE_NARRATION_MODEL`
+- `HuggingFaceRoverReasoner` class inheriting from `MistralRoverReasoner` with HF `InferenceClient`
+- `HuggingFaceDroneAgent` class inheriting from `DroneAgent` with HF `InferenceClient`
+- `RoverHuggingFaceLoop` and `DroneHuggingFaceLoop` agent loop classes
+- AGENT_MAP entries: `"rover-huggingface"`, `"drone-huggingface"`
+- Station agent HuggingFace support via `_get_hf_client()` and provider-aware `_call_llm()`
+- Narrator HuggingFace support via `_get_huggingface()` with both streaming and non-streaming text generation
+- `huggingface-hub>=0.25.0` dependency added to `server/pyproject.toml`
+- Comprehensive test suite in `test_huggingface.py` (37 tests) covering all HuggingFace agent variants
+- Updated `env.sample` with HuggingFace environment variables
+### Changed
+
+- **`.dockerignore` expanded**: Updated `.dockerignore` with comprehensive exclusions — `.env*`, `__pycache__`, `.pytest_cache`, `.mypy_cache`, IDE files, `.github`, specs, tests, and OS files while preserving `README.md` via negation rule ([#75](https://github.com/mhack-agent-one/agent-one/issues/75))
+
+
 ### Added (UI Polish Round 3 — Phases 3–8)
 
 - **Persisted zoom preference**: Zoom level saved to `localStorage` via `usePreferences` composable; survives page refresh
@@ -158,6 +448,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **Toast dedup count badge**: Identical messages within 5s window show `×N` count badge instead of duplicating
 - **Toast timer management**: Dedup resets dismiss timer; evicted toasts clean up their timers
 - **EventLog skeleton state**: 6 pulsing skeleton rows with staggered animation delays shown before WebSocket data arrives
+
+### Fixed
+
+- Added error handling for WebSocket JSON.parse and fetch API calls in UI ([#95](https://github.com/mhack-agent-one/agent-one/issues/95))
 
 ### Fixed (Zoom Scaling)
 
@@ -267,6 +561,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+* **station-loop:** Station Reactive Intelligence (Feature E) — periodic LLM evaluation of field events with reactive coordination
+* **station-loop:** `StationLoop` BaseAgent subclass with 20s evaluation interval and event buffering (max 50)
+* **station:** `StationAgent.evaluate_situation()` method for periodic LLM-based field assessment
+* **models:** `StationContext` extended with `tick`, `mission_status`, `collected_quantity`, `target_quantity`
+* **host:** interesting field events (dig, scan, notify, etc.) automatically routed to station loop
+* **tests:** 18 new tests (7 station + 11 host integration)
 - **Infinite Grid with Viewport & Minimap**: World is no longer a fixed 20×20 grid
   - Chunk-based procedural generation: 16×16 tile chunks generated lazily as agents explore
   - Seeded/deterministic world: each chunk uses `sha256(world_seed:cx:cy)` for consistent generation
@@ -357,6 +657,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+* **station-loop:** Station Reactive Intelligence (Feature E) — periodic LLM evaluation of field events with reactive coordination
+* **station-loop:** `StationLoop` BaseAgent subclass with 20s evaluation interval and event buffering (max 50)
+* **station:** `StationAgent.evaluate_situation()` method for periodic LLM-based field assessment
+* **models:** `StationContext` extended with `tick`, `mission_status`, `collected_quantity`, `target_quantity`
+* **host:** interesting field events (dig, scan, notify, etc.) automatically routed to station loop
+* **tests:** 18 new tests (7 station + 11 host integration)
 - **`analyze` action**: reveals a stone's true type (core/basalt), costs 3% battery; dig/pickup now require prior analysis
 - **`analyze_ground` action**: reads ground concentration at current tile (0.0–1.0 indicating proximity to core deposits), costs 3% battery; readings stored in agent memory
 - **Concentration map**: computed from core positions using Gaussian falloff (`exp(-d²/σ²)`, σ=4.0), serialized in snapshots for UI access

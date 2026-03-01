@@ -24,9 +24,9 @@ def _mock_client_response(content=None, tool_calls=None):
     return response
 
 
-def _make_station_context():
+def _make_station_context(**overrides):
     """Build a typed StationContext for testing."""
-    return StationContext(
+    defaults = dict(
         grid_w=20,
         grid_h=20,
         rovers=[
@@ -50,6 +50,8 @@ def _make_station_context():
             StoneInfo(type="unknown", position=[10, 10]),
         ],
     )
+    defaults.update(overrides)
+    return StationContext(**defaults)
 
 
 class TestStationDefine(unittest.TestCase):
@@ -101,6 +103,88 @@ class TestStationDefine(unittest.TestCase):
         self.assertEqual(len(result["actions"]), 1)
         self.assertEqual(result["actions"][0]["name"], "broadcast_alert")
         self.assertEqual(result["actions"][0]["params"]["message"], "Mission start")
+
+
+class TestDefineMissionDroneHint(unittest.TestCase):
+    @patch("app.station.settings")
+    def test_multi_drone_hint_in_prompt(self, mock_settings):
+        mock_settings.mistral_api_key = "test-key"
+        station = StationAgent()
+        mock_client = MagicMock()
+        station._client = mock_client
+
+        mock_client.chat.complete.return_value = _mock_client_response(
+            content="Assigning missions.", tool_calls=[]
+        )
+
+        ctx = StationContext(
+            grid_w=20,
+            grid_h=20,
+            rovers=[
+                RoverSummary(
+                    id="drone-1",
+                    agent_type="drone",
+                    position=[0, 0],
+                    battery=1.0,
+                    mission=AgentMission(objective="", plan=[]),
+                ),
+                RoverSummary(
+                    id="drone-2",
+                    agent_type="drone",
+                    position=[0, 0],
+                    battery=1.0,
+                    mission=AgentMission(objective="", plan=[]),
+                ),
+            ],
+            stones=[],
+        )
+        station.define_mission(ctx)
+        call_args = mock_client.chat.complete.call_args
+        user_msg = call_args[1]["messages"][1]["content"]
+        self.assertIn("2 drones", user_msg)
+        self.assertIn("different sector", user_msg)
+
+
+class TestDefineMissionRoverDroneHint(unittest.TestCase):
+    @patch("app.station.settings")
+    def test_rover_drone_sector_hint_in_prompt(self, mock_settings):
+        mock_settings.mistral_api_key = "test-key"
+        station = StationAgent()
+        mock_client = MagicMock()
+        station._client = mock_client
+
+        mock_client.chat.complete.return_value = _mock_client_response(
+            content="Assigning missions.", tool_calls=[]
+        )
+
+        ctx = StationContext(
+            grid_w=20,
+            grid_h=20,
+            rovers=[
+                RoverSummary(
+                    id="rover-mistral",
+                    agent_type="rover",
+                    position=[0, 0],
+                    battery=1.0,
+                    mission=AgentMission(objective="", plan=[]),
+                ),
+                RoverSummary(
+                    id="drone-mistral",
+                    agent_type="drone",
+                    position=[0, 0],
+                    battery=1.0,
+                    mission=AgentMission(objective="", plan=[]),
+                ),
+            ],
+            stones=[],
+        )
+        station.define_mission(ctx)
+        call_args = mock_client.chat.complete.call_args
+        user_msg = call_args[1]["messages"][1]["content"]
+        self.assertIn("1 rover(s)", user_msg)
+        self.assertIn("1 drone(s)", user_msg)
+        self.assertIn("DIFFERENT sectors", user_msg)
+        self.assertIn("specific directions", user_msg)
 
 
 class TestStationHandleEvent(unittest.TestCase):
@@ -158,13 +242,13 @@ class TestParseToolCalls(unittest.TestCase):
         self.assertEqual(actions[0]["name"], "broadcast_alert")
         self.assertEqual(actions[0]["params"]["message"], "Storm incoming")
 
-    def test_charge_rover_parsed(self):
-        tool_calls = [_mock_tool_call("charge_rover", {"rover_id": "rover-mistral"})]
+    def test_charge_agent_parsed(self):
+        tool_calls = [_mock_tool_call("charge_agent", {"agent_id": "rover-mistral"})]
         actions = _parse_tool_calls(tool_calls)
 
         self.assertEqual(len(actions), 1)
-        self.assertEqual(actions[0]["name"], "charge_rover")
-        self.assertEqual(actions[0]["params"]["rover_id"], "rover-mistral")
+        self.assertEqual(actions[0]["name"], "charge_agent")
+        self.assertEqual(actions[0]["params"]["agent_id"], "rover-mistral")
 
     def test_multiple_tool_calls_parsed(self):
         tool_calls = [
@@ -196,15 +280,15 @@ class TestExecuteAction(unittest.TestCase):
         self.assertTrue(result["ok"])
         self.assertEqual(result["message"], "Storm incoming!")
 
-    def test_charge_rover_at_station(self):
+    def test_charge_agent_at_station(self):
         from app.world import world
 
         world.state["agents"]["rover-mistral"]["position"] = [0, 0]
         world.state["agents"]["rover-mistral"]["battery"] = 0.5
         result = execute_action(
             {
-                "name": "charge_rover",
-                "params": {"rover_id": "rover-mistral"},
+                "name": "charge_agent",
+                "params": {"agent_id": "rover-mistral"},
             }
         )
         self.assertTrue(result["ok"])
@@ -236,3 +320,111 @@ class TestBuildWorldSummary(unittest.TestCase):
         ctx = _make_station_context()
         summary = _build_world_summary(ctx)
         self.assertIn("Veins on map: 2", summary)
+
+    def test_context_includes_memory(self):
+        station = StationAgent()
+        station._client = MagicMock()
+        ctx = StationContext(
+            grid_w=20,
+            grid_h=20,
+            rovers=[],
+            stones=[],
+            memory=["Radio from drone-mistral at (5,5): Hotspot found, peak=0.85"],
+        )
+        context_text = station._build_context(ctx)
+        self.assertIn("Field Reports (memory)", context_text)
+        self.assertIn("Hotspot found, peak=0.85", context_text)
+
+    def test_summary_shows_agent_type(self):
+        ctx = StationContext(
+            grid_w=20,
+            grid_h=20,
+            rovers=[
+                RoverSummary(
+                    id="rover-mistral",
+                    agent_type="rover",
+                    position=[0, 0],
+                    battery=1.0,
+                    mission=AgentMission(objective="Explore", plan=[]),
+                ),
+                RoverSummary(
+                    id="drone-mistral",
+                    agent_type="drone",
+                    position=[5, 5],
+                    battery=0.8,
+                    mission=AgentMission(objective="Scan", plan=[]),
+                ),
+            ],
+            stones=[],
+        )
+        summary = _build_world_summary(ctx)
+        self.assertIn("rover-mistral (rover)", summary)
+        self.assertIn("drone-mistral (drone)", summary)
+
+
+class TestBuildWorldSummaryExtended(unittest.TestCase):
+    def test_summary_includes_tick(self):
+        ctx = _make_station_context(tick=42)
+        summary = _build_world_summary(ctx)
+        self.assertIn("Tick: 42", summary)
+
+    def test_summary_includes_mission_status(self):
+        ctx = _make_station_context(
+            tick=10, mission_status="completed", collected_quantity=5, target_quantity=5
+        )
+        summary = _build_world_summary(ctx)
+        self.assertIn("Mission status: completed", summary)
+        self.assertIn("5/5", summary)
+
+
+class TestStationEvaluate(unittest.TestCase):
+    def _make_agent(self):
+        return StationAgent.__new__(StationAgent)
+
+    def test_evaluate_returns_dict(self):
+        agent = self._make_agent()
+        ctx = _make_station_context(tick=10)
+        events = [{"name": "scan", "source": "drone", "payload": {"text": "ok"}}]
+        with unittest.mock.patch.object(
+            agent, "_call_llm", return_value={"thinking": "ok", "actions": []}
+        ) as m:
+            result = agent.evaluate_situation(ctx, events)
+        self.assertIn("thinking", result)
+        m.assert_called_once()
+
+    def test_evaluate_includes_tick_in_prompt(self):
+        agent = self._make_agent()
+        ctx = _make_station_context(tick=25)
+        events = [{"name": "dig", "source": "rover", "payload": {"text": "dug"}}]
+        with unittest.mock.patch.object(
+            agent, "_call_llm", return_value={"thinking": "", "actions": []}
+        ) as m:
+            agent.evaluate_situation(ctx, events)
+        prompt = m.call_args[0][0]
+        self.assertIn("Tick 25", prompt)
+
+    def test_evaluate_with_empty_events(self):
+        agent = self._make_agent()
+        ctx = _make_station_context(tick=5)
+        with unittest.mock.patch.object(
+            agent, "_call_llm", return_value={"thinking": "", "actions": []}
+        ) as m:
+            agent.evaluate_situation(ctx, [])
+        prompt = m.call_args[0][0]
+        self.assertIn("(no recent events)", prompt)
+
+
+class TestStationContextFields(unittest.TestCase):
+    def test_default_values(self):
+        ctx = StationContext(grid_w=10, grid_h=10, rovers=[], stones=[])
+        self.assertEqual(ctx.tick, 0)
+        self.assertEqual(ctx.mission_status, "in_progress")
+        self.assertEqual(ctx.collected_quantity, 0)
+        self.assertEqual(ctx.target_quantity, 100)
+
+    def test_custom_values(self):
+        ctx = _make_station_context(
+            tick=50, mission_status="completed", collected_quantity=10, target_quantity=10
+        )
+        self.assertEqual(ctx.tick, 50)
+        self.assertEqual(ctx.mission_status, "completed")

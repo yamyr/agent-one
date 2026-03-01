@@ -66,6 +66,14 @@ class PendingCommand(BaseModel):
     id: str = ""
 
 
+class ObstacleInfo(BaseModel):
+    """An environmental obstacle visible to the agent."""
+
+    position: list[int]
+    kind: str  # "mountain" or "geyser"
+    state: str = "idle"  # mountains: always "idle"; geysers: "idle" | "warning" | "erupting"
+
+
 class RoverComputed(BaseModel):
     """Derived fields for decision-making."""
 
@@ -75,6 +83,7 @@ class RoverComputed(BaseModel):
     visible_stones: list[str] = []
     pending_commands: list[PendingCommand] = []
     visible_structures: list[str] = []
+    nearby_obstacles: list[ObstacleInfo] = []
 
 
 class RoverContext(BaseModel):
@@ -88,6 +97,7 @@ class RoverContext(BaseModel):
 
 class RoverSummary(BaseModel):
     id: str
+    agent_type: str = "rover"
     position: list[int]
     battery: float
     mission: AgentMission
@@ -99,3 +109,8 @@ class StationContext(BaseModel):
     grid_h: int
     rovers: list[RoverSummary]
     stones: list[StoneInfo]
+    memory: list[str] = []
+    tick: int = 0
+    mission_status: str = "in_progress"
+    collected_quantity: int = 0
+    target_quantity: int = 100

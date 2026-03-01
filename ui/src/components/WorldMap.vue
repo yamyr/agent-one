@@ -1,7 +1,9 @@
 <script setup>
 import { computed, ref, watch, onMounted, onUnmounted } from 'vue'
 import { TILE_SIZE, VIEWPORT_W, VIEWPORT_H, VEIN_COLORS, VEIN_SIZES, SOLAR_PANEL_COLOR, SOLAR_PANEL_DEPLETED_COLOR, STRUCTURE_COLORS, STRUCTURE_LABELS, agentColor, revealRadius } from '../constants.js'
+import { TILE_SIZE, VIEWPORT_W, VIEWPORT_H, VEIN_COLORS, VEIN_SIZES, SOLAR_PANEL_COLOR, SOLAR_PANEL_DEPLETED_COLOR, OBSTACLE_COLORS, agentColor, revealRadius } from '../constants.js'
 import { usePreferences } from '../composables/usePreferences.js'
+import { useRevealedSet } from '../composables/useRevealedSet.js'
 
 const props = defineProps({
   worldState: {
@@ -15,6 +17,10 @@ const props = defineProps({
   followAgent: {
     type: String,
     default: null,
+  },
+  events: {
+    type: Array,
+    default: () => [],
   },
 })
 
@@ -32,6 +38,99 @@ const { prefs } = usePreferences()
 const ZOOM_MIN = 0.7
 const ZOOM_MAX = 2.2
 const ZOOM_STEP = 0.1
+
+// Communication line system
+const commLines = ref([])
+const COMM_LINE_DURATION = 3000
+const COMM_COLORS = {
+  relay: '#44ccaa',
+  command: '#cc8844',
+  alert: '#cc4444',
+  notify: '#4488cc',
+}
+let commRafId = null
+let lastEventCount = 0
+
+function getAgentScreenPos(agentId) {
+  if (!props.worldState) return null
+  const a = props.worldState.agents?.[agentId]
+  if (!a) return null
+  return worldToScreen(a.position[0], a.position[1])
+}
+
+function addCommLine(fromAgent, toAgent, type = 'relay') {
+  const fromPos = getAgentScreenPos(fromAgent)
+  const toPos = toAgent ? getAgentScreenPos(toAgent) : null
+  if (!fromPos) return
+  if (toAgent && !toPos) return
+
+  if (!toAgent) {
+    // Broadcast: draw lines to all other agents
+    for (const id of props.agentIds) {
+      if (id === fromAgent) continue
+      const pos = getAgentScreenPos(id)
+      if (!pos) continue
+      commLines.value.push({
+        fromAgent,
+        toAgent: id,
+        color: COMM_COLORS[type] || '#888',
+        opacity: 1.0,
+        createdAt: Date.now(),
+        type,
+      })
+    }
+    return
+  }
+
+  commLines.value.push({
+    fromAgent,
+    toAgent,
+    color: COMM_COLORS[type] || '#888',
+    opacity: 1.0,
+    createdAt: Date.now(),
+    type,
+  })
+}
+
+function updateCommLines() {
+  const now = Date.now()
+  commLines.value = commLines.value
+    .filter(line => now - line.createdAt < COMM_LINE_DURATION)
+    .map(line => ({
+      ...line,
+      opacity: Math.max(0, 1 - (now - line.createdAt) / COMM_LINE_DURATION),
+    }))
+  commRafId = requestAnimationFrame(updateCommLines)
+}
+
+const visibleCommLines = computed(() => {
+  if (!props.worldState) return []
+  return commLines.value.map(line => {
+    const from = getAgentScreenPos(line.fromAgent)
+    const to = getAgentScreenPos(line.toAgent)
+    if (!from || !to) return null
+    return { ...line, fromSx: from.sx, fromSy: from.sy, toSx: to.sx, toSy: to.sy }
+  }).filter(Boolean)
+})
+
+watch(() => props.events.length, (newLen) => {
+  if (newLen <= lastEventCount) { lastEventCount = newLen; return }
+  const newEvents = props.events.slice(lastEventCount)
+  lastEventCount = newLen
+  for (const ev of newEvents) {
+    if (ev.name === 'intel_relay') {
+      addCommLine(ev.source, ev.payload?.to, 'relay')
+    } else if (ev.name === 'assign_mission') {
+      addCommLine('station', ev.payload?.agent_id || ev.payload?.rover_id, 'command')
+    } else if (ev.name === 'recall') {
+      addCommLine('station', ev.payload?.rover_id, 'command')
+    } else if (ev.name === 'notify') {
+      addCommLine(ev.source, 'station', 'notify')
+    } else if (ev.name === 'alert') {
+      addCommLine(ev.source || 'station', null, 'alert')
+    }
+  }
+})
 
 // Dynamic viewport dimensions: more tiles when zoomed out, fewer when zoomed in
 const visibleW = computed(() => Math.ceil(VIEWPORT_W / prefs.zoom))
@@ -53,12 +152,26 @@ function cameraLoop() {
     // Snap when very close
     if (Math.abs(dx) < 0.05) camX.value = targetCamX.value
     if (Math.abs(dy) < 0.05) camY.value = targetCamY.value
+    rafId = requestAnimationFrame(cameraLoop)
+  } else {
+    rafId = null  // idle — stop consuming CPU until target changes
   }
-  rafId = requestAnimationFrame(cameraLoop)
 }
 
-onMounted(() => { rafId = requestAnimationFrame(cameraLoop) })
-onUnmounted(() => { if (rafId) cancelAnimationFrame(rafId) })
+// Start the loop once on mount; it will self-stop when idle
+onMounted(() => {
+  rafId = requestAnimationFrame(cameraLoop)
+  commRafId = requestAnimationFrame(updateCommLines)
+})
+onUnmounted(() => {
+  if (rafId) cancelAnimationFrame(rafId)
+  if (commRafId) cancelAnimationFrame(commRafId)
+})
+
+// Restart the animation loop when the camera target moves and the loop is idle
+function ensureCameraLoop() {
+  if (!rafId) rafId = requestAnimationFrame(cameraLoop)
+}
 
 // Track drag state
 const dragging = ref(false)
@@ -71,8 +184,9 @@ watch([() => props.worldState, () => props.followAgent], () => {
   if (a) {
     targetCamX.value = a.position[0] - Math.floor(visibleW.value / 2)
     targetCamY.value = a.position[1] - Math.floor(visibleH.value / 2)
+    ensureCameraLoop()
   }
-}, { deep: true })
+})
 
 const tiles = computed(() => {
   const arr = []
@@ -80,8 +194,8 @@ const tiles = computed(() => {
   const vh = visibleH.value
   for (let dy = 0; dy < vh; dy++) {
     for (let dx = 0; dx < vw; dx++) {
-      const x = camX.value + dx
-      const y = camY.value + vh - 1 - dy  // flip Y for SVG
+      const x = Math.floor(camX.value) + dx
+      const y = Math.floor(camY.value) + vh - 1 - dy  // flip Y for SVG
       arr.push({ x, y, sx: dx * TILE_SIZE, sy: dy * TILE_SIZE, key: `${x}-${y}` })
     }
   }
@@ -115,36 +229,47 @@ const stations = computed(() => {
   })
 })
 
-const revealedSet = computed(() => {
-  const set = new Set()
-  if (!props.worldState) return set
-  for (const agent of Object.values(props.worldState.agents)) {
-    for (const cell of (agent.revealed || [])) {
-      set.add(`${cell[0]},${cell[1]}`)
-    }
-  }
-  return set
-})
-
-function isRevealed(x, y) {
-  return revealedSet.value.has(`${x},${y}`)
-}
+const { isRevealed } = useRevealedSet(() => props.worldState)
 
 // Grade weights for concentration radius (mirrors server logic)
 const GRADE_ORDER = ['low', 'medium', 'high', 'rich', 'pristine']
 
-function tileConcentration(x, y) {
-  if (!props.worldState) return 0
-  const stones = props.worldState.stones || []
-  let max = 0
-  for (const s of stones) {
+// Pre-computed stone lookup: spatial hash for O(1) per-tile concentration
+const SPATIAL_CELL = 20  // bucket size ≥ max influence radius (18)
+const stoneIndex = computed(() => {
+  const idx = new Map()  // key: 'cx,cy' → stone[]
+  if (!props.worldState) return idx
+  for (const s of (props.worldState.stones || [])) {
     const [sx, sy] = s.position
-    const d = Math.abs(x - sx) + Math.abs(y - sy)
-    if (d === 0) return 1
-    const gi = GRADE_ORDER.indexOf(s.grade !== 'unknown' ? s.grade : 'low')
-    const radius = 10 + (gi >= 0 ? gi : 0) * 2
-    const c = Math.max(0, 1 - d / radius)
-    if (c > max) max = c
+    const ck = `${Math.floor(sx / SPATIAL_CELL)},${Math.floor(sy / SPATIAL_CELL)}`
+    let bucket = idx.get(ck)
+    if (!bucket) { bucket = []; idx.set(ck, bucket) }
+    bucket.push(s)
+  }
+  return idx
+})
+
+function tileConcentration(x, y) {
+  const idx = stoneIndex.value
+  if (idx.size === 0) return 0
+  const cx = Math.floor(x / SPATIAL_CELL)
+  const cy = Math.floor(y / SPATIAL_CELL)
+  let max = 0
+  // Check the 3×3 neighbourhood of spatial cells
+  for (let dcx = -1; dcx <= 1; dcx++) {
+    for (let dcy = -1; dcy <= 1; dcy++) {
+      const bucket = idx.get(`${cx + dcx},${cy + dcy}`)
+      if (!bucket) continue
+      for (const s of bucket) {
+        const [sx, sy] = s.position
+        const d = Math.abs(x - sx) + Math.abs(y - sy)
+        if (d === 0) return 1
+        const gi = GRADE_ORDER.indexOf(s.grade !== 'unknown' ? s.grade : 'low')
+        const radius = 10 + (gi >= 0 ? gi : 0) * 2
+        const c = Math.max(0, 1 - d / radius)
+        if (c > max) max = c
+      }
+    }
   }
   return max
 }
@@ -230,6 +355,37 @@ function panelScreenX(p) {
 
 function panelScreenY(p) {
   return (visibleH.value - 1 - (p.position[1] - camY.value)) * TILE_SIZE + 2
+}
+
+// Obstacle rendering — pre-compute screen positions for efficiency
+const visibleObstacles = computed(() => {
+  if (!props.worldState) return []
+  return (props.worldState.obstacles || [])
+    .filter((o) => {
+      const [wx, wy] = o.position
+      return (
+        wx >= camX.value &&
+        wx < camX.value + visibleW.value &&
+        wy >= camY.value &&
+        wy < camY.value + visibleH.value
+      )
+    })
+    .map((o) => {
+      const { sx, sy } = worldToScreen(o.position[0], o.position[1])
+      return { ...o, sx, sy }
+    })
+})
+
+function obstacleColor(o) {
+  if (o.kind === 'mountain') return OBSTACLE_COLORS.mountain
+  if (o.kind === 'geyser') return OBSTACLE_COLORS['geyser_' + (o.state || 'idle')] || OBSTACLE_COLORS.geyser_idle
+  return '#666'
+}
+
+function obstacleTooltip(o) {
+  if (o.kind === 'mountain') return `Ice Mountain at (${o.position[0]}, ${o.position[1]}) — impassable`
+  if (o.kind === 'geyser') return `Air Geyser at (${o.position[0]}, ${o.position[1]}) — ${o.state || 'idle'}`
+  return `${o.kind} at (${o.position[0]}, ${o.position[1]})`
 }
 
 // Drag-to-pan
@@ -435,6 +591,7 @@ const fogAgents = computed(() => {
 function panCamera(dx, dy) {
   targetCamX.value += dx
   targetCamY.value += dy
+  ensureCameraLoop()
 }
 
 // Expose camera and dynamic viewport for minimap & keyboard shortcuts
@@ -636,6 +793,32 @@ defineExpose({ camX, camY, visibleW, visibleH, panCamera, navigateTo })
             font-family="monospace"
           >?</text>
         </g>
+      <!-- obstacles (mountains + geysers) -->
+      <template
+        v-for="(o, i) in visibleObstacles"
+        :key="'obs-' + i"
+      >
+        <!-- mountains: triangle -->
+        <polygon
+          v-if="o.kind === 'mountain'"
+          :points="`${o.sx},${o.sy - 7} ${o.sx - 7},${o.sy + 5} ${o.sx + 7},${o.sy + 5}`"
+          :fill="obstacleColor(o)"
+          opacity="0.85"
+        >
+          <title>{{ obstacleTooltip(o) }}</title>
+        </polygon>
+        <!-- geysers: circle with animation when erupting -->
+        <circle
+          v-else-if="o.kind === 'geyser'"
+          :cx="o.sx"
+          :cy="o.sy"
+          :r="o.state === 'erupting' ? 7 : o.state === 'warning' ? 5 : 4"
+          :fill="obstacleColor(o)"
+          :opacity="o.state === 'erupting' ? 0.95 : 0.7"
+          :class="{ 'geyser-pulse': o.state === 'erupting' }"
+        >
+          <title>{{ obstacleTooltip(o) }}</title>
+        </circle>
       </template>
 
       <!-- solar panels -->
@@ -703,6 +886,37 @@ defineExpose({ camX, camY, visibleW, visibleH, panCamera, navigateTo })
           stroke-linecap="round"
         />
       </template>
+
+      <!-- communication lines between agents -->
+      <g class="comm-lines">
+        <line
+          v-for="(line, i) in visibleCommLines"
+          :key="'comm-'+i"
+          :x1="line.fromSx"
+          :y1="line.fromSy"
+          :x2="line.toSx"
+          :y2="line.toSy"
+          :stroke="line.color"
+          :stroke-opacity="line.opacity"
+          stroke-width="1.5"
+          stroke-dasharray="4 4"
+          class="comm-line-animate"
+        />
+        <circle
+          v-for="(line, i) in visibleCommLines"
+          :key="'comm-dot-'+i"
+          r="2.5"
+          :fill="line.color"
+          :opacity="line.opacity"
+        >
+          <animateMotion
+            dur="0.8s"
+            repeatCount="1"
+            fill="freeze"
+            :path="`M${line.fromSx},${line.fromSy} L${line.toSx},${line.toSy}`"
+          />
+        </circle>
+      </g>
 
       <!-- station markers (square) -->
       <g
@@ -960,6 +1174,14 @@ defineExpose({ camX, camY, visibleW, visibleH, panCamera, navigateTo })
   opacity: 0.95;
 }
 
+@keyframes comm-dash {
+  to { stroke-dashoffset: -8; }
+}
+
+.comm-line-animate {
+  animation: comm-dash 0.6s linear infinite;
+}
+
 .cam-hint {
   font-size: 0.6rem;
   color: var(--text-dimmer);
@@ -1009,6 +1231,17 @@ defineExpose({ camX, camY, visibleW, visibleH, panCamera, navigateTo })
   cursor: grabbing;
 }
 
+.dust-particle {
+  animation: dust-drift linear infinite;
+}
+
+@keyframes dust-drift {
+  0% { transform: translate(0, 0); opacity: 0; }
+  20% { opacity: 0.6; }
+  80% { opacity: 0.4; }
+  100% { transform: translate(40px, -30px); opacity: 0; }
+}
+
 .map-skeleton {
   width: 100%;
   aspect-ratio: 1;
@@ -1054,5 +1287,13 @@ defineExpose({ camX, camY, visibleW, visibleH, panCamera, navigateTo })
 @keyframes pulse-text {
   from { opacity: 0.7; }
   to { opacity: 1; }
+}
+
+@keyframes geyser-pulse-anim {
+  0%, 100% { r: 7; opacity: 0.95; }
+  50% { r: 9; opacity: 0.7; }
+}
+.geyser-pulse {
+  animation: geyser-pulse-anim 0.6s ease-in-out infinite;
 }
 </style>

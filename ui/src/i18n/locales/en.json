@@ -1,0 +1,129 @@
+{
+  "nav": {
+    "mission": "Mission",
+    "agents": "Agents",
+    "features": "Features",
+    "tech": "Tech Stack",
+    "launch": "Launch Mission"
+  },
+  "hero": {
+    "badge": "Multi-Agent Mars Simulation",
+    "title_line1": "Command the",
+    "title_line2": "Red Planet",
+    "subtitle": "Deploy autonomous AI agents to explore Mars. Watch them reason, adapt, and collaborate in real-time through a stunning mission control interface.",
+    "cta_launch": "Launch Mission",
+    "cta_explore": "Explore Features"
+  },
+  "mission": {
+    "label": "Mission Briefing",
+    "title": "Autonomous Mars Exploration",
+    "description": "Three AI agents — Rover, Drone, and Station — coordinate through a central mission control to explore the Martian surface. Each agent runs its own reasoning loop, making real-time decisions based on terrain, weather, and mission objectives.",
+    "stat_agents": "AI Agents",
+    "stat_tools": "Agent Tools",
+    "stat_realtime": "Real-Time",
+    "stat_languages": "Languages"
+  },
+  "agents": {
+    "label": "Meet the Agents",
+    "title": "Your Mars Team",
+    "rover_name": "Rover",
+    "rover_role": "Surface Explorer",
+    "rover_desc": "Navigates the Martian terrain, drills for core samples, and analyzes geological formations. Makes autonomous decisions about exploration routes based on drone intel and storm conditions.",
+    "rover_tools": "Move • Drill • Analyze • Pick Up",
+    "drone_name": "Drone",
+    "drone_role": "Aerial Scout",
+    "drone_desc": "Scans vast terrain areas from above, maps safe routes for the rover, and relays critical environmental data. Provides probabilistic assessments of rock compositions.",
+    "drone_tools": "Scan • Map Routes • Relay Data",
+    "station_name": "Station",
+    "station_role": "Mission Control",
+    "station_desc": "Manages power distribution across all agents, monitors system health, and broadcasts alerts. Ensures the team stays operational through dust storms and equipment challenges.",
+    "station_tools": "Charge • Allocate Power • Alert"
+  },
+  "features": {
+    "label": "Capabilities",
+    "title": "Mission Systems",
+    "items": [
+      {
+        "title": "LLM-Powered Reasoning",
+        "desc": "Each agent runs Mistral AI reasoning loops, evaluating goals, proposing actions, and adapting to changing conditions in real-time."
+      },
+      {
+        "title": "Probabilistic Goals",
+        "desc": "Goals track confidence scores from 0.0 to 1.0, dynamically updating as agents gather data and complete objectives."
+      },
+      {
+        "title": "Real-Time Streaming",
+        "desc": "Watch agent decisions, tool calls, and world state updates stream live through WebSocket connections."
+      },
+      {
+        "title": "AI Narration",
+        "desc": "Mistral AI generates live mission commentary with optional ElevenLabs voice synthesis for an immersive experience."
+      },
+      {
+        "title": "Dynamic World",
+        "desc": "Mars environment with terrain hazards, dust storms, fog-of-war visibility, and geological formations that shift over time."
+      },
+      {
+        "title": "Multi-Agent Coordination",
+        "desc": "Agents communicate through structured protocols — drone scouts inform rover decisions, station manages shared resources."
+      }
+    ]
+  },
+  "how_it_works": {
+    "label": "How It Works",
+    "title": "The Mission Loop",
+    "steps": [
+      {
+        "number": "01",
+        "title": "Observe",
+        "desc": "Agents read world state — terrain, hazards, battery levels, storm intensity, and data from other agents."
+      },
+      {
+        "number": "02",
+        "title": "Reason",
+        "desc": "Mistral AI evaluates goals, assesses risks, and proposes the optimal next action with alternatives."
+      },
+      {
+        "number": "03",
+        "title": "Execute",
+        "desc": "Tool calls mutate the world state — move, drill, scan, charge — with progress streamed live."
+      },
+      {
+        "number": "04",
+        "title": "Adapt",
+        "desc": "Goal confidence updates dynamically. Agents re-evaluate plans as conditions change."
+      }
+    ]
+  },
+  "tech": {
+    "label": "Tech Stack",
+    "title": "Built With",
+    "ai": {
+      "label": "AI & LLM",
+      "items": ["Mistral AI", "ElevenLabs TTS", "Probabilistic Reasoning"]
+    },
+    "backend": {
+      "label": "Backend",
+      "items": ["Python 3.14+", "FastAPI", "SurrealDB", "WebSockets"]
+    },
+    "frontend": {
+      "label": "Frontend",
+      "items": ["Vue 3", "Vite 7", "Three.js", "GSAP"]
+    },
+    "infra": {
+      "label": "Infrastructure",
+      "items": ["Docker", "GitHub Actions", "Railway", "Discord Webhooks"]
+    }
+  },
+  "cta": {
+    "title": "Ready for Mars?",
+    "subtitle": "Launch the mission control interface and watch autonomous AI agents explore the Red Planet in real-time.",
+    "button_launch": "Launch Mission Control",
+    "button_github": "View on GitHub"
+  },
+  "footer": {
+    "built_with": "Built with Mistral AI for the Mistral Hackathon",
+    "hackathon": "Feb 28 – Mar 1, 2025",
+    "copyright": "© 2025 Agent One Team"
+  }
+}
