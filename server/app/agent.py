@@ -30,6 +30,7 @@ from .world import check_ground, direction_hint, best_drone_hotspot, observe_rov
 from .world import get_drone_intel_for_rover, get_unread_messages, send_agent_message
 from .world import set_agent_model
 from .world import execute_action, get_snapshot, charge_agent, next_tick, update_geysers
+from .world import check_storm_tick, get_storm_info
 from .world import is_obstacle_at
 from .station import StationAgent
 from .training_logger import training_logger
@@ -469,6 +470,22 @@ class MistralRoverReasoner:
             for entry in recent:
                 parts.append(f"- {entry}")
 
+        # Storm awareness
+        storm_info = get_storm_info()
+        if storm_info["phase"] != "clear":
+            parts.append("\n== DUST STORM ==")
+            if storm_info["phase"] == "warning":
+                parts.append(
+                    "STATUS: Storm approaching! Prepare to seek shelter or return to base."
+                )
+            elif storm_info["phase"] == "active":
+                parts.append(
+                    f"STATUS: ACTIVE STORM — intensity {storm_info['intensity']:.0%}\n"
+                    f"Battery drain multiplier: {storm_info['battery_multiplier']:.1f}x\n"
+                    f"Move failure chance: {storm_info['move_fail_chance']:.0%}\n"
+                    "CAUTION: Moves may randomly fail. Battery drains faster. "
+                    "Consider returning to station if battery is below 80%."
+                )
         # --- Strategic Insights ---
         sm = agent.get("strategic_memory", [])
         if sm:
@@ -1254,6 +1271,18 @@ class RoverLoop(BaseAgent):
         turn = await asyncio.to_thread(self._reasoner.run_turn)
         llm_ms = int((time.monotonic() - t0) * 1000)
         next_tick()
+
+        # Advance storm lifecycle and broadcast any storm events
+        storm_events = check_storm_tick()
+        for sevt in storm_events:
+            storm_msg = make_message(
+                source="world",
+                type="event",
+                name=sevt["name"],
+                payload=sevt["payload"],
+            )
+            await host.broadcast(storm_msg.to_dict())
+
         geyser_events = update_geysers()
         messages = []
 

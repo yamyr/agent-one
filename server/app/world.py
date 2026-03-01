@@ -6,6 +6,7 @@ import logging
 import random
 
 from .config import settings
+from . import storm as storm_mod
 from .models import RoverAgentState, RoverWorldView, RoverComputed, RoverContext
 from .models import AgentMission, InventoryItem, StoneInfo, ObstacleInfo
 from .models import RoverSummary, StationContext
@@ -479,6 +480,7 @@ def _build_initial_world():
             "target_quantity": TARGET_QUANTITY,
             "collected_quantity": 0,
         },
+        "storm": storm_mod.make_storm_state(),
     }
     return world
 
@@ -561,6 +563,7 @@ def is_obstacle_at(x: int, y: int) -> dict | None:
 
 WORLD = _build_initial_world()
 _init_world_chunks()
+storm_mod.schedule_next_storm(WORLD)
 
 
 class World:
@@ -702,6 +705,7 @@ def reset_world():
     _obstacle_index_source = None
     AGENT_MESSAGES.clear()
     _init_world_chunks()
+    storm_mod.schedule_next_storm(WORLD)
     logger.info("World reset (generation %d)", gen)
 
 
@@ -836,11 +840,23 @@ def execute_action(agent_id, action_name, params):
         delta = DIRECTIONS.get(direction)
         if delta is None:
             return {"ok": False, "error": f"Invalid direction: {direction}"}
+
+        # Storm move failure (rovers only)
+        if not is_drone and storm_mod.should_move_fail(WORLD):
+            record_memory(agent_id, f"Move {direction} failed: dust storm interference")
+            return {
+                "ok": False,
+                "error": "Move blocked by dust storm",
+                "storm_blocked": True,
+            }
+
         max_dist = MAX_MOVE_DISTANCE_DRONE if is_drone else MAX_MOVE_DISTANCE
         move_cost = BATTERY_COST_MOVE_DRONE if is_drone else BATTERY_COST_MOVE
         distance = max(1, min(max_dist, int(params.get("distance", 1))))
 
-        cost = move_cost * distance
+        # Apply storm battery multiplier
+        storm_mult = storm_mod.get_battery_multiplier(WORLD)
+        cost = move_cost * distance * storm_mult
         if agent["battery"] < cost:
             record_memory(
                 agent_id,
@@ -855,7 +871,7 @@ def execute_action(agent_id, action_name, params):
         tx, ty = ox + delta[0] * distance, oy + delta[1] * distance
         result = move_agent(agent_id, tx, ty)
         if result["ok"]:
-            agent["battery"] = max(0.0, agent["battery"] - move_cost * distance)
+            agent["battery"] = max(0.0, agent["battery"] - cost)
             # Mark all intermediate + destination tiles as visited/revealed
             for step in range(1, distance + 1):
                 sx, sy = ox + delta[0] * step, oy + delta[1] * step
@@ -940,7 +956,9 @@ def _find_stone_at(x, y):
 
 def _execute_analyze(agent_id, agent):
     """Analyze an unknown vein at the current tile to reveal its type, grade, and quantity."""
-    if agent["battery"] < BATTERY_COST_ANALYZE:
+    storm_mult = storm_mod.get_battery_multiplier(WORLD)
+    cost = BATTERY_COST_ANALYZE * storm_mult
+    if agent["battery"] < cost:
         return {"ok": False, "error": "Not enough battery to analyze"}
 
     x, y = agent["position"]
@@ -950,7 +968,7 @@ def _execute_analyze(agent_id, agent):
     if stone.get("analyzed"):
         return {"ok": False, "error": f"Vein at ({x}, {y}) already analyzed"}
 
-    agent["battery"] = max(0.0, agent["battery"] - BATTERY_COST_ANALYZE)
+    agent["battery"] = max(0.0, agent["battery"] - cost)
     stone["analyzed"] = True
     stone["type"] = stone["_true_type"]
     stone["grade"] = stone["_true_grade"]
@@ -977,11 +995,13 @@ def _execute_analyze(agent_id, agent):
 
 def _execute_scan(agent_id, agent):
     """Drone aerial scan: sample concentration map around current position."""
-    if agent["battery"] < BATTERY_COST_SCAN:
+    storm_mult = storm_mod.get_battery_multiplier(WORLD)
+    cost = BATTERY_COST_SCAN * storm_mult
+    if agent["battery"] < cost:
         return {"ok": False, "error": "Not enough battery to scan"}
 
     x, y = agent["position"]
-    agent["battery"] = max(0.0, agent["battery"] - BATTERY_COST_SCAN)
+    agent["battery"] = max(0.0, agent["battery"] - cost)
     scan_radius = DRONE_REVEAL_RADIUS
     readings = {}
     peak = 0.0
@@ -1006,7 +1026,9 @@ def _execute_dig(agent_id, agent):
     """Dig and collect an analyzed vein at current tile into inventory."""
     if len(agent.get("inventory", [])) >= MAX_INVENTORY_ROVER:
         return {"ok": False, "error": "Inventory full (max 3 veins)"}
-    if agent["battery"] < BATTERY_COST_DIG:
+    storm_mult = storm_mod.get_battery_multiplier(WORLD)
+    cost = BATTERY_COST_DIG * storm_mult
+    if agent["battery"] < cost:
         return {"ok": False, "error": "Not enough battery to dig"}
 
     x, y = agent["position"]
@@ -1016,7 +1038,7 @@ def _execute_dig(agent_id, agent):
     if not stone.get("analyzed"):
         return {"ok": False, "error": "Vein not yet analyzed (analyze first)"}
 
-    agent["battery"] = max(0.0, agent["battery"] - BATTERY_COST_DIG)
+    agent["battery"] = max(0.0, agent["battery"] - cost)
     agent.setdefault("inventory", []).append(
         {
             "type": stone["type"],
@@ -1049,12 +1071,14 @@ def _execute_dig(agent_id, agent):
 
 def _execute_notify(agent_id, agent, params):
     """Send a radio notification to station. Costs 2 fuel."""
-    if agent["battery"] < BATTERY_COST_NOTIFY:
+    storm_mult = storm_mod.get_battery_multiplier(WORLD)
+    cost = BATTERY_COST_NOTIFY * storm_mult
+    if agent["battery"] < cost:
         return {"ok": False, "error": "Not enough battery to notify"}
     message = params.get("message", "")
     if not message:
         return {"ok": False, "error": "Empty message"}
-    agent["battery"] = max(0.0, agent["battery"] - BATTERY_COST_NOTIFY)
+    agent["battery"] = max(0.0, agent["battery"] - cost)
     return {
         "ok": True,
         "position": list(agent["position"]),
@@ -1901,4 +1925,16 @@ def get_snapshot():
     # Ensure bounds are present
     if "bounds" not in snap:
         snap["bounds"] = {"min_x": 0, "max_x": GRID_W - 1, "min_y": 0, "max_y": GRID_H - 1}
+    # Add storm info for UI
+    snap["storm"] = storm_mod.get_storm_info(WORLD)
     return snap
+
+
+def check_storm_tick():
+    """Advance storm lifecycle on the global WORLD. Returns list of event dicts."""
+    return storm_mod.check_storm_tick(WORLD)
+
+
+def get_storm_info():
+    """Return current storm info from the global WORLD."""
+    return storm_mod.get_storm_info(WORLD)

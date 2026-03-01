@@ -593,6 +593,48 @@ function panCamera(dx, dy) {
   ensureCameraLoop()
 }
 
+// Storm overlay computeds
+const stormActive = computed(() => {
+  if (!props.worldState?.storm) return false
+  return props.worldState.storm.phase === 'active' || props.worldState.storm.phase === 'warning'
+})
+
+const stormIntensity = computed(() => {
+  if (!props.worldState?.storm) return 0
+  return props.worldState.storm.intensity || 0
+})
+
+const stormColor = computed(() => {
+  const i = stormIntensity.value
+  const r = Math.round(140 + i * 60)
+  const g = Math.round(80 + i * 20)
+  const b = Math.round(30 + i * 10)
+  return `rgb(${r},${g},${b})`
+})
+
+const stormOpacity = computed(() => {
+  if (!props.worldState?.storm) return 0
+  if (props.worldState.storm.phase === 'warning') return 0.06
+  return 0.05 + stormIntensity.value * 0.15
+})
+
+const stormParticles = computed(() => {
+  if (!stormActive.value) return []
+  const count = Math.floor(8 + stormIntensity.value * 20)
+  const particles = []
+  for (let i = 0; i < count; i++) {
+    particles.push({
+      id: `dust-${i}`,
+      cx: ((i * 137.5) % dynamicMapW.value),
+      cy: ((i * 97.3) % dynamicMapH.value),
+      r: 1.5 + (i % 3) * 1.2,
+      dur: 2 + (i % 4) * 0.8,
+      delay: (i * 0.3) % 3,
+    })
+  }
+  return particles
+})
+
 // Expose camera and dynamic viewport for minimap & keyboard shortcuts
 function navigateTo(x, y) {
   targetCamX.value = x
@@ -867,6 +909,28 @@ defineExpose({ camX, camY, visibleW, visibleH, panCamera, navigateTo })
         mask="url(#fog-mask)"
         class="fog-overlay"
       />
+
+      <!-- dust storm overlay -->
+      <g v-if="stormActive" class="storm-overlay">
+        <rect
+          x="0"
+          y="0"
+          :width="dynamicMapW"
+          :height="dynamicMapH"
+          :fill="stormColor"
+          :opacity="stormOpacity"
+        />
+        <circle
+          v-for="p in stormParticles"
+          :key="p.id"
+          :cx="p.cx"
+          :cy="p.cy"
+          :r="p.r"
+          fill="#c8804080"
+          class="dust-particle"
+          :style="{ animationDuration: p.dur + 's', animationDelay: p.delay + 's' }"
+        />
+      </g>
 
       <!-- agent movement trails -->
       <template
