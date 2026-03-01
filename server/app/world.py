@@ -88,11 +88,19 @@ def _random_free_pos(occupied, rng=None, cx=0, cy=0):
     """Pick a random position within a chunk area not in `occupied`."""
     r = rng or random
     x0, y0 = cx * CHUNK_SIZE, cy * CHUNK_SIZE
-    while True:
+    for _ in range(CHUNK_SIZE * CHUNK_SIZE * 2):
         x = r.randint(x0, x0 + CHUNK_SIZE - 1)
         y = r.randint(y0, y0 + CHUNK_SIZE - 1)
         if (x, y) not in occupied:
             return x, y
+    # Fallback: linear scan for any free position
+    for y in range(y0, y0 + CHUNK_SIZE):
+        for x in range(x0, x0 + CHUNK_SIZE):
+            if (x, y) not in occupied:
+                return x, y
+    # Chunk fully occupied — return origin as last resort
+    logger.warning("Chunk (%d,%d) fully occupied, returning origin", cx, cy)
+    return x0, y0
 
 
 # --------------- Chunk-based procedural generation ---------------
@@ -496,12 +504,14 @@ def get_drone_intel_for_rover(rover_id: str) -> list[dict]:
             cx, cy = int(parts[0]), int(parts[1])
             if (cx, cy) in visited:
                 continue
-            intel.append({
-                "position": [cx, cy],
-                "concentration": round(conc, 2),
-                "scanned_by": scan.get("scanner", scan.get("agent_id", "drone")),
-                "tick": scan.get("tick", 0),
-            })
+            intel.append(
+                {
+                    "position": [cx, cy],
+                    "concentration": round(conc, 2),
+                    "scanned_by": scan.get("scanner", scan.get("agent_id", "drone")),
+                    "tick": scan.get("tick", 0),
+                }
+            )
     intel.sort(key=lambda x: x["concentration"], reverse=True)
     return intel[:5]
 

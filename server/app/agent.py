@@ -30,9 +30,7 @@ from .station import StationAgent
 
 logger = logging.getLogger(__name__)
 
-STRUCTURED_REASONING_PROMPT = (
-    "\n\nBefore acting, output: SITUATION: <state> | OPTIONS: <a, b> | DECISION: <choice + why> | RISK: low/medium/high"
-)
+STRUCTURED_REASONING_PROMPT = "\n\nBefore acting, output: SITUATION: <state> | OPTIONS: <a, b> | DECISION: <choice + why> | RISK: low/medium/high"
 
 
 def _parse_structured_thinking(raw_thinking: str) -> dict:
@@ -398,7 +396,9 @@ class MistralRoverReasoner:
         if incoming:
             parts.append("\n== INCOMING MESSAGES ==")
             for msg in incoming:
-                parts.append(f"  \U0001f4e8 From {msg['from']} (tick {msg['tick']}): {msg['message']}")
+                parts.append(
+                    f"  \U0001f4e8 From {msg['from']} (tick {msg['tick']}): {msg['message']}"
+                )
 
         parts.append(STRUCTURED_REASONING_PROMPT)
 
@@ -973,7 +973,10 @@ class RoverLoop(BaseAgent):
                 source=self.agent_id,
                 type="event",
                 name="thinking",
-                payload={"text": turn["thinking"], "structured": _parse_structured_thinking(turn["thinking"])},
+                payload={
+                    "text": turn["thinking"],
+                    "structured": _parse_structured_thinking(turn["thinking"]),
+                },
             )
             messages.append(msg)
 
@@ -1148,7 +1151,10 @@ class DroneLoop(BaseAgent):
                 source=self.agent_id,
                 type="event",
                 name="thinking",
-                payload={"text": turn["thinking"], "structured": _parse_structured_thinking(turn["thinking"])},
+                payload={
+                    "text": turn["thinking"],
+                    "structured": _parse_structured_thinking(turn["thinking"]),
+                },
             )
             messages.append(msg)
 
@@ -1205,7 +1211,6 @@ class DroneLoop(BaseAgent):
                     )
                     messages.append(relay_event)
 
-
         # LLM-owned task: update agent tasks from LLM output
         llm_task = turn.get("task")
         if llm_task is not None:
@@ -1260,11 +1265,23 @@ class DroneMistralLoop(DroneLoop):
 class StationLoop(BaseAgent):
     """Station periodic evaluation loop — monitors field events and coordinates agents."""
 
-    INTERESTING_EVENTS = frozenset({
-        "thinking", "notify", "check", "dig", "analyze", "scan",
-        "world_event", "mission_success", "mission_failed", "mission_aborted",
-        "charge_rover", "deploy_solar_panel", "use_solar_battery",
-    })
+    INTERESTING_EVENTS = frozenset(
+        {
+            "thinking",
+            "notify",
+            "check",
+            "dig",
+            "analyze",
+            "scan",
+            "world_event",
+            "mission_success",
+            "mission_failed",
+            "mission_aborted",
+            "charge_rover",
+            "deploy_solar_panel",
+            "use_solar_battery",
+        }
+    )
 
     def __init__(self, interval: float = 20.0, world: World | None = None):
         super().__init__(agent_id="station-loop", interval=interval, world=world)

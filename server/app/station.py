@@ -100,7 +100,9 @@ def _build_world_summary(context: StationContext):
     if context.tick:
         lines.append(f"Tick: {context.tick}")
     if context.mission_status:
-        lines.append(f"Mission status: {context.mission_status} ({context.collected_quantity}/{context.target_quantity})")
+        lines.append(
+            f"Mission status: {context.mission_status} ({context.collected_quantity}/{context.target_quantity})"
+        )
     for rover in context.rovers:
         x, y = rover.position
         label = "drone" if rover.agent_type == "drone" else "rover"
