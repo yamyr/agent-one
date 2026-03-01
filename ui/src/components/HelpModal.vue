@@ -13,10 +13,16 @@ const emit = defineEmits(['close'])
       class="help-overlay"
       @click.self="emit('close')"
     >
-      <div class="help-modal">
+      <div
+        class="help-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Keyboard shortcuts"
+      >
         <div class="help-header">
           <h3>Keyboard Shortcuts</h3>
           <button
+            type="button"
             class="close-btn"
             aria-label="Close help"
             @click="emit('close')"
