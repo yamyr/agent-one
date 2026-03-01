@@ -15,6 +15,7 @@ import NarrationPlayer from './components/NarrationPlayer.vue'
 import StatsBar from './components/StatsBar.vue'
 import ToastOverlay from './components/ToastOverlay.vue'
 import HelpModal from './components/HelpModal.vue'
+import VoiceCommander from './components/VoiceCommander.vue'
 
 const selectedAgent = ref(null)
 const helpVisible = ref(false)
@@ -91,7 +92,7 @@ function onSimEvent(event) {
   }
 }
 
-const { events, connected, worldState, agentIds, agentEvents, narration, narrationChunk } = useWebSocket({ onConnect: onWsConnect, onEvent: onSimEvent })
+const { events, connected, worldState, agentIds, agentEvents, narration, narrationChunk, voiceTranscription } = useWebSocket({ onConnect: onWsConnect, onEvent: onSimEvent })
 
 async function togglePause() {
   const endpoint = paused.value ? '/api/simulation/resume' : '/api/simulation/pause'
@@ -165,6 +166,10 @@ useKeyboard({
       :narration-chunk="narrationChunk"
       :narration-enabled="narrationEnabled"
       @toggle-narration="toggleNarration"
+    />
+
+    <VoiceCommander
+      :voice-transcription="voiceTranscription"
     />
 
     <MissionBar

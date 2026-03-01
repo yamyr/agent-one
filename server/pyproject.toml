@@ -12,6 +12,7 @@ dependencies = [
     "rich>=13.0.0",
     "mistralai>=1.0.0",
     "elevenlabs>=1.0.0",
+    "python-multipart>=0.0.22",
 ]
 
 [tool.uv]

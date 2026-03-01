@@ -2,7 +2,7 @@ import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import FastAPI, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from rich.logging import RichHandler
@@ -15,6 +15,7 @@ from .host import Host
 from .narrator import Narrator
 from .views import router as views_router
 from .world import reset_world, set_agent_model
+from .voice import VoiceCommander
 
 logging.basicConfig(
     level=logging.INFO,
@@ -27,6 +28,7 @@ logger = logging.getLogger(__name__)
 
 narrator = Narrator(broadcast_fn=broadcaster.send)
 host = Host(narrator=narrator)
+voice_commander = VoiceCommander(host=host)
 
 AGENT_MAP = {
     "rover-mistral": lambda: RoverMistralLoop(
@@ -131,6 +133,12 @@ async def abort_mission(reason: str = "Manual abort from mission control"):
 async def recall_rover(rover_id: str):
     return await host.recall_rover(rover_id)
 
+
+@app.post("/voice/command")
+async def voice_command(audio: UploadFile):
+    """Accept audio upload, transcribe via Voxtral, route command to agents."""
+    audio_bytes = await audio.read()
+    return await voice_commander.handle_voice_command(audio_bytes, audio.filename or "audio.webm")
 
 # Serve Vue static files (must be after all API routes)
 _ui_dir = Path(__file__).resolve().parent.parent / "ui_dist"
