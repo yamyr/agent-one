@@ -4,6 +4,17 @@
 
 ### Bug Fixes
 
+* **production:** fix Dockerfile to respect Railway `$PORT` env var — hardcoded `--port 4009` prevented Railway from routing traffic to the container
+* **production:** add SPA catch-all route for Vue Router history mode — direct navigation to `/app` returned 404 instead of serving the Vue app
+* **production:** send initial world state snapshot immediately on WebSocket connect — new clients no longer wait for the next agent tick to receive state
+* **config:** add production domain to default `cors_origins` to prevent CORS issues on fresh deploys
+
+### Tests
+
+* **production:** add tests for SPA fallback route, API route preservation, and WebSocket initial state
+
+### Bug Fixes
+
 * **training-logger:** fix critical `SyntaxError` in `_safe_json_str()` — `except TypeError, ValueError:` is invalid Python 3 syntax, changed to `except (TypeError, ValueError):` with `# fmt: skip` to prevent ruff from reverting
 * **agent:** upgrade training turn logging from `debug` to `warning` level for production observability
 

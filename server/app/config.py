@@ -20,7 +20,7 @@ class Settings(BaseSettings):
     surreal_pass: str = "root"
 
     # CORS
-    cors_origins: str = "http://localhost:4089"
+    cors_origins: str = "http://localhost:4089,https://agent-one-production-f066.up.railway.app"
 
     # Mistral
     mistral_api_key: str = ""
