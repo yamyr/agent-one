@@ -17,10 +17,16 @@
   - `_fallback_turn()` skips mountain-blocked directions when choosing random moves
   - Geyser eruption events broadcast via WebSocket for real-time UI updates
 * **models:** add `ObstacleInfo` pydantic model and `nearby_obstacles` field on `RoverComputed`
+* **ui:** add obstacle visualization to WorldMap SVG
+  - Mountains rendered as blue-grey triangles; geysers as circles colored by state (idle/warning/erupting)
+  - Erupting geysers animate with a pulse effect
+  - `OBSTACLE_COLORS` constant for consistent styling
+  - Screen positions pre-computed via `visibleObstacles` computed property for rendering performance
 
 ### Tests
 
 * **world:** add 15 obstacle tests covering generation, mountain blocking, geyser state machine, battery drain, snapshot filtering, origin protection, and deterministic seeding
+* **ui:** add 11 obstacle rendering tests covering mountain/geyser SVG output, color mapping, radius sizing, pulse animation class, mixed rendering, and empty state
 
 ### Bug Fixes
 

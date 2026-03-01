@@ -1,6 +1,6 @@
 <script setup>
 import { computed, ref, watch, onMounted, onUnmounted } from 'vue'
-import { TILE_SIZE, VIEWPORT_W, VIEWPORT_H, VEIN_COLORS, VEIN_SIZES, SOLAR_PANEL_COLOR, SOLAR_PANEL_DEPLETED_COLOR, agentColor, revealRadius } from '../constants.js'
+import { TILE_SIZE, VIEWPORT_W, VIEWPORT_H, VEIN_COLORS, VEIN_SIZES, SOLAR_PANEL_COLOR, SOLAR_PANEL_DEPLETED_COLOR, OBSTACLE_COLORS, agentColor, revealRadius } from '../constants.js'
 import { usePreferences } from '../composables/usePreferences.js'
 import { useRevealedSet } from '../composables/useRevealedSet.js'
 
@@ -356,6 +356,37 @@ function panelScreenY(p) {
   return (visibleH.value - 1 - (p.position[1] - camY.value)) * TILE_SIZE + 2
 }
 
+// Obstacle rendering — pre-compute screen positions for efficiency
+const visibleObstacles = computed(() => {
+  if (!props.worldState) return []
+  return (props.worldState.obstacles || [])
+    .filter((o) => {
+      const [wx, wy] = o.position
+      return (
+        wx >= camX.value &&
+        wx < camX.value + visibleW.value &&
+        wy >= camY.value &&
+        wy < camY.value + visibleH.value
+      )
+    })
+    .map((o) => {
+      const { sx, sy } = worldToScreen(o.position[0], o.position[1])
+      return { ...o, sx, sy }
+    })
+})
+
+function obstacleColor(o) {
+  if (o.kind === 'mountain') return OBSTACLE_COLORS.mountain
+  if (o.kind === 'geyser') return OBSTACLE_COLORS['geyser_' + (o.state || 'idle')] || OBSTACLE_COLORS.geyser_idle
+  return '#666'
+}
+
+function obstacleTooltip(o) {
+  if (o.kind === 'mountain') return `Ice Mountain at (${o.position[0]}, ${o.position[1]}) — impassable`
+  if (o.kind === 'geyser') return `Air Geyser at (${o.position[0]}, ${o.position[1]}) — ${o.state || 'idle'}`
+  return `${o.kind} at (${o.position[0]}, ${o.position[1]})`
+}
+
 // Drag-to-pan
 function onMouseDown(e) {
   dragging.value = true
@@ -685,6 +716,34 @@ defineExpose({ camX, camY, visibleW, visibleH, panCamera, navigateTo })
         >
           <title>{{ stoneTooltip(s) }}</title>
         </rect>
+      </template>
+
+      <!-- obstacles (mountains + geysers) -->
+      <template
+        v-for="(o, i) in visibleObstacles"
+        :key="'obs-' + i"
+      >
+        <!-- mountains: triangle -->
+        <polygon
+          v-if="o.kind === 'mountain'"
+          :points="`${o.sx},${o.sy - 7} ${o.sx - 7},${o.sy + 5} ${o.sx + 7},${o.sy + 5}`"
+          :fill="obstacleColor(o)"
+          opacity="0.85"
+        >
+          <title>{{ obstacleTooltip(o) }}</title>
+        </polygon>
+        <!-- geysers: circle with animation when erupting -->
+        <circle
+          v-else-if="o.kind === 'geyser'"
+          :cx="o.sx"
+          :cy="o.sy"
+          :r="o.state === 'erupting' ? 7 : o.state === 'warning' ? 5 : 4"
+          :fill="obstacleColor(o)"
+          :opacity="o.state === 'erupting' ? 0.95 : 0.7"
+          :class="{ 'geyser-pulse': o.state === 'erupting' }"
+        >
+          <title>{{ obstacleTooltip(o) }}</title>
+        </circle>
       </template>
 
       <!-- solar panels -->
@@ -1153,5 +1212,13 @@ defineExpose({ camX, camY, visibleW, visibleH, panCamera, navigateTo })
 @keyframes pulse-text {
   from { opacity: 0.7; }
   to { opacity: 1; }
+}
+
+@keyframes geyser-pulse-anim {
+  0%, 100% { r: 7; opacity: 0.95; }
+  50% { r: 9; opacity: 0.7; }
+}
+.geyser-pulse {
+  animation: geyser-pulse-anim 0.6s ease-in-out infinite;
 }
 </style>
