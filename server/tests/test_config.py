@@ -12,7 +12,7 @@ class TestDroneTurnIntervalSetting(unittest.TestCase):
 
     def test_default_value(self):
         s = Settings(mistral_api_key="test")
-        self.assertEqual(s.drone_turn_interval_seconds, 2.5)
+        self.assertEqual(s.drone_turn_interval_seconds, 3.5)
 
     def test_custom_value(self):
         s = Settings(mistral_api_key="test", drone_turn_interval_seconds=10.0)
