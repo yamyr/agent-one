@@ -1,5 +1,40 @@
 # Changelog
 
+## [0.6.0](https://github.com/mhack-agent-one/agent-one/compare/v0.5.0...v0.6.0) (2026-03-01)
+
+
+### Features
+
+* add abandoned buildings and vehicles with obstacle, interaction, and passive effects ([#124](https://github.com/mhack-agent-one/agent-one/issues/124)) ([b243f25](https://github.com/mhack-agent-one/agent-one/commit/b243f25aa3236468b84081b965e596174acac28d))
+* auto-deliver rover inventory at station and show deposit events ([#232](https://github.com/mhack-agent-one/agent-one/issues/232)) ([210d353](https://github.com/mhack-agent-one/agent-one/commit/210d35364f9dc4c8c584b6b91e96debb7e68d647))
+* enable narration by default and fix UI state sync ([004d807](https://github.com/mhack-agent-one/agent-one/commit/004d807e444e2543d8099d8470fb6b6eb89d75de))
+* enable narration by default and fix UI state sync ([ed7db33](https://github.com/mhack-agent-one/agent-one/commit/ed7db3303f0178a2fb37cd38f14e9b1326e158ea))
+* Mars dust storm system — dynamic weather with battery drain and move interference ([#196](https://github.com/mhack-agent-one/agent-one/issues/196)) ([87dfa77](https://github.com/mhack-agent-one/agent-one/commit/87dfa77c736fa7aad8680b3c6bd73b2bd683b41b))
+* re-enable rover-2 on HuggingFace Qwen3-32B for multi-rover cooperation ([27efa8c](https://github.com/mhack-agent-one/agent-one/commit/27efa8cf7c672a4f6ad4c7647685c7e4a25c4b0a))
+* re-enable rover-2 on HuggingFace Qwen3-32B for multi-rover cooperation ([04ee7b4](https://github.com/mhack-agent-one/agent-one/commit/04ee7b4cd14077239d6eb26606aa267ab8268251))
+* simulation timer, session duration tracking, and control button verification ([e4cd455](https://github.com/mhack-agent-one/agent-one/commit/e4cd455347f714fa3a2433126ec8cf09c77e1f52))
+* simulation timer, session duration tracking, and control button verification ([ed3d05a](https://github.com/mhack-agent-one/agent-one/commit/ed3d05a35c6c68800fd80de164a6f8a0e9c8820b))
+* tune agent intervals, fix battery display, enhance map legend ([7c779e9](https://github.com/mhack-agent-one/agent-one/commit/7c779e96b2098722d3a5c728a3938d543aa97e38))
+* tune agent intervals, fix battery display, enhance map legend ([6dfc835](https://github.com/mhack-agent-one/agent-one/commit/6dfc83556f9041ef2587f6f50e5f06cdf52f3e3b))
+* **ui:** enhance landing page visuals — mission loop icons, agent card animations, Mars globe atmosphere ([878f909](https://github.com/mhack-agent-one/agent-one/commit/878f909e35f3b53beada17fbe7e703481783a067))
+* **ui:** enhance landing page visuals — mission loop icons, agent cards, Mars globe ([da451c9](https://github.com/mhack-agent-one/agent-one/commit/da451c9ea201bb5b1eb6275d4c04922b2d2e4235))
+
+
+### Bug Fixes
+
+* increase agent intervals to avoid 429 rate limits ([74109ce](https://github.com/mhack-agent-one/agent-one/commit/74109ce1be5125edf02465c5215e29c666a9adb3))
+* increase agent intervals to avoid 429 rate limits (4s/3.5s) ([cf0baa1](https://github.com/mhack-agent-one/agent-one/commit/cf0baa15ed455bd5c2e563e65a997f68765273d8))
+* increase agent log pane height by 50% ([1ea5e13](https://github.com/mhack-agent-one/agent-one/commit/1ea5e1321c9f9aa84370623441b163858a8bb711))
+* increase agent log pane height by 50% ([30fa052](https://github.com/mhack-agent-one/agent-one/commit/30fa0525f56890f4af5e6740f23e2250db8b1ed5))
+* **ui:** tone down HowItWorks timeline animation line ([552e940](https://github.com/mhack-agent-one/agent-one/commit/552e9401c0b0ddfbc2598d7ce08ce5b5d7d92f2c))
+* **ui:** tone down HowItWorks timeline line — reduce opacity, thickness, and animation speed ([f3952da](https://github.com/mhack-agent-one/agent-one/commit/f3952dac2393c3969e312da42bc9d3030916b3ee))
+
+
+### Performance Improvements
+
+* double agent action speed ([c518714](https://github.com/mhack-agent-one/agent-one/commit/c51871456eeb84bd742b3399822456aab8191c76))
+* double agent action speed (6s→3s rover, 5s→2.5s drone) ([8acd3d5](https://github.com/mhack-agent-one/agent-one/commit/8acd3d5abb697d2ee8f9f3952b739f2bfee756fc))
+
 ## [Unreleased]
 
 ### Features
