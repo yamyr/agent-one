@@ -21,6 +21,7 @@
 
 ### Bug Fixes
 
+* **config:** use configurable `drone_turn_interval_seconds` instead of hardcoded 2.0 ([#98](https://github.com/mhack-agent-one/agent-one/issues/98))
 * add thread-safe guards to Broadcaster disconnect/send ([#100](https://github.com/mhack-agent-one/agent-one/issues/100)) ([09e106a](https://github.com/mhack-agent-one/agent-one/commit/09e106a080bd34a9759d35bb5fa579dc94826c86))
 * add thread-safe guards to Broadcaster disconnect/send ([#100](https://github.com/mhack-agent-one/agent-one/issues/100)) ([e45c809](https://github.com/mhack-agent-one/agent-one/commit/e45c80920edf667c23cc0a2d78034603f8152e4b))
 * **ci:** apply ruff format to 7 unformatted files to fix server-lint ([#185](https://github.com/mhack-agent-one/agent-one/issues/185)) ([aa3f1a3](https://github.com/mhack-agent-one/agent-one/commit/aa3f1a36d4fad26c980a4ee0c9645d4425423cd0))
