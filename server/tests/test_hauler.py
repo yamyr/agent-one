@@ -36,7 +36,7 @@ class TestHaulerMove(unittest.TestCase):
     """Test hauler movement via execute_action."""
 
     def setUp(self):
-        world.reset()
+        # re-init hauler state
         WORLD["structures"] = []
         _reset_hauler()
 
@@ -95,7 +95,7 @@ class TestHaulerRestrictedActions(unittest.TestCase):
     """Verify haulers cannot perform rover/drone-only actions."""
 
     def setUp(self):
-        world.reset()
+        # re-init hauler state
         WORLD["structures"] = []
         _reset_hauler()
 
@@ -189,7 +189,7 @@ class TestPickupCargo(unittest.TestCase):
     """Test hauler pickup_cargo action from ground items."""
 
     def setUp(self):
-        world.reset()
+        # re-init hauler state
         WORLD["structures"] = []
         _reset_hauler()
         WORLD["ground_items"] = []
@@ -252,7 +252,7 @@ class TestLoadCargo(unittest.TestCase):
     """Test hauler load/load_cargo from cargo drops."""
 
     def setUp(self):
-        world.reset()
+        # re-init hauler state
         WORLD["structures"] = []
         _reset_hauler()
         WORLD["cargo_drops"] = []
@@ -316,7 +316,7 @@ class TestUnloadCargo(unittest.TestCase):
     """Test hauler unload/unload_cargo action."""
 
     def setUp(self):
-        world.reset()
+        # re-init hauler state
         WORLD["structures"] = []
         WORLD["delivered_items"] = []
         WORLD["cargo_drops"] = []
@@ -363,7 +363,7 @@ class TestLegacyCargoActions(unittest.TestCase):
     """Verify legacy cargo transfer actions are disabled."""
 
     def setUp(self):
-        world.reset()
+        # re-init hauler state
         WORLD["structures"] = []
         _reset_hauler()
 
