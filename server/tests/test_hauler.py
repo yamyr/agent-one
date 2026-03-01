@@ -322,7 +322,7 @@ class TestUnloadCargo(unittest.TestCase):
         _reset_hauler(pos=station_pos, battery=1.0)
         result = execute_action("hauler-mistral", "unload_cargo", {})
         self.assertFalse(result["ok"])
-        self.assertIn("empty", result["error"].lower())
+        self.assertIn("no cargo", result["error"].lower())
 
     def test_unload_low_battery(self):
         """Hauler with no battery cannot unload."""
