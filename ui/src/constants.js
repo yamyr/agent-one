@@ -34,6 +34,22 @@ export const AGENT_COLORS = {
 export const SOLAR_PANEL_COLOR = '#f0c040'
 export const SOLAR_PANEL_DEPLETED_COLOR = '#555555'
 
+export const STRUCTURE_COLORS = {
+  'refinery': '#b8860b',
+  'solar_panel_structure': '#daa520',
+  'accumulator': '#4682b4',
+  'broken_hauler': '#8b4513',
+  'broken_manipulator': '#696969',
+}
+
+export const STRUCTURE_LABELS = {
+  'refinery': 'Refinery',
+  'solar_panel_structure': 'Solar Panel',
+  'accumulator': 'Accumulator',
+  'broken_hauler': 'Broken Hauler',
+  'broken_manipulator': 'Broken Manipulator',
+}
+
 export const OBSTACLE_COLORS = {
   mountain: '#8899bb',
   geyser_idle: '#447788',
