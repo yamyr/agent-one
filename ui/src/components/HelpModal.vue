@@ -11,6 +11,9 @@ const emit = defineEmits(['close'])
     <div
       v-if="visible"
       class="help-overlay"
+      role="dialog"
+      aria-modal="true"
+      aria-label="Keyboard shortcuts"
       @click.self="emit('close')"
     >
       <div
