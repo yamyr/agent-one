@@ -9,6 +9,7 @@ import json
 import logging
 import random
 import re
+import time
 
 from huggingface_hub import InferenceClient
 from huggingface_hub.errors import HfHubHTTPError, InferenceTimeoutError
@@ -29,10 +30,51 @@ from .world import get_drone_intel_for_rover, get_unread_messages, send_agent_me
 from .world import set_agent_model
 from .world import execute_action, get_snapshot, charge_agent, next_tick
 from .station import StationAgent
+from .training_logger import training_logger
+from .training_models import TrainingTurn, TurnWorldSnapshot
 
 logger = logging.getLogger(__name__)
 
 STRUCTURED_REASONING_PROMPT = "\n\nBefore acting, output: SITUATION: <state> | OPTIONS: <a, b> | DECISION: <choice + why> | RISK: low/medium/high"
+
+
+def _build_turn_snapshot(agent_state: dict, world) -> TurnWorldSnapshot:
+    """Build a TurnWorldSnapshot from agent state and world model."""
+    station = world.get_agents().get("station")
+    station_pos = (
+        station["position"]
+        if station
+        and isinstance(station.get("position"), (list, tuple))
+        and len(station["position"]) >= 2
+        else [0, 0]
+    )
+    pos = agent_state.get("position", [0, 0])
+    if not isinstance(pos, (list, tuple)) or len(pos) < 2:
+        pos = [0, 0]
+    x, y = pos[0], pos[1]
+    dist = abs(x - station_pos[0]) + abs(y - station_pos[1])
+    mission = world.get_mission()
+    battery = agent_state.get("battery", 0)
+    if not isinstance(battery, (int, float)):
+        battery = 0
+    return TurnWorldSnapshot(
+        agent_position=[x, y],
+        agent_battery=battery,
+        agent_inventory=agent_state.get("inventory", [])
+        if isinstance(agent_state.get("inventory"), list)
+        else [],
+        agent_memory=agent_state.get("memory", [])[-5:]
+        if isinstance(agent_state.get("memory"), list)
+        else [],
+        agent_tasks=agent_state.get("tasks", [])
+        if isinstance(agent_state.get("tasks"), list)
+        else [],
+        visible_stones=[],
+        mission_status=mission.get("status", "running") if isinstance(mission, dict) else "running",
+        collected_quantity=mission.get("collected", 0) if isinstance(mission, dict) else 0,
+        target_quantity=mission.get("target_quantity", 100) if isinstance(mission, dict) else 100,
+        distance_to_station=dist,
+    )
 
 
 def _parse_structured_thinking(raw_thinking: str) -> dict:
@@ -1119,7 +1161,17 @@ class RoverLoop(BaseAgent):
             logger.info("Agent %s at station — abort complete", self.agent_id)
             return
 
+        # ── Training: capture pre-state ──
+        pre_rover = self._world.get_agents().get(self.agent_id) or {}
+        pre_position = list(pre_rover.get("position", [0, 0]))
+        pre_battery = pre_rover.get("battery", 1.0)
+        world_snap = (
+            _build_turn_snapshot(pre_rover, self._world) if pre_rover else TurnWorldSnapshot()
+        )
+        context_text = pre_rover.get("last_context", "")
+        t0 = time.monotonic()
         turn = await asyncio.to_thread(self._reasoner.run_turn)
+        llm_ms = int((time.monotonic() - t0) * 1000)
         next_tick()
         messages = []
 
@@ -1211,6 +1263,46 @@ class RoverLoop(BaseAgent):
 
         await broadcaster.send(make_message("world", "event", "state", get_snapshot()).to_dict())
 
+        # ── Training: log agent turn ──
+        action_result_data = {}
+        action_ok = False
+        action_name = ""
+        action_params = {}
+        if turn["action"]:
+            action_name = turn["action"]["name"]
+            action_params = turn["action"]["params"]
+            # Find the result from the execute_action call above
+            for m in messages:
+                md = m.to_dict() if hasattr(m, "to_dict") else m
+                if md.get("type") == "action" and md.get("name") == action_name:
+                    action_result_data = md.get("payload", {})
+                    action_ok = action_result_data.get("ok", False)
+                    break
+        post_rover = self._world.get_agents().get(self.agent_id) or {}
+        is_fallback = "fallback" in (turn.get("thinking") or "").lower()
+        current_tick = self._world.get_tick()
+        training_turn = TrainingTurn(
+            tick=current_tick,
+            agent_id=self.agent_id,
+            agent_type="rover",
+            context=context_text,
+            world_snapshot=world_snap,
+            thinking=turn.get("thinking"),
+            action_name=action_name,
+            action_params=action_params,
+            action_result=action_result_data,
+            action_ok=action_ok,
+            battery_before=pre_battery,
+            battery_after=post_rover.get("battery", 1.0),
+            position_before=pre_position,
+            position_after=list(post_rover.get("position", [0, 0])),
+            model=getattr(self._reasoner, "model", ""),
+            is_fallback=is_fallback,
+            llm_duration_ms=llm_ms,
+        )
+        training_logger.log_turn(training_turn)
+        training_logger.log_world_snapshot(current_tick, get_snapshot())
+
         # --- Periodic memory summarization ---
         current_tick = self._world.get_tick()
         if current_tick % 20 == 0:
@@ -1297,7 +1389,15 @@ class DroneLoop(BaseAgent):
                 [{"name": "recall", "payload": {"reason": "Mission aborted — return to station"}}],
             )
 
+        # ── Training: capture pre-state ──
+        _drone_state = self._world.get_agents().get(self.agent_id, {})
+        _pre_position = list(_drone_state.get("position", [0, 0]))
+        _pre_battery = _drone_state.get("battery", 1.0)
+        _t0 = time.monotonic()
         turn = await asyncio.to_thread(self._reasoner.run_turn)
+        _llm_ms = int((time.monotonic() - _t0) * 1000)
+        _action_result = {}
+        _action_ok = False
         next_tick()
         messages = []
 
@@ -1319,6 +1419,8 @@ class DroneLoop(BaseAgent):
                 turn["action"]["name"],
                 turn["action"]["params"],
             )
+            _action_result = result
+            _action_ok = result.get("ok", False)
             if result["ok"]:
                 action_msg = make_message(
                     source=self.agent_id,
@@ -1385,6 +1487,34 @@ class DroneLoop(BaseAgent):
             await host.broadcast(msg.to_dict())
 
         await broadcaster.send(make_message("world", "event", "state", get_snapshot()).to_dict())
+
+        # ── Training: log drone turn ──
+        try:
+            _post_drone = self._world.get_agents().get(self.agent_id, {})
+            _action = turn.get("action") or {}
+            training_turn = TrainingTurn(
+                tick=self._world.get_tick(),
+                agent_id=self.agent_id,
+                agent_type="drone",
+                context=getattr(self._reasoner, "last_context", ""),
+                world_snapshot=_build_turn_snapshot(_drone_state, self._world),
+                thinking=turn.get("thinking"),
+                action_name=_action.get("name", ""),
+                action_params=_action.get("params", {}),
+                action_result=_action_result,
+                action_ok=_action_ok,
+                battery_before=_pre_battery,
+                battery_after=_post_drone.get("battery", 1.0),
+                position_before=_pre_position,
+                position_after=list(_post_drone.get("position", [0, 0])),
+                model=getattr(self._reasoner, "model", ""),
+                is_fallback=turn.get("is_fallback", False),
+                llm_duration_ms=_llm_ms,
+            )
+            training_logger.log_turn(training_turn)
+            training_logger.log_world_snapshot(self._world.get_tick(), get_snapshot())
+        except Exception:
+            logger.debug("Training turn logging failed for %s", self.agent_id, exc_info=True)
 
         # Auto-charge drone when at station
         drone = self._world.get_agents().get(self.agent_id)
@@ -1474,9 +1604,27 @@ class StationLoop(BaseAgent):
             return
 
         context = self._world.observe_station()
+
+        # ── Training: capture pre-state ──
+        try:
+            _agents = self._world.get_agents()
+            station_state = _agents.get("station") or {} if isinstance(_agents, dict) else {}
+            pre_position = (
+                list(station_state.get("position", [0, 0]))
+                if isinstance(station_state, dict)
+                else [0, 0]
+            )
+            pre_battery = (
+                station_state.get("battery", 1.0) if isinstance(station_state, dict) else 1.0
+            )
+        except Exception:
+            station_state, pre_position, pre_battery = {}, [0, 0], 1.0
+        context_text = str(context) if context else ""
+        t0 = time.monotonic()
         result = await asyncio.to_thread(
             self._station.evaluate_situation, context, self._event_buffer
         )
+        llm_ms = int((time.monotonic() - t0) * 1000)
         self._event_buffer.clear()
 
         if result.get("thinking"):
@@ -1490,3 +1638,45 @@ class StationLoop(BaseAgent):
 
         # Execute actions through Host routing (ensures world-effect)
         await host.route_station_actions(result)
+
+        # ── Training: log station turn ──
+        try:
+            actions = result.get("actions", [])
+            action_name = actions[0]["name"] if actions else ""
+            action_params = actions[0].get("params", {}) if actions else {}
+            current_tick = self._world.get_tick()
+            _post_agents = self._world.get_agents()
+            post_station = (
+                _post_agents.get("station") or {} if isinstance(_post_agents, dict) else {}
+            )
+            training_turn = TrainingTurn(
+                tick=current_tick,
+                agent_id=getattr(self, "agent_id", "station-loop"),
+                agent_type="station",
+                context=context_text,
+                world_snapshot=_build_turn_snapshot(station_state, self._world)
+                if isinstance(station_state, dict) and station_state
+                else TurnWorldSnapshot(),
+                thinking=result.get("thinking"),
+                action_name=action_name,
+                action_params=action_params,
+                action_result={"actions": [a["name"] for a in actions]},
+                action_ok=bool(actions),
+                battery_before=pre_battery,
+                battery_after=post_station.get("battery", 1.0)
+                if isinstance(post_station, dict)
+                else 1.0,
+                position_before=pre_position,
+                position_after=list(post_station.get("position", [0, 0]))
+                if isinstance(post_station, dict)
+                else [0, 0],
+                model=getattr(self._station, "model", "")
+                if isinstance(getattr(self._station, "model", None), str)
+                else "",
+                is_fallback=False,
+                llm_duration_ms=llm_ms,
+            )
+            training_logger.log_turn(training_turn)
+            training_logger.log_world_snapshot(current_tick, get_snapshot())
+        except Exception:
+            logger.debug("Training turn logging failed for station", exc_info=True)

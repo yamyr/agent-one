@@ -8,6 +8,7 @@ from .broadcast import broadcaster
 from .config import settings
 from .finetuning import fine_tuning_manager
 from .training import collector
+from .training_logger import training_logger
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -102,6 +103,53 @@ def activate_fine_tuned_model(job_id: str = Path(...), req: ActivateRequest = ..
         raise HTTPException(status_code=400, detail=str(exc))
     except RuntimeError as exc:
         raise HTTPException(status_code=503, detail=str(exc))
+
+
+# ── Training data endpoints ──────────────────────────────────────────────────────────────
+
+
+@router.get("/api/training/sessions")
+def list_training_sessions(limit: int = 50, offset: int = 0):
+    """List training sessions, newest first."""
+    return training_logger.list_sessions(limit=limit, offset=offset)
+
+
+@router.get("/api/training/sessions/{session_id}")
+def get_training_session(session_id: str):
+    """Get a training session with stats."""
+    session = training_logger.get_session(session_id)
+    if session is None:
+        raise HTTPException(status_code=404, detail=f"Session not found: {session_id}")
+    stats = training_logger.get_session_stats(session_id)
+    return {"session": session, "stats": stats}
+
+
+@router.get("/api/training/sessions/{session_id}/turns")
+def get_training_turns(session_id: str, limit: int = 100, offset: int = 0):
+    """Get turns for a training session."""
+    return training_logger.get_turns(session_id, limit=limit, offset=offset)
+
+
+@router.get("/api/training/sessions/{session_id}/events")
+def get_training_events(session_id: str, limit: int = 200, offset: int = 0):
+    """Get events for a training session."""
+    return training_logger.get_events(session_id, limit=limit, offset=offset)
+
+
+@router.get("/api/training/sessions/{session_id}/snapshots")
+def get_training_snapshots(session_id: str, limit: int = 50, offset: int = 0):
+    """Get world snapshots for a training session."""
+    return training_logger.get_snapshots(session_id, limit=limit, offset=offset)
+
+
+@router.get("/api/training/sessions/{session_id}/export")
+def export_training_session(session_id: str):
+    """Export session as JSONL records for Mistral fine-tuning."""
+    session = training_logger.get_session(session_id)
+    if session is None:
+        raise HTTPException(status_code=404, detail=f"Session not found: {session_id}")
+    records = training_logger.export_session_jsonl(session_id)
+    return {"session_id": session_id, "records": records, "count": len(records)}
 
 
 @router.websocket("/ws")
