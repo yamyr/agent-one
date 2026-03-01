@@ -24,6 +24,26 @@
 
 ### Features
 
+* **config:** increase LLM turn intervals (3→6s rover, 2→5s drone) to reduce Mistral API rate-limit errors
+* **config:** deactivate rover-2 from default active agents (still available for reactivation)
+* **world:** remove rover-2 from initial world state to declutter the simulation
+* **world:** include `battery` field in move action results so the UI event log shows correct battery percentage
+* **ui:** add 3-second pause on first WebSocket connect so the audience sees agents at starting positions
+* **ui:** add Hazards section (mountain, geyser states) and Structures section (solar panels) to MapLegend
+
+### Bug Fixes
+
+* **EventLog:** battery now reads from move action result instead of always showing 0%
+
+### Tests
+
+* **test_config:** update default drone interval assertion (2.0→5.0) to match new defaults
+* **test_world:** switch geyser eruption tests from rover-2 to rover-mistral (rover-2 removed from world init)
+
+## [Previous]
+
+### Features
+
 * **world:** add environmental hazards — ice mountains (impassable terrain) and air geysers (cyclical eruptions) ([#106](https://github.com/mhack-agent-one/agent-one/pull/106))
   - Mountains block agent movement; deterministic per-chunk generation (~0.8% per tile)
   - Geysers cycle through idle → warning → erupting states; eruptions drain 10% battery from agents on the tile

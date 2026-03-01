@@ -462,7 +462,6 @@ def _build_initial_world():
                 "memory": [],
             },
             "rover-mistral": _make_rover(0, 0),
-            "rover-2": _make_rover(0, 0),
             "drone-mistral": _make_drone(0, 0),
         },
         "stones": [],
@@ -872,6 +871,7 @@ def execute_action(agent_id, action_name, params):
         result = move_agent(agent_id, tx, ty)
         if result["ok"]:
             agent["battery"] = max(0.0, agent["battery"] - cost)
+            result["battery"] = agent["battery"]
             # Mark all intermediate + destination tiles as visited/revealed
             for step in range(1, distance + 1):
                 sx, sy = ox + delta[0] * step, oy + delta[1] * step

@@ -2557,13 +2557,13 @@ class TestObstacles(unittest.TestCase):
             self.skipTest("No geysers generated with current seed")
         g = geysers[0]
         gx, gy = g["position"]
-        rover = world.state["agents"]["rover-2"]
+        rover = world.state["agents"]["rover-mistral"]
         rover["position"] = [gx, gy]
         rover["battery"] = 0.5
         # Set geyser to just before erupting
         g["_cycle_tick"] = GEYSER_CYCLE_IDLE + GEYSER_CYCLE_WARNING - 1
         events = update_geysers()
-        eruption_events = [e for e in events if e["agent_id"] == "rover-2"]
+        eruption_events = [e for e in events if e["agent_id"] == "rover-mistral"]
         self.assertEqual(len(eruption_events), 1)
         self.assertAlmostEqual(rover["battery"], 0.5 - BATTERY_COST_GEYSER)
 
@@ -2576,7 +2576,7 @@ class TestObstacles(unittest.TestCase):
             self.skipTest("No geysers generated with current seed")
         g = geysers[0]
         gx, gy = g["position"]
-        rover = world.state["agents"]["rover-2"]
+        rover = world.state["agents"]["rover-mistral"]
         rover["position"] = [gx, gy]
         rover["battery"] = 0.05
         g["_cycle_tick"] = GEYSER_CYCLE_IDLE + GEYSER_CYCLE_WARNING - 1
