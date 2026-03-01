@@ -22,7 +22,7 @@ from .narrator import Narrator
 from .views import router as views_router
 from .voice import VoiceCommandProcessor, SUPPORTED_AUDIO_TYPES
 from .world import reset_world, set_agent_model
-from .training_logger import training_logger
+from .training import collector as training_collector
 
 logging.basicConfig(
     level=logging.INFO,
@@ -69,7 +69,7 @@ def _register_agents():
 @asynccontextmanager
 async def lifespan(app):
     init_db()
-    training_logger.init_schema()
+    training_collector._ensure_dir()
     _register_agents()
     await host.start()
     yield
