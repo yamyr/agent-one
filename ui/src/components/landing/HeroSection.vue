@@ -79,12 +79,33 @@ function scrollToFeatures() {
   padding: 72px 5% 0;
 }
 
+/* Atmospheric gradient overlay — layers create depth */
 .hero::before {
   content: '';
   position: absolute;
   inset: 0;
-  background: radial-gradient(circle at 22% 36%, rgba(5, 2, 14, 0.08), rgba(5, 2, 14, 0.72) 48%, rgba(5, 2, 14, 0.9) 100%);
+  background:
+    radial-gradient(ellipse at 22% 36%, rgba(5, 2, 14, 0.05), rgba(5, 2, 14, 0.65) 40%, rgba(5, 2, 14, 0.88) 100%),
+    radial-gradient(ellipse at 80% 80%, rgba(255, 107, 53, 0.04), transparent 60%);
   pointer-events: none;
+}
+
+/* Horizon glow — warm Mars atmosphere along bottom edge */
+.hero::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 200px;
+  background: linear-gradient(
+    to top,
+    rgba(255, 107, 53, 0.06),
+    rgba(255, 140, 82, 0.03) 40%,
+    transparent 100%
+  );
+  pointer-events: none;
+  z-index: 1;
 }
 
 .hero__content {
@@ -355,4 +376,8 @@ function scrollToFeatures() {
     animation: none !important;
   }
 }
+
+  .hero::after {
+    animation: none !important;
+  }
 </style>

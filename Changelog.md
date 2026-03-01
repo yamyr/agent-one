@@ -20,6 +20,20 @@
 * **tests:** add assertions to tests that verified nothing ([#142](https://github.com/mhack-agent-one/agent-one/issues/142)) ([8323908](https://github.com/mhack-agent-one/agent-one/commit/8323908815889655a0396a97f41097ca2b2329ee))
 * **ui:** guard AgentDetailModal against null properties ([#89](https://github.com/mhack-agent-one/agent-one/issues/89)) ([#217](https://github.com/mhack-agent-one/agent-one/issues/217)) ([2d73524](https://github.com/mhack-agent-one/agent-one/commit/2d7352475718d7204ce102a5495579371bf3342a))
 
+### UI — Landing Page Visual Enhancements
+
+* **ui:** enhance HeroSection with dual-layer atmospheric radial gradient and warm horizon glow
+* **ui:** replace HowItWorks numbered circles with inline SVG icons (Eye, Brain, Gears, Arrows) and per-step CSS animations (scan-sweep, brain-glow, gear-spin, cycle-rotate)
+* **ui:** enhance AgentsShowcase with detailed SVG agent icons, per-agent hover animations (wheel spin, propeller rotate, signal pulse), colored glow auras, and background patterns
+* **ui:** upgrade MarsGlobe procedural texture to 1024px with crater/canyon features, Fresnel atmospheric shader, rim lighting, and atmosphere pulse animation
+* **ui:** fix pre-existing StatsBar.vue broken HTML (duplicate `<span>`) and orphaned CSS that blocked the build
+
+### Errors Identified & Prevented
+
+* **StatsBar.vue** had a duplicate `<span class="stat">` tag at line 111-112 and orphaned CSS properties at lines 194-195 — both caused build failures. Fixed as part of this changeset.
+* All landing page SVG icons use `aria-hidden="true"` for accessibility — decorative icons must not confuse screen readers.
+* All CSS animations include `@media (prefers-reduced-motion: reduce)` rules to respect user accessibility preferences.
+
 ## [Unreleased]
 
 ### Features

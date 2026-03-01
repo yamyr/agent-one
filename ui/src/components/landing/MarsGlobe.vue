@@ -14,6 +14,7 @@ import {
   AdditiveBlending,
   BackSide,
   Color,
+  ShaderMaterial,
 } from 'three'
 
 /**
@@ -21,7 +22,8 @@ import {
  *
  * Renders a realistic Mars sphere using a procedurally generated
  * canvas texture (simplex-like noise via nested sin/cos). Includes
- * an outer atmospheric glow shell and gentle floating animation.
+ * Fresnel-based atmospheric glow, rim lighting, and gentle floating
+ * animation.
  *
  * Non-interactive, positioned bottom-right of the hero section.
  * Falls back to a CSS radial-gradient circle if WebGL is unavailable.
@@ -39,7 +41,8 @@ let resizeTimer = null
 
 /**
  * Procedural Mars terrain noise — layered sine/cosine to approximate
- * simplex noise without external dependencies.
+ * simplex noise without external dependencies. Multiple octaves for
+ * continent-scale, mid-frequency, high-frequency, and ultra-fine detail.
  */
 function marsNoise(x, y) {
   // Base continent-scale variation
@@ -53,26 +56,96 @@ function marsNoise(x, y) {
   n += Math.cos(x * 31.1 - y * 27.9) * 0.05
   // Crater-like depressions
   n += Math.sin(x * 7.1) * Math.cos(y * 6.3) * 0.12
+  // Ultra-fine grain (extra octaves)
+  n += Math.sin(x * 47.3 + y * 41.7) * 0.03
+  n += Math.cos(x * 63.1 - y * 58.9) * 0.02
+  n += Math.sin(x * 89.7 + y * 73.3) * 0.015
   return n
 }
 
 /**
- * Generate a 512x512 procedural Mars surface texture on a canvas.
- * Blends between Mars palette colors based on noise values.
+ * Procedural crater features — creates circular depressions at
+ * fixed pseudo-random locations on the sphere.
+ */
+function craterNoise(x, y) {
+  // Crater centers in normalized spherical coordinates
+  const craters = [
+    { cx: 2.1, cy: 1.4, r: 0.35, depth: 0.28 },
+    { cx: 4.5, cy: 1.8, r: 0.25, depth: 0.22 },
+    { cx: 1.0, cy: 2.3, r: 0.20, depth: 0.18 },
+    { cx: 3.8, cy: 0.9, r: 0.30, depth: 0.25 },
+    { cx: 5.5, cy: 2.0, r: 0.18, depth: 0.15 },
+    { cx: 0.5, cy: 1.1, r: 0.22, depth: 0.20 },
+    { cx: 2.8, cy: 2.6, r: 0.15, depth: 0.12 },
+    { cx: 4.2, cy: 0.5, r: 0.28, depth: 0.24 },
+    { cx: 5.8, cy: 1.2, r: 0.12, depth: 0.10 },
+    { cx: 1.5, cy: 2.8, r: 0.16, depth: 0.13 },
+    { cx: 3.2, cy: 1.6, r: 0.10, depth: 0.08 },
+    { cx: 0.8, cy: 0.6, r: 0.14, depth: 0.11 },
+  ]
+
+  let result = 0
+  for (const c of craters) {
+    const dx = x - c.cx
+    const dy = y - c.cy
+    const dist = Math.sqrt(dx * dx + dy * dy)
+    if (dist < c.r) {
+      // Smooth circular depression with raised rim
+      const t = dist / c.r
+      const bowl = -c.depth * (1.0 - t * t)
+      // Slight rim uplift at edge
+      const rim = c.depth * 0.3 * Math.exp(-((t - 0.85) * (t - 0.85)) / 0.02)
+      result += bowl + rim
+    }
+  }
+  return result
+}
+
+/**
+ * Long linear canyon feature (Valles Marineris–like) across the
+ * equatorial region.
+ */
+function canyonNoise(x, y) {
+  // Canyon runs along the equator (y ≈ π/2) with sinusoidal wander
+  const equator = Math.PI * 0.52
+  const canyonY = equator + Math.sin(x * 1.2) * 0.08 + Math.sin(x * 2.8) * 0.04
+  const distFromCanyon = Math.abs(y - canyonY)
+  const canyonWidth = 0.06 + Math.sin(x * 3.5) * 0.015
+
+  if (distFromCanyon < canyonWidth && x > 1.2 && x < 4.8) {
+    // Smooth canyon profile — deepest at center
+    const t = distFromCanyon / canyonWidth
+    const depth = -0.35 * (1.0 - t * t) * (1.0 - t * t)
+    // Taper at canyon ends
+    const endTaper = Math.min(
+      1.0,
+      (x - 1.2) / 0.4,
+      (4.8 - x) / 0.4
+    )
+    return depth * endTaper
+  }
+  return 0
+}
+
+/**
+ * Generate a 1024×1024 procedural Mars surface texture on a canvas.
+ * Blends between Mars palette colors based on noise values with
+ * crater features, canyons, and impact basins.
  */
 function generateMarsTexture() {
-  const size = 512
+  const size = 1024
   const canvas = document.createElement('canvas')
   canvas.width = size
   canvas.height = size
   const ctx = canvas.getContext('2d')
 
-  // Mars color palette
+  // Enhanced Mars color palette
   const rust = { r: 178, g: 110, b: 82 }       // #b26e52 — dominant rust
   const dark = { r: 107, g: 58, b: 42 }         // #6b3a2a — dark lowlands
   const ochre = { r: 212, g: 137, b: 63 }       // #d4893f — bright highlands
   const shadow = { r: 61, g: 31, b: 20 }        // #3d1f14 — deep shadow / craters
   const highlight = { r: 196, g: 148, b: 108 }  // #c4946c — sunlit ridges
+  const dustyPink = { r: 205, g: 145, b: 130 }  // #cd9182 — dusty pink highlight
 
   const imageData = ctx.createImageData(size, size)
   const data = imageData.data
@@ -83,34 +156,53 @@ function generateMarsTexture() {
       const nx = (x / size) * Math.PI * 2
       const ny = (y / size) * Math.PI
 
-      const n = marsNoise(nx, ny)
+      let n = marsNoise(nx, ny)
+      n += craterNoise(nx, ny)
+      n += canyonNoise(nx, ny)
 
-      // Map noise to color zones
+      // Map noise to color zones with more dramatic contrast
       let r, g, b
-      if (n < -0.25) {
-        // Deep craters / shadow
-        const t = (n + 0.5) / 0.25
-        r = shadow.r + (dark.r - shadow.r) * Math.max(0, t)
-        g = shadow.g + (dark.g - shadow.g) * Math.max(0, t)
-        b = shadow.b + (dark.b - shadow.b) * Math.max(0, t)
-      } else if (n < 0.0) {
+      if (n < -0.30) {
+        // Deep craters / canyon floors — very dark
+        const t = Math.max(0, (n + 0.55) / 0.25)
+        r = shadow.r + (dark.r - shadow.r) * t
+        g = shadow.g + (dark.g - shadow.g) * t
+        b = shadow.b + (dark.b - shadow.b) * t
+      } else if (n < -0.08) {
         // Dark lowlands
-        const t = (n + 0.25) / 0.25
+        const t = (n + 0.30) / 0.22
         r = dark.r + (rust.r - dark.r) * t
         g = dark.g + (rust.g - dark.g) * t
         b = dark.b + (rust.b - dark.b) * t
-      } else if (n < 0.2) {
+      } else if (n < 0.15) {
         // Standard rust terrain
-        const t = n / 0.2
+        const t = (n + 0.08) / 0.23
         r = rust.r + (ochre.r - rust.r) * t
         g = rust.g + (ochre.g - rust.g) * t
         b = rust.b + (ochre.b - rust.b) * t
+      } else if (n < 0.30) {
+        // Bright highlands — ochre to dusty pink
+        const t = (n - 0.15) / 0.15
+        r = ochre.r + (dustyPink.r - ochre.r) * t
+        g = ochre.g + (dustyPink.g - ochre.g) * t
+        b = ochre.b + (dustyPink.b - ochre.b) * t
       } else {
-        // Bright highlands
-        const t = Math.min(1, (n - 0.2) / 0.3)
-        r = ochre.r + (highlight.r - ochre.r) * t
-        g = ochre.g + (highlight.g - ochre.g) * t
-        b = ochre.b + (highlight.b - ochre.b) * t
+        // Sunlit ridges — dusty pink to highlight
+        const t = Math.min(1, (n - 0.30) / 0.25)
+        r = dustyPink.r + (highlight.r - dustyPink.r) * t
+        g = dustyPink.g + (highlight.g - dustyPink.g) * t
+        b = dustyPink.b + (highlight.b - dustyPink.b) * t
+      }
+
+      // Procedural dark spots for impact basins
+      const basinNoise = Math.sin(nx * 2.3 + 0.7) * Math.cos(ny * 3.1 + 1.2)
+        * Math.sin(nx * 1.1 - ny * 0.8) * 0.5
+      if (basinNoise > 0.35) {
+        const basinStrength = (basinNoise - 0.35) / 0.15
+        const blend = Math.min(1, basinStrength * 0.4)
+        r = r * (1 - blend) + shadow.r * blend
+        g = g * (1 - blend) + shadow.g * blend
+        b = b * (1 - blend) + shadow.b * blend
       }
 
       // Add micro-variation for grain
@@ -125,12 +217,16 @@ function generateMarsTexture() {
 
   ctx.putImageData(imageData, 0, 0)
 
-  // Add a few procedural "polar caps" — lighter blending at top/bottom
+  // Polar caps — smoother gradient with whiter tones
   const gradient = ctx.createLinearGradient(0, 0, 0, size)
-  gradient.addColorStop(0, 'rgba(210, 180, 155, 0.25)')
-  gradient.addColorStop(0.12, 'rgba(210, 180, 155, 0)')
-  gradient.addColorStop(0.88, 'rgba(210, 180, 155, 0)')
-  gradient.addColorStop(1, 'rgba(200, 170, 145, 0.18)')
+  gradient.addColorStop(0, 'rgba(235, 220, 210, 0.35)')
+  gradient.addColorStop(0.04, 'rgba(230, 215, 200, 0.22)')
+  gradient.addColorStop(0.10, 'rgba(220, 200, 185, 0.08)')
+  gradient.addColorStop(0.15, 'rgba(220, 200, 185, 0)')
+  gradient.addColorStop(0.85, 'rgba(220, 200, 185, 0)')
+  gradient.addColorStop(0.90, 'rgba(220, 200, 185, 0.06)')
+  gradient.addColorStop(0.96, 'rgba(225, 210, 195, 0.18)')
+  gradient.addColorStop(1, 'rgba(230, 215, 200, 0.28)')
   ctx.fillStyle = gradient
   ctx.fillRect(0, 0, size, size)
 
@@ -151,6 +247,35 @@ function isWebGLAvailable() {
     return false
   }
 }
+
+/**
+ * Fresnel atmosphere vertex shader — computes view-normal dot product
+ * and passes it to the fragment shader for edge brightening.
+ */
+const fresnelVertexShader = `
+  varying float vFresnel;
+  void main() {
+    vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
+    vec3 viewDir = normalize(-mvPosition.xyz);
+    vec3 worldNormal = normalize(normalMatrix * normal);
+    vFresnel = 1.0 - dot(viewDir, worldNormal);
+    gl_Position = projectionMatrix * mvPosition;
+  }
+`
+
+/**
+ * Fresnel atmosphere fragment shader — edge glow using pow(fresnel, 3.0)
+ * for a natural atmospheric falloff.
+ */
+const fresnelFragmentShader = `
+  uniform vec3 glowColor;
+  uniform float opacity;
+  varying float vFresnel;
+  void main() {
+    float intensity = pow(vFresnel, 3.0);
+    gl_FragColor = vec4(glowColor, intensity * opacity);
+  }
+`
 
 /**
  * Initialize the Three.js scene, camera, lights, Mars sphere, and glow.
@@ -176,13 +301,18 @@ function initScene() {
   camera = new PerspectiveCamera(45, width / height, 0.1, 100)
   camera.position.z = 2.5
 
-  // Lighting
+  // Lighting — warmed up main light
   const ambientLight = new AmbientLight(0xffffff, 0.3)
   scene.add(ambientLight)
 
-  const dirLight = new DirectionalLight(0xfff4e6, 1.0)
+  const dirLight = new DirectionalLight(0xfff2e0, 1.0)
   dirLight.position.set(-3, 2, 1)
   scene.add(dirLight)
+
+  // Rim light from behind-right for depth
+  const rimLight = new DirectionalLight(0xff9060, 0.3)
+  rimLight.position.set(2, -1, -2)
+  scene.add(rimLight)
 
   // Mars globe
   const marsTexture = new CanvasTexture(generateMarsTexture())
@@ -194,12 +324,16 @@ function initScene() {
   })
   const mars = new Mesh(marsGeometry, marsMaterial)
 
-  // Atmospheric glow — slightly larger sphere, additive blending, BackSide
+  // Fresnel atmospheric glow — brighter at edges, transparent at center
   const glowGeometry = new SphereGeometry(1.08, 64, 64)
-  const glowMaterial = new MeshBasicMaterial({
-    color: new Color('#ff6b35'),
+  const glowMaterial = new ShaderMaterial({
+    uniforms: {
+      glowColor: { value: new Color('#ff8c52') },
+      opacity: { value: 0.15 },
+    },
+    vertexShader: fresnelVertexShader,
+    fragmentShader: fresnelFragmentShader,
     transparent: true,
-    opacity: 0.08,
     blending: AdditiveBlending,
     side: BackSide,
     depthWrite: false,
@@ -222,12 +356,13 @@ function initScene() {
   scene.add(glow)
   scene.add(haze)
 
-  // Store references for rotation
+  // Store references for rotation and animation
   marsGroup = { mars, glow, haze }
 }
 
 /**
- * Animation loop — slow rotation on Y and slight X wobble.
+ * Animation loop — slow rotation on Y and slight X wobble,
+ * plus subtle atmosphere opacity pulsing.
  */
 function animate() {
   if (!renderer || !scene || !camera || !marsGroup) return
@@ -236,6 +371,10 @@ function animate() {
   marsGroup.mars.rotation.x += 0.0003
   marsGroup.glow.rotation.y += 0.0008
   marsGroup.haze.rotation.y += 0.0005
+
+  // Subtle atmosphere opacity pulsing
+  marsGroup.glow.material.uniforms.opacity.value =
+    0.08 + Math.sin(Date.now() * 0.001) * 0.02
 
   renderer.render(scene, camera)
   animationId = requestAnimationFrame(animate)
