@@ -39,6 +39,10 @@ const props = defineProps({
     type: String,
     default: '',
   },
+  messageCount: {
+    type: Number,
+    default: 0,
+  },
 })
 
 const emit = defineEmits(['select-agent'])
@@ -184,6 +188,20 @@ function eventText(e) {
   font-size: 0.7rem;
   color: var(--text-tertiary);
   margin-top: 0.15rem;
+}
+
+.message-badge {
+  background: #f59e0b;
+  color: #000;
+  border-radius: 10px;
+  padding: 1px 7px;
+  font-size: 0.72rem;
+  margin-left: 6px;
+  animation: badge-pulse 2s ease-in-out infinite;
+}
+@keyframes badge-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.6; }
 }
 
 .agent-name {

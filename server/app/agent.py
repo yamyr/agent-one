@@ -22,6 +22,7 @@ from .world import BATTERY_COST_MOVE, BATTERY_COST_MOVE_DRONE, BATTERY_COST_DIG
 from .world import BATTERY_COST_ANALYZE, BATTERY_COST_SCAN, BATTERY_COST_NOTIFY
 from .world import MAX_INVENTORY_ROVER
 from .world import check_ground, direction_hint, best_drone_hotspot
+from .world import get_drone_intel_for_rover, get_unread_messages, send_agent_message
 from .world import set_agent_model
 from .world import execute_action, get_snapshot, charge_agent, next_tick
 from .station import StationAgent
@@ -381,6 +382,25 @@ class MistralRoverReasoner:
                     parts.append(f"NEW MISSION: {objective}")
                 else:
                     parts.append(f"{cmd['name'].upper()}: {cmd.get('payload', {})}")
+
+        # Drone intel: hotspots from drone scans
+        drone_intel = get_drone_intel_for_rover(self.agent_id)
+        if drone_intel:
+            parts.append("\n== DRONE INTEL (high-concentration scan results) ==")
+            for di in drone_intel:
+                parts.append(
+                    f"  \U0001f4e1 [{di['position'][0]},{di['position'][1]}] "
+                    f"concentration={di['concentration']} "
+                    f"(scanned by {di['scanned_by']} at tick {di['tick']})"
+                )
+            parts.append("Consider moving toward high-concentration sites.")
+
+        # Incoming messages from other agents
+        incoming = get_unread_messages(self.agent_id)
+        if incoming:
+            parts.append("\n== INCOMING MESSAGES ==")
+            for msg in incoming:
+                parts.append(f"  \U0001f4e8 From {msg['from']} (tick {msg['tick']}): {msg['message']}")
 
         parts.append(STRUCTURED_REASONING_PROMPT)
 
@@ -1167,6 +1187,26 @@ class DroneLoop(BaseAgent):
                         },
                     )
                     messages.append(station_log)
+
+                # Auto-relay high-concentration scan results to rover
+                if turn["action"]["name"] == "scan" and result.get("concentration", 0) > 0.5:
+                    relay_msg = send_agent_message(
+                        self.agent_id,
+                        "rover-mistral",
+                        f"High concentration {result['concentration']:.2f} at {result.get('position', '?')}",
+                    )
+                    relay_event = make_message(
+                        source=self.agent_id,
+                        type="event",
+                        name="intel_relay",
+                        payload={
+                            "from": self.agent_id,
+                            "to": "rover-mistral",
+                            "message": relay_msg["message"],
+                        },
+                    )
+                    messages.append(relay_event)
+
 
         # LLM-owned task: update agent tasks from LLM output
         llm_task = turn.get("task")

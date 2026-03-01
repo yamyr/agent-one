@@ -122,6 +122,8 @@ function eventNameClass(event) {
       return 'event-name-think'
     case 'insight':
       return 'event-name-insight'
+    case 'intel_relay':
+      return 'event-name-relay'
     default:
       return 'event-name-default'
   }
@@ -174,6 +176,9 @@ function formatPayload(event) {
       break
     case 'insight':
       result = `💡 ${p.text || ''}`
+      break
+    case 'intel_relay':
+      result = `\u{1F4E8} ${p.from || '?'} \u2192 ${p.to || '?'}: ${p.message || 'Intel relayed'}`
       break
     default:
       result = JSON.stringify(p, null, 2)

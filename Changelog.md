@@ -19,6 +19,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- **Live Inter-Agent Communication (Feature A)**: Drone scan intel wired into rover LLM context, inter-agent message relay system, auto-relay of high-concentration scans.
+- `world.py`: `AGENT_MESSAGES`, `send_agent_message()`, `get_unread_messages()`, `get_drone_intel_for_rover()`
+- `agent.py`: Rover context injects drone intel hotspots and incoming messages; DroneLoop auto-relays scans
+- UI: `intel_relay` event rendering, message badge on agent panes
+- 10 new inter-agent communication tests
 
 * **station-loop:** Station Reactive Intelligence (Feature E) — periodic LLM evaluation of field events with reactive coordination
 * **station-loop:** `StationLoop` BaseAgent subclass with 20s evaluation interval and event buffering (max 50)
