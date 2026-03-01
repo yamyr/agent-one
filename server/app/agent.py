@@ -1504,6 +1504,71 @@ class RoverMistralLoop(RoverLoop):
         set_agent_model(self.agent_id, self._reasoner.model)
 
 
+class RoverLargeLoop(RoverLoop):
+    """Rover loop wired to MistralRoverReasoner using mistral-large-latest."""
+
+    def __init__(
+        self, agent_id: str = "rover-large", interval: float = 3.0, world: World | None = None
+    ):
+        super().__init__(agent_id=agent_id, interval=interval, world=world)
+        self._reasoner = MistralRoverReasoner(
+            agent_id=self.agent_id, model="mistral-large-latest", world=self._world
+        )
+        set_agent_model(self.agent_id, self._reasoner.model)
+
+
+class RoverMediumLoop(RoverLoop):
+    """Rover loop wired to MistralRoverReasoner using mistral-medium-latest."""
+
+    def __init__(
+        self, agent_id: str = "rover-medium", interval: float = 3.0, world: World | None = None
+    ):
+        super().__init__(agent_id=agent_id, interval=interval, world=world)
+        self._reasoner = MistralRoverReasoner(
+            agent_id=self.agent_id, model="mistral-medium-latest", world=self._world
+        )
+        set_agent_model(self.agent_id, self._reasoner.model)
+
+
+class RoverCodestralLoop(RoverLoop):
+    """Rover loop wired to MistralRoverReasoner using codestral-latest."""
+
+    def __init__(
+        self, agent_id: str = "rover-codestral", interval: float = 3.0, world: World | None = None
+    ):
+        super().__init__(agent_id=agent_id, interval=interval, world=world)
+        self._reasoner = MistralRoverReasoner(
+            agent_id=self.agent_id, model="codestral-latest", world=self._world
+        )
+        set_agent_model(self.agent_id, self._reasoner.model)
+
+
+class RoverMinistralLoop(RoverLoop):
+    """Rover loop wired to MistralRoverReasoner using ministral-8b-latest."""
+
+    def __init__(
+        self, agent_id: str = "rover-ministral", interval: float = 3.0, world: World | None = None
+    ):
+        super().__init__(agent_id=agent_id, interval=interval, world=world)
+        self._reasoner = MistralRoverReasoner(
+            agent_id=self.agent_id, model="ministral-8b-latest", world=self._world
+        )
+        set_agent_model(self.agent_id, self._reasoner.model)
+
+
+class RoverMagistralLoop(RoverLoop):
+    """Rover loop wired to MistralRoverReasoner using magistral-small-latest."""
+
+    def __init__(
+        self, agent_id: str = "rover-magistral", interval: float = 3.0, world: World | None = None
+    ):
+        super().__init__(agent_id=agent_id, interval=interval, world=world)
+        self._reasoner = MistralRoverReasoner(
+            agent_id=self.agent_id, model="magistral-small-latest", world=self._world
+        )
+        set_agent_model(self.agent_id, self._reasoner.model)
+
+
 class DroneLoop(BaseAgent):
     """Generic drone tick: reason → execute → broadcast."""
 

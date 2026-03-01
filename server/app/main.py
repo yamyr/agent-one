@@ -14,6 +14,11 @@ from .agent import (
     RoverHuggingFaceLoop,
     DroneHuggingFaceLoop,
     StationLoop,
+    RoverLargeLoop,
+    RoverMediumLoop,
+    RoverCodestralLoop,
+    RoverMinistralLoop,
+    RoverMagistralLoop,
 )
 from .broadcast import broadcaster
 from .config import settings
@@ -53,6 +58,21 @@ AGENT_MAP = {
         interval=settings.drone_turn_interval_seconds
     ),
     "station-loop": lambda: StationLoop(interval=20.0),
+    "rover-large": lambda: RoverLargeLoop(
+        agent_id="rover-large", interval=settings.llm_turn_interval_seconds
+    ),
+    "rover-medium": lambda: RoverMediumLoop(
+        agent_id="rover-medium", interval=settings.llm_turn_interval_seconds
+    ),
+    "rover-codestral": lambda: RoverCodestralLoop(
+        agent_id="rover-codestral", interval=settings.llm_turn_interval_seconds
+    ),
+    "rover-ministral": lambda: RoverMinistralLoop(
+        agent_id="rover-ministral", interval=settings.llm_turn_interval_seconds
+    ),
+    "rover-magistral": lambda: RoverMagistralLoop(
+        agent_id="rover-magistral", interval=settings.llm_turn_interval_seconds
+    ),
 }
 
 

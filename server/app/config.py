@@ -41,7 +41,7 @@ class Settings(BaseSettings):
     world_seed: str = ""
 
     # Active agents (comma-separated)
-    active_agents: str = "rover-mistral,rover-2,drone-mistral,station-loop"
+    active_agents: str = "rover-mistral,rover-2,drone-mistral,station-loop,rover-large,rover-medium,rover-codestral,rover-ministral,rover-magistral"
 
     # ElevenLabs narration
     elevenlabs_api_key: str = ""
