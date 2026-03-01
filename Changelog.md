@@ -1,5 +1,26 @@
 # Changelog
 
+## [0.7.0](https://github.com/yamyr/agent-one/compare/v0.6.0...v0.7.0) (2026-03-01)
+
+
+### Features
+
+* add 5 new Mistral-model rovers (large, medium, codestral, ministral, magistral) ([08e09b6](https://github.com/yamyr/agent-one/commit/08e09b6051b45ee41cc82c751fe899c4d79889ef))
+* add ice/water/gas resource chain, Hauler agent, and base upgrades ([b643129](https://github.com/yamyr/agent-one/commit/b6431299ec945bfa222b5720e6099deba014049d))
+* ice/water/gas resource chain, Hauler agent, and base upgrades ([e26ce4e](https://github.com/yamyr/agent-one/commit/e26ce4ecd7d371c8d40cece6ea984c04a1f81c45))
+* implement ice, water, gas plants and hauler agent ([9a102cc](https://github.com/yamyr/agent-one/commit/9a102cce121619109c2b7c0781ee9dbbb1f52bae))
+* massive resource economy and hauler update ([#235](https://github.com/yamyr/agent-one/issues/235)) ([79360b4](https://github.com/yamyr/agent-one/commit/79360b4f2195157733c3ce85ff448b89a4bf3640))
+
+
+### Bug Fixes
+
+* correct hauler unload test assertion to match actual error message ([25b8512](https://github.com/yamyr/agent-one/commit/25b85122b8f3348d92ab0ac52857620973c34e42))
+* fix lint errors, add hauler tests, and format code ([9337035](https://github.com/yamyr/agent-one/commit/933703550a7902d7c8c34bbbcac8d2e09cd87cbb))
+* refine ice/gas/hauler mechanics and align tests with new schema ([ce71d54](https://github.com/yamyr/agent-one/commit/ce71d5471798a9a8621527cf36c7924f979aaf02))
+* remove world.reset() calls in test_hauler (method does not exist) ([02aa941](https://github.com/yamyr/agent-one/commit/02aa941f41498fd54c94a023629a64f8e954450c))
+* route hauler load_cargo/unload_cargo actions and remove stale imports ([bdd19ec](https://github.com/yamyr/agent-one/commit/bdd19ecb98f7e682a2bde885c9aa0d800bfd3528))
+* stabilize resource economy — deduplicate constants, fix action dispatch, align tests ([6ea0253](https://github.com/yamyr/agent-one/commit/6ea0253900e3c924386fdd91116d9404c86c5941))
+
 ## [0.6.0](https://github.com/mhack-agent-one/agent-one/compare/v0.5.0...v0.6.0) (2026-03-01)
 
 
