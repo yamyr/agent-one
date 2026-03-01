@@ -2,7 +2,7 @@ import unittest
 
 from app.world import world, execute_action
 from app.agent import MistralRoverReasoner, ROVER_TOOLS, DRONE_TOOLS
-from app.agent import parse_task_separator
+from app.agent import parse_task_separator, _parse_structured_thinking
 
 
 class TestRoverFallback(unittest.TestCase):
@@ -215,3 +215,44 @@ class TestRoverContextNoBoundaryClipping(unittest.TestCase):
         context = agent._build_context()
         self.assertIn("chunk-based", context)
         self.assertNotIn("Grid: 20x20", context)
+
+
+class TestParseStructuredThinking(unittest.TestCase):
+    """Tests for _parse_structured_thinking helper."""
+
+    def test_parses_all_fields(self):
+        text = "SITUATION: Low battery near vein\nOPTIONS: dig, return\nDECISION: return to station\nRISK: high"
+        result = _parse_structured_thinking(text)
+        self.assertEqual(result["situation"], "Low battery near vein")
+        self.assertEqual(result["options"], ["dig", "return"])
+        self.assertEqual(result["decision"], "return to station")
+        self.assertEqual(result["risk"], "high")
+
+    def test_returns_default_for_plain_text(self):
+        result = _parse_structured_thinking("Just thinking about stuff")
+        self.assertEqual(result["situation"], "")
+        self.assertEqual(result["options"], [])
+        self.assertEqual(result["risk"], "low")
+
+    def test_partial_tags_still_parsed(self):
+        text = "SITUATION: Exploring north\nDECISION: move north"
+        result = _parse_structured_thinking(text)
+        self.assertEqual(result["situation"], "Exploring north")
+        self.assertEqual(result["decision"], "move north")
+
+    def test_risk_normalized_to_lowercase(self):
+        text = "SITUATION: Storm approaching\nRISK: high"
+        result = _parse_structured_thinking(text)
+        self.assertEqual(result["risk"], "high")
+
+    def test_empty_string_returns_default(self):
+        result = _parse_structured_thinking("")
+        self.assertEqual(result["situation"], "")
+        self.assertEqual(result["risk"], "low")
+
+    def test_invalid_risk_defaults_with_warning(self):
+        text = "SITUATION: Unknown state\nRISK: extreme"
+        with self.assertLogs("app.agent", level="DEBUG") as cm:
+            result = _parse_structured_thinking(text)
+        self.assertEqual(result["risk"], "low")
+        self.assertTrue(any("Unrecognized risk level" in msg for msg in cm.output))
