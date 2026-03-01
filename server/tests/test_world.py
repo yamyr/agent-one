@@ -1855,9 +1855,10 @@ class TestSpawnStructures(unittest.TestCase):
             self.assertIn("contents", s)
             if s["type"] == "water_recycler":
                 self.assertTrue(s["explored"])
+                self.assertTrue(s["active"])
             else:
                 self.assertFalse(s["explored"])
-            self.assertFalse(s["active"])
+                self.assertFalse(s["active"])
             self.assertIsInstance(s["position"], list)
             self.assertEqual(len(s["position"]), 2)
 
@@ -2536,6 +2537,7 @@ class TestInterAgentCommunication(unittest.TestCase):
     def test_get_drone_intel_for_rover(self):
         from app.world import get_drone_intel_for_rover, WORLD
 
+        WORLD["agents"]["rover-mistral"]["visited"] = [[0, 0]]
         WORLD["drone_scans"] = [
             {"position": [3, 4], "readings": {"3,4": 0.8}, "scanner": "drone-mistral", "tick": 5},
             {"position": [1, 1], "readings": {"1,1": 0.2}, "scanner": "drone-mistral", "tick": 6},

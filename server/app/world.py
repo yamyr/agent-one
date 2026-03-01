@@ -644,7 +644,9 @@ def _drone_tools_for_ui():
 
 
 def _hauler_tools_for_ui():
-    return []
+    from .agent import HAULER_TOOLS
+
+    return _tools_for_ui(HAULER_TOOLS)
 
 
 def _make_drone(start_x, start_y):
@@ -686,15 +688,14 @@ def _make_hauler(start_x, start_y):
         "battery": 1.0,
         "mission": {"objective": "Transport materials between field and station", "plan": []},
         "visited": [[start_x, start_y]],
-        "revealed": _init_revealed(start_x, start_y),
+        "revealed": _init_revealed(start_x, start_y, HAULER_REVEAL_RADIUS),
         "inventory": [],
         "memory": [],
         "strategic_memory": [],
         "tasks": [],
         "type": "hauler",
         "tools": None,
-        "solar_panels_remaining": 0,
-        "cargo_capacity": 6,
+        "inventory_capacity": MAX_INVENTORY_HAULER,
     }
 
 
@@ -715,7 +716,7 @@ def _build_initial_world():
             "rover-mistral": _make_rover(0, 0),
             "rover-2": _make_rover(0, 0),
             "drone-mistral": _make_drone(0, 0),
-            "hauler-mistral": _make_hauler(0, 0),
+            "hauler-1": _make_hauler(0, 0),
             "rover-large": _make_rover(0, 0),
             "rover-medium": _make_rover(0, 0),
             "rover-codestral": _make_rover(0, 0),
@@ -1280,7 +1281,7 @@ def execute_action(agent_id, action_name, params):
         if result["ok"]:
             record_memory(
                 agent_id,
-                f"Recycled ice into water at station (+{result['water_quantity']} water)",
+                f"Recycled {result['ice_used']} ice into {result['water_quantity']} water at recycler",
             )
     elif action_name == "build_gas_plant":
         if is_drone:
@@ -1639,55 +1640,67 @@ def _execute_gather_ice(agent_id, agent):
         return {"ok": False, "error": f"Inventory full (max {capacity} items)"}
 
     storm_mult = storm_mod.get_battery_multiplier(WORLD)
-    cost = BATTERY_COST_HARVEST_ICE * storm_mult
+    cost = BATTERY_COST_GATHER_ICE * storm_mult
     if agent["battery"] < cost:
-        return {"ok": False, "error": "Not enough battery to harvest ice"}
+        return {"ok": False, "error": "Not enough battery to gather ice"}
 
     x, y = agent["position"]
-    deposit = _find_ice_at(x, y)
-    if deposit is None:
+    stone = _find_stone_at(x, y)
+    if stone is None or stone.get("type") != "ice":
         return {"ok": False, "error": f"No ice deposit at ({x}, {y})"}
 
-    grade = deposit.get("grade", "unknown")
-    gathered_qty = int(deposit.get("quantity", 0))
     agent["battery"] = max(0.0, agent["battery"] - cost)
     inventory = agent.setdefault("inventory", [])
-    inventory.append({"type": "ice", "grade": grade, "quantity": gathered_qty})
-    WORLD["ice_deposits"].remove(deposit)
-    _unindex_ice(deposit)
-    logger.info("Agent %s gathered ice qty=%d at (%d,%d)", agent_id, gathered_qty, x, y)
+    inventory.append({"type": "ice", "grade": "n/a", "quantity": 1})
+    WORLD["stones"].remove(stone)
+    _unindex_stone(stone)
+    logger.info("Agent %s gathered ice at (%d,%d)", agent_id, x, y)
 
     return {
         "ok": True,
         "position": [x, y],
-        "ice": {"type": "ice", "grade": grade, "quantity": gathered_qty},
+        "stone": {"type": "ice", "grade": "n/a", "quantity": 1},
         "inventory_count": len(inventory),
     }
 
 
 def _execute_recycle_ice(agent_id, agent):
-    """Recycle ice into water at the station. Must be at station with ice in inventory."""
-    station = WORLD["agents"].get("station")
-    station_pos = station["position"] if station else [0, 0]
-    if agent["position"] != station_pos:
-        return {"ok": False, "error": "Must be at station to recycle ice"}
-    inventory = agent.get("inventory", [])
-    ice_items = [item for item in inventory if item.get("type") == "ice"]
-    if not ice_items:
-        return {"ok": False, "error": "No ice in inventory"}
+    storm_mult = storm_mod.get_battery_multiplier(WORLD)
+    cost = WATER_RECYCLE_BATTERY_COST * storm_mult
+    if agent["battery"] < cost:
+        return {"ok": False, "error": "Not enough battery to recycle ice"}
 
-    water_gained = sum(int(item.get("quantity", 0)) for item in ice_items)
-    station_resources = WORLD.setdefault(
-        "station_resources", {"water": 0, "gas": 0, "refined_basalt": 0}
-    )
-    station_resources["water"] = int(station_resources.get("water", 0)) + int(water_gained)
-    agent["inventory"] = [item for item in inventory if item.get("type") != "ice"]
+    x, y = agent["position"]
+    recycler = None
+    for structure in WORLD.get("structures", []):
+        if structure.get("type") != "water_recycler":
+            continue
+        sx, sy = structure["position"]
+        if abs(sx - x) + abs(sy - y) <= 1 and structure.get("active"):
+            recycler = structure
+            break
+
+    if recycler is None:
+        return {
+            "ok": False,
+            "error": "No active water recycler within reach (must investigate first and be adjacent)",
+        }
+
+    inventory = agent.get("inventory", [])
+    ice_index = next((i for i, item in enumerate(inventory) if item.get("type") == "ice"), -1)
+    if ice_index < 0:
+        return {"ok": False, "error": "No ice in inventory to recycle"}
+
+    ice_item = inventory.pop(ice_index)
+    conversion_rate = int(recycler.get("contents", {}).get("conversion_rate", 2))
+    water_quantity = int(ice_item.get("quantity", 0)) * conversion_rate
+    inventory.append({"type": "water", "quantity": water_quantity})
+    agent["battery"] = max(0.0, agent["battery"] - cost)
 
     return {
         "ok": True,
-        "water_quantity": int(water_gained),
-        "water_total": int(station_resources["water"]),
-        "inventory_count": len(agent["inventory"]),
+        "water_quantity": water_quantity,
+        "inventory_count": len(inventory),
     }
 
 
@@ -1934,8 +1947,9 @@ def check_mission_status():
             water_gained = delivered_ice
             if water_gained > 0 or gas_gained > 0:
                 station_resources = WORLD.setdefault(
-                    "station_resources", {"water": 0, "gas": 0, "refined_basalt": 0}
+                    "station_resources", {"water": 0, "gas": 0, "parts": []}
                 )
+                station_resources.setdefault("parts", [])
                 if water_gained > 0:
                     station_resources["water"] = (
                         int(station_resources.get("water", 0)) + water_gained
