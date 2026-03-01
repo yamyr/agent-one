@@ -85,11 +85,11 @@ CORE_PROBABILITY = 0.3
 
 # --- Obstacle generation ---
 MOUNTAIN_PROBABILITY = 0.008  # ~0.8% per tile
-GEYSER_PROBABILITY = 0.004   # ~0.4% per tile
-GEYSER_CYCLE_IDLE = 8        # ticks idle before warning
-GEYSER_CYCLE_WARNING = 2     # ticks in warning before erupting
-GEYSER_CYCLE_ERUPTING = 3    # ticks erupting
-BATTERY_COST_GEYSER = 0.10   # 10% battery drain when caught in eruption
+GEYSER_PROBABILITY = 0.004  # ~0.4% per tile
+GEYSER_CYCLE_IDLE = 8  # ticks idle before warning
+GEYSER_CYCLE_WARNING = 2  # ticks in warning before erupting
+GEYSER_CYCLE_ERUPTING = 3  # ticks erupting
+BATTERY_COST_GEYSER = 0.10  # 10% battery drain when caught in eruption
 
 
 def _random_free_pos(occupied, rng=None, cx=0, cy=0):
@@ -205,19 +205,23 @@ def _ensure_chunk(cx, cy):
                 obstacles.append({"position": [wx, wy], "kind": "mountain", "state": "idle"})
             elif r < MOUNTAIN_PROBABILITY + GEYSER_PROBABILITY:
                 occupied.add((wx, wy))
-                obstacles.append({
-                    "position": [wx, wy],
-                    "kind": "geyser",
-                    "state": "idle",
-                    "_cycle_tick": rng.randint(0, GEYSER_CYCLE_IDLE - 1),
-                })
+                obstacles.append(
+                    {
+                        "position": [wx, wy],
+                        "kind": "geyser",
+                        "state": "idle",
+                        "_cycle_tick": rng.randint(0, GEYSER_CYCLE_IDLE - 1),
+                    }
+                )
 
     WORLD.setdefault("obstacles", []).extend(obstacles)
     _index_obstacles(obstacles)
 
     chunk_data = {"generated": True, "stone_count": len(stones), "obstacle_count": len(obstacles)}
     chunks[key] = chunk_data
-    logger.info("Generated chunk (%d,%d) with %d stones, %d obstacles", cx, cy, len(stones), len(obstacles))
+    logger.info(
+        "Generated chunk (%d,%d) with %d stones, %d obstacles", cx, cy, len(stones), len(obstacles)
+    )
     return chunk_data
 
 
@@ -635,16 +639,22 @@ def update_geysers():
                     if ax == gx and ay == gy:
                         old_bat = agent["battery"]
                         agent["battery"] = max(0.0, old_bat - BATTERY_COST_GEYSER)
-                        events.append({
-                            "type": "geyser_eruption",
-                            "position": [gx, gy],
-                            "agent_id": aid,
-                            "battery_before": old_bat,
-                            "battery_after": agent["battery"],
-                        })
+                        events.append(
+                            {
+                                "type": "geyser_eruption",
+                                "position": [gx, gy],
+                                "agent_id": aid,
+                                "battery_before": old_bat,
+                                "battery_after": agent["battery"],
+                            }
+                        )
                         logger.info(
                             "Geyser eruption at (%d,%d) hit %s: %.0f%% -> %.0f%%",
-                            gx, gy, aid, old_bat * 100, agent["battery"] * 100,
+                            gx,
+                            gy,
+                            aid,
+                            old_bat * 100,
+                            agent["battery"] * 100,
                         )
             obs["state"] = "erupting"
         obs["_cycle_tick"] = ct
@@ -1278,11 +1288,13 @@ def observe_rover(agent_id):
         if op in revealed_set:
             dist = abs(op[0] - x) + abs(op[1] - y)
             if dist <= ROVER_REVEAL_RADIUS * 2:
-                nearby_obstacles.append(ObstacleInfo(
-                    position=list(obs["position"]),
-                    kind=obs["kind"],
-                    state=obs.get("state", "idle"),
-                ))
+                nearby_obstacles.append(
+                    ObstacleInfo(
+                        position=list(obs["position"]),
+                        kind=obs["kind"],
+                        state=obs.get("state", "idle"),
+                    )
+                )
 
     return RoverContext(
         agent=RoverAgentState(

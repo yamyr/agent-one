@@ -398,10 +398,14 @@ class MistralRoverReasoner:
                 dist = abs(obs.position[0] - x) + abs(obs.position[1] - y)
                 hint = direction_hint(obs.position[0] - x, obs.position[1] - y)
                 if obs.kind == "mountain":
-                    parts.append(f"  - ICE MOUNTAIN at ({obs.position[0]},{obs.position[1]}) — {hint}, {dist} tiles (impassable)")
+                    parts.append(
+                        f"  - ICE MOUNTAIN at ({obs.position[0]},{obs.position[1]}) — {hint}, {dist} tiles (impassable)"
+                    )
                 elif obs.kind == "geyser":
                     state_warn = " ⚠️ MOVE AWAY!" if obs.state in ("warning", "erupting") else ""
-                    parts.append(f"  - AIR GEYSER at ({obs.position[0]},{obs.position[1]}) — {hint}, {dist} tiles, state: {obs.state}{state_warn}")
+                    parts.append(
+                        f"  - AIR GEYSER at ({obs.position[0]},{obs.position[1]}) — {hint}, {dist} tiles, state: {obs.state}{state_warn}"
+                    )
 
         # Drone scan hotspots — areas discovered by aerial scans not yet visited by rover
         hotspot = best_drone_hotspot(x, y, revealed_set)

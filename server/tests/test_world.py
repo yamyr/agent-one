@@ -1908,10 +1908,12 @@ class TestObstacles(unittest.TestCase):
 
     def setUp(self):
         from app.world import reset_world
+
         reset_world()
 
     def tearDown(self):
         from app.world import reset_world
+
         reset_world()
 
     def test_obstacles_generated_in_chunks(self):
@@ -1964,7 +1966,13 @@ class TestObstacles(unittest.TestCase):
 
     def test_geyser_cycle_transitions(self):
         """Geyser transitions: idle → warning → erupting → idle."""
-        from app.world import update_geysers, GEYSER_CYCLE_IDLE, GEYSER_CYCLE_WARNING, GEYSER_CYCLE_ERUPTING
+        from app.world import (
+            update_geysers,
+            GEYSER_CYCLE_IDLE,
+            GEYSER_CYCLE_WARNING,
+            GEYSER_CYCLE_ERUPTING,
+        )
+
         geysers = [o for o in world.state.get("obstacles", []) if o["kind"] == "geyser"]
         if not geysers:
             self.skipTest("No geysers generated with current seed")
@@ -1993,7 +2001,13 @@ class TestObstacles(unittest.TestCase):
 
     def test_geyser_eruption_drains_battery(self):
         """Agent on erupting geyser loses BATTERY_COST_GEYSER battery."""
-        from app.world import update_geysers, BATTERY_COST_GEYSER, GEYSER_CYCLE_IDLE, GEYSER_CYCLE_WARNING
+        from app.world import (
+            update_geysers,
+            BATTERY_COST_GEYSER,
+            GEYSER_CYCLE_IDLE,
+            GEYSER_CYCLE_WARNING,
+        )
+
         geysers = [o for o in world.state.get("obstacles", []) if o["kind"] == "geyser"]
         if not geysers:
             self.skipTest("No geysers generated with current seed")
@@ -2012,6 +2026,7 @@ class TestObstacles(unittest.TestCase):
     def test_geyser_eruption_clamps_battery(self):
         """Battery doesn't go below 0.0 from geyser eruption."""
         from app.world import update_geysers, GEYSER_CYCLE_IDLE, GEYSER_CYCLE_WARNING
+
         geysers = [o for o in world.state.get("obstacles", []) if o["kind"] == "geyser"]
         if not geysers:
             self.skipTest("No geysers generated with current seed")
@@ -2027,6 +2042,7 @@ class TestObstacles(unittest.TestCase):
     def test_is_obstacle_at(self):
         """is_obstacle_at returns obstacle dict or None."""
         from app.world import is_obstacle_at
+
         obstacles = world.state.get("obstacles", [])
         if obstacles:
             o = obstacles[0]
@@ -2039,6 +2055,7 @@ class TestObstacles(unittest.TestCase):
     def test_origin_clear_of_obstacles(self):
         """Origin area (|x|<=1, |y|<=1) has no obstacles."""
         from app.world import is_obstacle_at
+
         for x in range(-1, 2):
             for y in range(-1, 2):
                 self.assertIsNone(is_obstacle_at(x, y))
@@ -2067,6 +2084,7 @@ class TestObstacles(unittest.TestCase):
     def test_observe_rover_nearby_obstacles(self):
         """observe_rover includes nearby obstacles on revealed tiles."""
         from app.world import _expand_revealed
+
         mountains = [o for o in world.state.get("obstacles", []) if o["kind"] == "mountain"]
         if not mountains:
             self.skipTest("No mountains generated with current seed")
@@ -2082,6 +2100,7 @@ class TestObstacles(unittest.TestCase):
     def test_reset_clears_obstacles(self):
         """reset_world clears obstacles list and index."""
         from app.world import reset_world, is_obstacle_at
+
         self.assertGreater(len(world.state.get("obstacles", [])), 0)
         reset_world()
         # After reset, new obstacles should be generated (not leftover)
@@ -2092,6 +2111,7 @@ class TestObstacles(unittest.TestCase):
     def test_obstacle_deterministic(self):
         """Same seed produces same obstacles."""
         from app.world import reset_world
+
         reset_world()
         obs1 = [(o["kind"], tuple(o["position"])) for o in world.state.get("obstacles", [])]
         reset_world()
