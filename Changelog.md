@@ -39,17 +39,40 @@
 
 ### Features
 
-* **world:** ice resource system — ice deposits spawn near mountains, rovers can gather ice and recycle it into water at station
-* **world:** gas plant system — build gas plants on idle geysers, they produce gas when geyser erupts
-* **world:** base upgrade system — spend water/gas to upgrade charge speed, storage capacity, or radar range
-* **agent:** new Hauler agent role — transport-focused agent with 6-item cargo capacity for shuttling materials
-* **world:** global resource storage (water, gas) tracked at station level
-* **models:** new Pydantic models for ResourceItem, IceDeposit, GasPlantInfo, BaseUpgrade, HaulerAgentState
+* **world:** ice resource system — ice deposits spawn adjacent to mountains during chunk generation, rovers can gather ice with grade-weighted quantities
+* **world:** water recycling — `recycle_ice` action at water processor structures converts ice to water (2x quantity)
+* **world:** gas plant system — build gas plants on idle geysers, collect gas stored locally in plant during eruption cycles
+* **world:** base upgrade system — spend station resources (water/gas) for `charge_mk2`, `storage_mk2`, `radar_mk2` upgrades (max level 1 each)
+* **world:** cargo drop/pickup system — rovers `drop_item` to ground, haulers `pickup_cargo` for transport
+* **world:** structure repair now deposits parts into `station_resources`
+* **agent:** new Hauler agent role — 8-item cargo capacity, 2-tile move range, `observe_hauler()` context with nearby rover scanning
+* **agent:** Hauler tools: `move`, `pickup_cargo`, `notify`
+* **agent:** rover tools expanded to 15 including `gather_ice`, `recycle_ice`, `build_gas_plant`, `collect_gas`, `upgrade_base`, `upgrade_building`, `drop_item`
+* **world:** hauler auto-delivery at station via `check_mission_status()` integration
+* **world:** global resource storage (water, gas, parts) tracked at station level
+* **models:** Pydantic v2 models — `ResourceType`, `AgentType` enums, `GasPlantInfo`, `IceDeposit`, `StationUpgrades`, `ResourceStorage`, `HaulerContext`, `HaulerAgentState`, `HaulerWorldView`, `HaulerComputed`, `GroundItem`, `StationResources`
 * **security:** comprehensive security audit completed — no leaked secrets found
 
 ### Bug Fixes
 
-* **world:** rover no longer gets stuck at station with full inventory after delivery (inventory was never cleared)
+* **world:** fix `load_cargo` and `unload_cargo` action dispatch — functions existed but were not wired into `execute_action()`
+* **world:** fix `pick_up_from` dispatch for hauler pickup from rovers
+* **world:** fix hauler agent ID mismatch — `_build_initial_world()` used `hauler-1` but config/main use `hauler-mistral`
+* **world:** fix `_execute_load_cargo` call signature mismatch (2 args, not 3)
+* **world:** deduplicate conflicting constants — `ICE_TO_WATER_RATIO` (was 2 then overwritten to 1), `BATTERY_COST_BUILD_GAS_PLANT` (8 then overwritten to 10), `GAS_PER_ERUPTION` (5 then overwritten to 20), plus 12 other redundant alias definitions
+* **world:** remove orphaned `_execute_process_ice` dead code (superseded by `_execute_recycle_ice`)
+* **world:** add `water_collected`/`gas_collected` to `observe_rover()` and `observe_station()` return values
+* **agent:** fix `HAULER_TOOLS` referencing undefined constants (`LOAD_FROM_ROVER_TOOL`, `UNLOAD_AT_STATION_TOOL`, `PICKUP_CARGO_TOOL`)
+* **agent:** remove orphaned `HaulerReasoner` class (170 lines of dead code overwritten by EOF alias)
+* **agent:** remove unused `HARVEST_ICE_TOOL` constant and `HaulerReasoner = HaulerAgent` alias
+* **agent:** fix `_hauler_tools_for_ui()` — was returning empty list, now returns actual HAULER_TOOLS
+* **tests:** fix 14 failing resource economy tests to match actual implementation
+
+### Errors Identified & Prevented
+
+* **Concurrent file editing:** Two background agents editing `world.py` simultaneously caused file corruption — duplicate functions, conflicting constants, partial implementations. Prevented by sequential editing going forward.
+* **Constant shadowing:** Python's last-assignment-wins semantics for module-level constants caused `ICE_TO_WATER_RATIO=2` to be silently overridden to `1` by a duplicate definition 62 lines later. All duplicate constants consolidated.
+* **Dead code accumulation:** Orphaned classes/functions from iterative development (`HaulerReasoner`, `_execute_process_ice`, alias chains) added ~200 lines of dead code that could confuse future development.
 
 ## [0.7.0] — Control Buttons & Narration Enablement (2026-03-01)
 

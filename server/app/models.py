@@ -115,6 +115,7 @@ class StationUpgrades(BaseModel):
     charge_bonus: float = 0.0  # added to base CHARGE_RATE
     upgrade_count: int = 0
 
+
 class UpgradeInfo(BaseModel):
     """Info about a single available base upgrade."""
 
@@ -124,6 +125,7 @@ class UpgradeInfo(BaseModel):
     cost_water: int = 0
     cost_gas: int = 0
     description: str = ""
+
 
 class ResourceStorage(BaseModel):
     """Global resource storage at the station."""
