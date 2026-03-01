@@ -7,6 +7,7 @@
 
 ### Fixed
 - **Broadcaster safety guards (#100)**: Guard `disconnect()` against double-disconnect `ValueError`, iterate copy in `send()` to prevent mutation-during-iteration, guard dead connection cleanup with membership check. 6 new unit tests.
+- **Infinite loop guard in `_random_free_pos` (#118)**: Replace unbounded `while True` with bounded random attempts (`CHUNK_SIZE²×2`), deterministic linear scan fallback, and last-resort origin return with warning log. Added 6 unit tests.
 - **Logging hygiene (#134, #135)**: Replace f-string formatting in `broadcast.py` logger calls with lazy `%s` formatting; replace bare `print()` in `db.py` with proper `logger.info()`/`logger.warning()` using lazy formatting
   - Compressed `STRUCTURED_REASONING_PROMPT` appended to rover and drone `_build_context()` — agents output SITUATION/OPTIONS/DECISION/RISK fields
   - `_parse_structured_thinking()` parser extracts structured fields with graceful fallback defaults
