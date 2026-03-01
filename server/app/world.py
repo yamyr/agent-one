@@ -1,9 +1,12 @@
 """In-memory world state for the Mars simulation."""
 
+from __future__ import annotations
+
 import copy
 import hashlib
 import logging
 import random
+from collections.abc import Callable
 
 from .config import settings
 from . import storm as storm_mod
@@ -12,6 +15,18 @@ from .models import AgentMission, InventoryItem, StoneInfo, ObstacleInfo
 from .models import RoverSummary, StationContext
 
 logger = logging.getLogger(__name__)
+
+# ── Elapsed time provider ──
+# Injected by Host.start() so get_snapshot() can include elapsed_seconds
+# without needing a direct reference to the Host instance.
+_elapsed_provider: Callable[[], float] | None = None
+
+
+def set_elapsed_provider(provider: Callable[[], float] | None):
+    """Set (or clear) the callback that returns elapsed seconds for snapshots."""
+    global _elapsed_provider
+    _elapsed_provider = provider
+
 
 # ENGINE vs AGENT RESPONSIBILITY — DO NOT BREAK THIS CONTRACT:
 # - Engine (world.py): enforces physics — battery drain, movement cost, pickup limits,
@@ -1927,6 +1942,8 @@ def get_snapshot():
         snap["bounds"] = {"min_x": 0, "max_x": GRID_W - 1, "min_y": 0, "max_y": GRID_H - 1}
     # Add storm info for UI
     snap["storm"] = storm_mod.get_storm_info(WORLD)
+    # Add elapsed time from host (if available)
+    snap["elapsed_seconds"] = _elapsed_provider() if _elapsed_provider else 0.0
     return snap
 
 

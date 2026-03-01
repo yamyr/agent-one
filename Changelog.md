@@ -34,6 +34,30 @@
 * All landing page SVG icons use `aria-hidden="true"` for accessibility — decorative icons must not confuse screen readers.
 * All CSS animations include `@media (prefers-reduced-motion: reduce)` rules to respect user accessibility preferences.
 
+## [0.6.0] — Simulation Timer, Duration Tracking & Control Verification (2026-03-01)
+
+### Features
+
+* **server:** add elapsed time tracking to simulation snapshots — `elapsed_seconds` field in world snapshot, synced to UI every tick
+* **server:** implement pause-aware elapsed time — `Host.paused` converted to `@property` with automatic pause/resume timestamp tracking
+* **server:** store `duration_seconds` in SurrealDB `training_session` table on session finalization (success, failure, or abort)
+* **server:** auto-finalize training sessions on `mission_success`, `mission_failed`, and abort events with full `SessionResult`
+* **server:** idempotent session finalization — `end_session()` guard prevents double-finalize errors
+* **ui:** pass `:paused` prop to StatsBar for timer pause synchronization
+
+### Tests
+
+* **test_elapsed_time:** 19 new tests covering pause property, elapsed seconds calculation, start() resets, snapshot integration, session finalization, duration persistence, broadcast hooks, and end_session idempotency
+
+### Control Buttons Verified
+
+* RESET, PAUSE, ABORT, and Voice ON/OFF — all verified working end-to-end via existing code paths (no changes needed)
+
+### Errors Identified & Prevented
+
+* **Lost uncommitted changes:** Server-side changes from previous session were never committed and lost during branch operations. Lesson: always commit work-in-progress before switching branches.
+* **Feature branch drift:** `feature/simulation-timer-controls` fell 8 commits behind `main` — rebased to avoid merge conflicts.
+
 ## [Unreleased]
 
 ### Features

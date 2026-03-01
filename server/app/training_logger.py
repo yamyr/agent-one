@@ -33,6 +33,7 @@ _SCHEMA_QUERIES = [
     "DEFINE FIELD IF NOT EXISTS config ON training_session TYPE object FLEXIBLE",
     "DEFINE FIELD IF NOT EXISTS result ON training_session TYPE option<object> FLEXIBLE",
     "DEFINE FIELD IF NOT EXISTS tags ON training_session TYPE array DEFAULT []",
+    "DEFINE FIELD IF NOT EXISTS duration_seconds ON training_session TYPE option<float>",
     "DEFINE INDEX IF NOT EXISTS idx_session_status ON training_session FIELDS status",
     "DEFINE TABLE IF NOT EXISTS training_turn SCHEMAFULL",
     "DEFINE FIELD IF NOT EXISTS session_id ON training_turn TYPE string",
@@ -170,11 +171,13 @@ class TrainingLogger:
             try:
                 db.query(
                     f"UPDATE training_session:`{self._session_id}` SET "
-                    "ended_at = $ended_at, status = $status, result = $result",
+                    "ended_at = $ended_at, status = $status, result = $result, "
+                    "duration_seconds = $duration_seconds",
                     {
                         "ended_at": datetime.now(timezone.utc),
                         "status": status,
                         "result": result.model_dump(),
+                        "duration_seconds": result.duration_seconds,
                     },
                 )
                 logger.info("Training session ended: %s (status=%s)", self._session_id, status)
@@ -182,6 +185,8 @@ class TrainingLogger:
                 db.close()
         except Exception:
             logger.exception("Failed to end training session %s", self._session_id)
+        finally:
+            self._session_id = None  # Prevent double-end
 
     def log_turn(self, turn: TrainingTurn) -> None:
         """Log an agent decision cycle."""

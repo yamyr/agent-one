@@ -216,6 +216,7 @@ useKeyboard({
       :world-state="worldState"
       :agent-ids="agentIds"
       :event-count="events.length"
+      :paused="paused"
     />
 
     <div class="top-row">

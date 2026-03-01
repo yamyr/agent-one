@@ -17,6 +17,7 @@ from .station import StationAgent, execute_action as station_execute_action
 from .world import abort_mission as world_abort_mission
 from .world import get_snapshot
 from .world import observe_station
+from .world import set_elapsed_provider
 from .config import settings
 from .training_logger import training_logger
 from .training_models import SessionConfig, SessionResult
@@ -34,8 +35,34 @@ class Host:
         self._station = StationAgent()
         self._station_loop = None
         self._agent_tasks: list[asyncio.Task] = []
-        self.paused = False
+        self._paused = False
         self._session_start_time: float = 0.0
+        self._total_paused_duration: float = 0.0
+        self._pause_start_time: float | None = None
+
+    @property
+    def paused(self) -> bool:
+        return self._paused
+
+    @paused.setter
+    def paused(self, value: bool):
+        """Set paused state with automatic pause duration tracking."""
+        if value and not self._paused:
+            self._pause_start_time = time.monotonic()
+        elif not value and self._paused and self._pause_start_time is not None:
+            self._total_paused_duration += time.monotonic() - self._pause_start_time
+            self._pause_start_time = None
+        self._paused = value
+
+    def get_elapsed_seconds(self) -> float:
+        """Return wall-clock seconds since start, excluding paused time."""
+        if not self._session_start_time:
+            return 0.0
+        raw = time.monotonic() - self._session_start_time
+        paused_so_far = self._total_paused_duration
+        if self._paused and self._pause_start_time is not None:
+            paused_so_far += time.monotonic() - self._pause_start_time
+        return max(0.0, raw - paused_so_far)
 
     # ── Agent registration ──
 
@@ -81,6 +108,18 @@ class Host:
         from .world import world as default_world
 
         training_logger.maybe_log_broadcast_event(msg_dict, default_world.get_tick())
+        # Finalize training session on mission end events
+        event_name = msg_dict.get("name", "")
+        if event_name in ("mission_success", "mission_failed"):
+            payload = msg_dict.get("payload", {})
+            status = "success" if event_name == "mission_success" else "failed"
+            result = SessionResult(
+                total_ticks=default_world.get_tick(),
+                basalt_collected=payload.get("collected_quantity", 0),
+                basalt_delivered=payload.get("collected_quantity", 0),
+                duration_seconds=self.get_elapsed_seconds(),
+            )
+            training_logger.end_session(result, status=status)
         # Feed interesting events to station loop for periodic evaluation
         if self._station_loop is not None:
             from .agent import StationLoop
@@ -93,8 +132,10 @@ class Host:
 
     async def start(self):
         """Launch all registered agent loops."""
-        self.paused = False
+        self._paused = False
         self._session_start_time = time.monotonic()
+        self._total_paused_duration = 0.0
+        self._pause_start_time = None
         self._narrator.reset()
         self._narrator.start()
 
@@ -112,12 +153,15 @@ class Host:
 
         # Station assigns initial missions to all agents
         asyncio.create_task(self.station_startup())
+        # Register elapsed time provider for world snapshots
+        set_elapsed_provider(self.get_elapsed_seconds)
 
     def stop(self):
         """Cancel all running agent loops and narrator."""
         self._narrator.stop()
         # End training session
-        elapsed = time.monotonic() - self._session_start_time if self._session_start_time else 0.0
+        elapsed = self.get_elapsed_seconds()
+        set_elapsed_provider(None)
         result = SessionResult(
             duration_seconds=elapsed,
         )
@@ -229,6 +273,16 @@ class Host:
             name="mission_aborted",
             payload=result,
         )
+        # Finalize training session as aborted
+        from .world import world as default_world
+
+        abort_result = SessionResult(
+            total_ticks=default_world.get_tick(),
+            basalt_collected=result.get("collected_quantity", 0),
+            basalt_delivered=result.get("collected_quantity", 0),
+            duration_seconds=self.get_elapsed_seconds(),
+        )
+        training_logger.end_session(abort_result, status="aborted")
         await broadcaster.send(msg.to_dict())
         await self._narrator.feed(msg.to_dict())
         return {"ok": True, **result}
