@@ -25,10 +25,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - UI: `intel_relay` event rendering, message badge on agent panes
 - 10 new inter-agent communication tests
 
-## [Unreleased]
-
-### Added
-
 * **station-loop:** Station Reactive Intelligence (Feature E) — periodic LLM evaluation of field events with reactive coordination
 * **station-loop:** `StationLoop` BaseAgent subclass with 20s evaluation interval and event buffering (max 50)
 * **station:** `StationAgent.evaluate_situation()` method for periodic LLM-based field assessment

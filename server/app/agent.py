@@ -25,8 +25,35 @@ from .world import check_ground, direction_hint, best_drone_hotspot
 from .world import get_drone_intel_for_rover, get_unread_messages, send_agent_message
 from .world import set_agent_model
 from .world import execute_action, get_snapshot, charge_agent, next_tick
+from .station import StationAgent
 
 logger = logging.getLogger(__name__)
+
+STRUCTURED_REASONING_PROMPT = (
+    "\n\nRESPONSE FORMAT — before choosing an action, output a reasoning block:\n"
+    "SITUATION: <one-line summary of current state>\n"
+    "OPTIONS: <comma-separated list of 2-4 candidate actions>\n"
+    "DECISION: <chosen action and why>\n"
+    "RISK: low | medium | high\n"
+)
+
+
+def _parse_structured_thinking(raw_thinking: str) -> dict:
+    """Extract structured reasoning fields from LLM output."""
+    result = {"situation": "", "options": [], "decision": "", "risk": "low"}
+    if not raw_thinking:
+        return result
+    for field in ("situation", "decision", "risk"):
+        m = re.search(rf"(?i)^{field}:\s*(.+)$", raw_thinking, re.MULTILINE)
+        if m:
+            result[field] = m.group(1).strip()
+    m = re.search(r"(?i)^OPTIONS:\s*(.+)$", raw_thinking, re.MULTILINE)
+    if m:
+        result["options"] = [o.strip() for o in m.group(1).split(",") if o.strip()]
+    if result["risk"] not in ("low", "medium", "high"):
+        result["risk"] = "low"
+    return result
+
 
 TASK_SEPARATOR = "---TASK---"
 
@@ -375,6 +402,8 @@ class MistralRoverReasoner:
             for msg in incoming:
                 parts.append(f"  \U0001f4e8 From {msg['from']} (tick {msg['tick']}): {msg['message']}")
 
+        parts.append(STRUCTURED_REASONING_PROMPT)
+
         return "\n".join(parts)
 
     def run_turn(self):
@@ -693,6 +722,8 @@ class DroneAgent:
                 else:
                     parts.append(f"{cmd['name'].upper()}: {cmd.get('payload', {})}")
 
+        parts.append(STRUCTURED_REASONING_PROMPT)
+
         return "\n".join(parts)
 
     def run_turn(self):
@@ -944,7 +975,7 @@ class RoverLoop(BaseAgent):
                 source=self.agent_id,
                 type="event",
                 name="thinking",
-                payload={"text": turn["thinking"]},
+                payload={"text": turn["thinking"], "structured": _parse_structured_thinking(turn["thinking"])},
             )
             messages.append(msg)
 
@@ -1119,7 +1150,7 @@ class DroneLoop(BaseAgent):
                 source=self.agent_id,
                 type="event",
                 name="thinking",
-                payload={"text": turn["thinking"]},
+                payload={"text": turn["thinking"], "structured": _parse_structured_thinking(turn["thinking"])},
             )
             messages.append(msg)
 
@@ -1223,3 +1254,49 @@ class DroneMistralLoop(DroneLoop):
         super().__init__(agent_id="drone-mistral", interval=interval, world=world)
         self._reasoner = DroneAgent(agent_id=self.agent_id, world=self._world)
         set_agent_model(self.agent_id, self._reasoner.model)
+
+
+# ── Station reactive loop ────────────────────────────────────────────────────────
+
+
+class StationLoop(BaseAgent):
+    """Station periodic evaluation loop — monitors field events and coordinates agents."""
+
+    INTERESTING_EVENTS = frozenset({
+        "thinking", "notify", "check", "dig", "analyze", "scan",
+        "world_event", "mission_success", "mission_failed", "mission_aborted",
+        "charge_rover", "deploy_solar_panel", "use_solar_battery",
+    })
+
+    def __init__(self, interval: float = 20.0, world: World | None = None):
+        super().__init__(agent_id="station-loop", interval=interval, world=world)
+        self._station = StationAgent()
+        self._event_buffer: list[dict] = []
+
+    def buffer_event(self, event: dict):
+        """Buffer a field event for next evaluation cycle."""
+        self._event_buffer.append(event)
+        if len(self._event_buffer) > 50:
+            self._event_buffer = self._event_buffer[-50:]
+
+    async def tick(self, host) -> None:
+        if not self._event_buffer:
+            return
+
+        context = self._world.observe_station()
+        result = await asyncio.to_thread(
+            self._station.evaluate_situation, context, self._event_buffer
+        )
+        self._event_buffer.clear()
+
+        if result.get("thinking"):
+            msg = make_message(
+                source="station",
+                type="event",
+                name="thinking",
+                payload={"text": result["thinking"]},
+            )
+            await host.broadcast(msg.to_dict())
+
+        # Execute actions through Host routing (ensures world-effect)
+        await host.route_station_actions(result)

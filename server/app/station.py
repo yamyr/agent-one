@@ -97,6 +97,10 @@ SYSTEM_PROMPT = (
 def _build_world_summary(context: StationContext):
     """Build a text summary of current world state for the station's context."""
     lines = [f"Grid: {context.grid_w}x{context.grid_h}"]
+    if context.tick:
+        lines.append(f"Tick: {context.tick}")
+    if context.mission_status:
+        lines.append(f"Mission status: {context.mission_status} ({context.collected_quantity}/{context.target_quantity})")
     for rover in context.rovers:
         x, y = rover.position
         label = "drone" if rover.agent_type == "drone" else "rover"
@@ -229,5 +233,21 @@ class StationAgent:
             f"Field report from {event['source']}: {event['name']}\n"
             f"Details: {json.dumps(event.get('payload', {}))}\n"
             "Decide how to respond. You may reassign missions or broadcast alerts."
+        )
+        return self._call_llm(prompt, context)
+
+    def evaluate_situation(self, context: StationContext, events: list[dict]):
+        """Periodic evaluation of recent field events. Called by StationLoop."""
+        if events:
+            event_lines = "\n".join(
+                f"- {e.get('source', '?')}: {e.get('name', '?')} — {json.dumps(e.get('payload', {}))}"
+                for e in events[-10:]
+            )
+        else:
+            event_lines = "(no recent events)"
+        prompt = (
+            f"Tick {context.tick} — periodic situation evaluation.\n"
+            f"Recent field events:\n{event_lines}\n"
+            "Evaluate the situation. Reassign missions, broadcast alerts, or charge rovers as needed."
         )
         return self._call_llm(prompt, context)
