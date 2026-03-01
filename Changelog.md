@@ -1,5 +1,75 @@
 # Changelog
 
+## [0.3.0](https://github.com/mhack-agent-one/agent-one/compare/v0.2.0...v0.3.0) (2026-03-01)
+
+
+### Features
+
+* add agent memory & learning system (Feature F) ([4b32a9d](https://github.com/mhack-agent-one/agent-one/commit/4b32a9d37512c00d98059f9eea22bb2b506a8ca7))
+* add agent reasoning transparency panel (Feature C) ([64f333b](https://github.com/mhack-agent-one/agent-one/commit/64f333b8439458f8ada0208c6a8b233041df8360))
+* add live inter-agent communication (Feature A) ([#150](https://github.com/mhack-agent-one/agent-one/issues/150)) ([cf0ba69](https://github.com/mhack-agent-one/agent-one/commit/cf0ba69dbad11743649b91e8c15dbb8ff25046bf))
+* add Station Reactive Intelligence (Feature E) ([638fcbc](https://github.com/mhack-agent-one/agent-one/commit/638fcbcee18d238990cf0e58bdb15ea78e1beb7d))
+* add world-data fine-tuning pipeline for continuous model improvement ([80cd54c](https://github.com/mhack-agent-one/agent-one/commit/80cd54c95ff81f67b79c59a41d3ab88efa8877ed))
+* add world-data fine-tuning pipeline for continuous model improvement ([707d84c](https://github.com/mhack-agent-one/agent-one/commit/707d84c73d2009316e12fb7fb799de45977dea46))
+* Agent Memory & Learning (Feature F) ([c7a1d06](https://github.com/mhack-agent-one/agent-one/commit/c7a1d06a949a111b57783dc007e24388e79c59ad))
+* Agent Reasoning Transparency Panel (Feature C) ([24145b9](https://github.com/mhack-agent-one/agent-one/commit/24145b95d11713ecf2b21e46b81111b864e05eec))
+* Station Reactive Intelligence (Feature E) — periodic LLM evaluation & coordination ([1363a90](https://github.com/mhack-agent-one/agent-one/commit/1363a90b46cf58f84a42f152d75cdb5be0a960c3))
+* **ui:** add communication visualization on map ([#126](https://github.com/mhack-agent-one/agent-one/issues/126)) ([72bfd50](https://github.com/mhack-agent-one/agent-one/commit/72bfd50a54d562a5be418d827ce966a2cb059670))
+* **voice:** add /api/voice-command endpoint with Voxtral transcription and LLM command parsing ([#191](https://github.com/mhack-agent-one/agent-one/issues/191)) ([ebfe37f](https://github.com/mhack-agent-one/agent-one/commit/ebfe37f0ffbc9119e1786cbd94aa2bfac3d5f9b4))
+
+
+### Bug Fixes
+
+* add thread-safe guards to Broadcaster disconnect/send ([#100](https://github.com/mhack-agent-one/agent-one/issues/100)) ([09e106a](https://github.com/mhack-agent-one/agent-one/commit/09e106a080bd34a9759d35bb5fa579dc94826c86))
+* add thread-safe guards to Broadcaster disconnect/send ([#100](https://github.com/mhack-agent-one/agent-one/issues/100)) ([e45c809](https://github.com/mhack-agent-one/agent-one/commit/e45c80920edf667c23cc0a2d78034603f8152e4b))
+* **ci:** apply ruff format to 7 unformatted files to fix server-lint ([#185](https://github.com/mhack-agent-one/agent-one/issues/185)) ([aa3f1a3](https://github.com/mhack-agent-one/agent-one/commit/aa3f1a36d4fad26c980a4ee0c9645d4425423cd0))
+* **config:** add pydantic Field validation for ports and intervals ([f5d4502](https://github.com/mhack-agent-one/agent-one/commit/f5d4502d424a06c0cb4c325f61ee83cd2a99d455))
+* **config:** add pydantic Field validation for ports and intervals ([4d456f1](https://github.com/mhack-agent-one/agent-one/commit/4d456f14f0aa809c88370007c960281bb72c94df)), closes [#119](https://github.com/mhack-agent-one/agent-one/issues/119)
+* **docker:** add PYTHONUNBUFFERED and PYTHONDONTWRITEBYTECODE env vars ([#180](https://github.com/mhack-agent-one/agent-one/issues/180)) ([0936d2c](https://github.com/mhack-agent-one/agent-one/commit/0936d2c48723e48276096309bf727b8b89cdc3f7))
+* **docker:** add PYTHONUNBUFFERED and PYTHONDONTWRITEBYTECODE env vars ([#180](https://github.com/mhack-agent-one/agent-one/issues/180)) ([45567f7](https://github.com/mhack-agent-one/agent-one/commit/45567f75cefc625996fd5128dc429d00cf1a6efc))
+* ensure WebSocket disconnect cleanup via finally block ([#101](https://github.com/mhack-agent-one/agent-one/issues/101)) ([a195262](https://github.com/mhack-agent-one/agent-one/commit/a195262efb9c6324cdb4b2c1d05454fae5a6e23b))
+* ensure WebSocket disconnect cleanup via finally block ([#101](https://github.com/mhack-agent-one/agent-one/issues/101)) ([09d31da](https://github.com/mhack-agent-one/agent-one/commit/09d31da390b9a7ca345ab26c6584ebaa0c74e7ea))
+* guard _random_free_pos against infinite loop ([#118](https://github.com/mhack-agent-one/agent-one/issues/118)) ([d663924](https://github.com/mhack-agent-one/agent-one/commit/d66392467e7a8e05dbf4a67a0cbd1d8c8ca932ed))
+* guard _random_free_pos against infinite loop ([#118](https://github.com/mhack-agent-one/agent-one/issues/118)) ([ccc2af4](https://github.com/mhack-agent-one/agent-one/commit/ccc2af416c36f8a7eab77960338c56e499635bde))
+* harden Dockerfile with non-root user, pinned uv, and HEALTHCHECK ([#117](https://github.com/mhack-agent-one/agent-one/issues/117)) ([520ba45](https://github.com/mhack-agent-one/agent-one/commit/520ba4569d53c5d0beedfadc44a22d6d6252917a))
+* harden Dockerfile with non-root user, pinned uv, and HEALTHCHECK ([#117](https://github.com/mhack-agent-one/agent-one/issues/117)) ([c846bde](https://github.com/mhack-agent-one/agent-one/commit/c846bdea89f7e295017f8e19e080d734213089c9))
+* remove legacy GRID_W/GRID_H boundary checks from rover _build_context() ([085c7b2](https://github.com/mhack-agent-one/agent-one/commit/085c7b2417e50e51556765241b46facff45689fe)), closes [#172](https://github.com/mhack-agent-one/agent-one/issues/172)
+* remove legacy GRID_W/GRID_H boundary checks from rover context ([#172](https://github.com/mhack-agent-one/agent-one/issues/172)) ([0bfffe1](https://github.com/mhack-agent-one/agent-one/commit/0bfffe1eec207d3559b7216c01a9db26ccdd263f))
+* replace f-string logging and print() with lazy logger ([#134](https://github.com/mhack-agent-one/agent-one/issues/134), [#135](https://github.com/mhack-agent-one/agent-one/issues/135)) ([2b2be67](https://github.com/mhack-agent-one/agent-one/commit/2b2be673d6d8ce51be87cb9c87fbb17e09bcd716))
+* replace f-string logging and print() with lazy logger ([#134](https://github.com/mhack-agent-one/agent-one/issues/134), [#135](https://github.com/mhack-agent-one/agent-one/issues/135)) ([36307ac](https://github.com/mhack-agent-one/agent-one/commit/36307ac1401156b5946dbcc7d0eb916730b4d183))
+* **tests:** add tearDown to 5 test classes to prevent state leakage ([4a3fa86](https://github.com/mhack-agent-one/agent-one/commit/4a3fa866bec3887b9c562c7c24f6d3fd30822297))
+* **tests:** add tearDown to 5 test classes to prevent state leakage ([#174](https://github.com/mhack-agent-one/agent-one/issues/174)) ([ce07ce7](https://github.com/mhack-agent-one/agent-one/commit/ce07ce7ea324e7f131fb3c9ac8068967c607b61c))
+* **tests:** replace blocking sleep with asyncio.sleep, add file leak guard ([#162](https://github.com/mhack-agent-one/agent-one/issues/162)) ([8c2e1c3](https://github.com/mhack-agent-one/agent-one/commit/8c2e1c3245313f615f3994f31b8570b30a8a30e4))
+* **tests:** replace blocking sleep with asyncio.sleep, add file leak guard ([#162](https://github.com/mhack-agent-one/agent-one/issues/162)) ([86cbda3](https://github.com/mhack-agent-one/agent-one/commit/86cbda3556588d380b6b1575761d4800acb647ac))
+* **ui:** add cleanup for audio, toast timers, and animation timers on unmount ([#94](https://github.com/mhack-agent-one/agent-one/issues/94)) ([7ff9fd6](https://github.com/mhack-agent-one/agent-one/commit/7ff9fd6cf8edc167477bac0cf0cfa646b4c6f3d2))
+* **ui:** add cleanup for audio, toast timers, and animation timers on unmount ([#94](https://github.com/mhack-agent-one/agent-one/issues/94)) ([92f61d0](https://github.com/mhack-agent-one/agent-one/commit/92f61d0c66da71241137fc8d3d3c46032686baa9))
+* **ui:** add error handling for WS JSON.parse and fetch calls ([#95](https://github.com/mhack-agent-one/agent-one/issues/95)) ([166525a](https://github.com/mhack-agent-one/agent-one/commit/166525ad8132f66c50a8945e322f46087cee90ca))
+* **ui:** add error handling for WS JSON.parse and fetch calls ([#95](https://github.com/mhack-agent-one/agent-one/issues/95)) ([93ba50b](https://github.com/mhack-agent-one/agent-one/commit/93ba50b024b359f6a7fb5ac23acbc215c818ba3c))
+* **ui:** add error handling to SimulationPage fetch calls ([5325720](https://github.com/mhack-agent-one/agent-one/commit/532572062c0962cbed99f3f07adddcd6b692d78b))
+* **ui:** add error handling to SimulationPage fetch calls ([1ff2d34](https://github.com/mhack-agent-one/agent-one/commit/1ff2d34e3fa13a3c2e9eda6eda892c16877a92ba)), closes [#121](https://github.com/mhack-agent-one/agent-one/issues/121)
+* **ui:** add exponential backoff to WebSocket reconnect ([68b8d73](https://github.com/mhack-agent-one/agent-one/commit/68b8d732ff50fde1e73ae4f10e6a74e5b8b26a5f))
+* **ui:** add exponential backoff to WebSocket reconnect ([bfd93ed](https://github.com/mhack-agent-one/agent-one/commit/bfd93ed3e7ff8d63e2274222eebf21df0b620498)), closes [#122](https://github.com/mhack-agent-one/agent-one/issues/122)
+* **ui:** add flex-wrap and mobile breakpoint to MissionBar ([#163](https://github.com/mhack-agent-one/agent-one/issues/163)) ([7fe89e7](https://github.com/mhack-agent-one/agent-one/commit/7fe89e7389dc4dd05729440936c87bd3045f1daf))
+* **ui:** add flex-wrap and mobile breakpoint to MissionBar ([#163](https://github.com/mhack-agent-one/agent-one/issues/163)) ([268d721](https://github.com/mhack-agent-one/agent-one/commit/268d721c44be1feab2c4aa286e4d497cf4fcf3fe))
+* **ui:** add missing accessibility attributes across 5 components ([c7e25e7](https://github.com/mhack-agent-one/agent-one/commit/c7e25e7ea65ef48fdc39f5583983d2a4af44b5c3))
+* **ui:** add missing accessibility attributes across 5 components ([01d6111](https://github.com/mhack-agent-one/agent-one/commit/01d61111474cf5341495698d6863cf962204c041)), closes [#140](https://github.com/mhack-agent-one/agent-one/issues/140)
+* **ui:** batch accessibility, perf, and reactivity fixes ([#164](https://github.com/mhack-agent-one/agent-one/issues/164)) ([bf3cb8f](https://github.com/mhack-agent-one/agent-one/commit/bf3cb8fbe4ca48b4aa6a27c79cf15686d3ea49b4))
+* **ui:** batch accessibility, perf, and reactivity fixes ([#164](https://github.com/mhack-agent-one/agent-one/issues/164)) ([fb42308](https://github.com/mhack-agent-one/agent-one/commit/fb423088bb7387ab93552ed530fbb556acadc6d3))
+* **ui:** floor camera coordinates in WorldMap tile computation ([4f7de25](https://github.com/mhack-agent-one/agent-one/commit/4f7de25971917e68217d00a2b0cd876a658a7af6))
+* **ui:** floor camera coordinates in WorldMap tile computation ([3097dfd](https://github.com/mhack-agent-one/agent-one/commit/3097dfda8b47a1400191486799ca9abc87154544)), closes [#120](https://github.com/mhack-agent-one/agent-one/issues/120)
+* **ui:** guard AgentDetailModal against null mission and visited ([#157](https://github.com/mhack-agent-one/agent-one/issues/157)) ([1554b7b](https://github.com/mhack-agent-one/agent-one/commit/1554b7bb8414352a4c5b90eca1a49ee4af8d3869))
+* **ui:** guard AgentDetailModal against null mission and visited ([#157](https://github.com/mhack-agent-one/agent-one/issues/157)) ([c524165](https://github.com/mhack-agent-one/agent-one/commit/c52416507eb9cfdffcd3a368496aba8d42829cb1))
+
+
+### Performance Improvements
+
+* **ui:** stop WorldMap rAF loop when camera is idle ([#158](https://github.com/mhack-agent-one/agent-one/issues/158)) ([f463f1d](https://github.com/mhack-agent-one/agent-one/commit/f463f1d093b4b4bbe148366f971456e9e3f1638d))
+* **ui:** stop WorldMap rAF loop when camera is idle ([#158](https://github.com/mhack-agent-one/agent-one/issues/158)) ([d887a91](https://github.com/mhack-agent-one/agent-one/commit/d887a9198c06e22493e84efbef077d70d6502672))
+* use spatial hash for WorldMap tileConcentration — O(tiles+stones) ([0ba0157](https://github.com/mhack-agent-one/agent-one/commit/0ba015726ca498a821a86a0602d88bbe08388d59)), closes [#141](https://github.com/mhack-agent-one/agent-one/issues/141)
+* **world:** add spatial index for O(1) stone lookups ([38a5075](https://github.com/mhack-agent-one/agent-one/commit/38a50752b2e145c48aa652716e3b69dbea620d2f))
+* **world:** add spatial index for O(1) stone lookups ([#176](https://github.com/mhack-agent-one/agent-one/issues/176)) ([fbf4b70](https://github.com/mhack-agent-one/agent-one/commit/fbf4b70502a2f289312412f2fc52fdfc814bc97b))
+* WorldMap tileConcentration spatial hash — O(tiles+stones) ([bf64b8b](https://github.com/mhack-agent-one/agent-one/commit/bf64b8bc49c5c9500fc7c54c3262f061b6ab4d84))
+
 ## [Unreleased]
 
 ### Added
