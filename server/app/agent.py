@@ -8,6 +8,7 @@ import asyncio
 import json
 import logging
 import random
+import re
 
 from mistralai import Mistral, SDKError
 
@@ -30,11 +31,7 @@ from .station import StationAgent
 logger = logging.getLogger(__name__)
 
 STRUCTURED_REASONING_PROMPT = (
-    "\n\nRESPONSE FORMAT — before choosing an action, output a reasoning block:\n"
-    "SITUATION: <one-line summary of current state>\n"
-    "OPTIONS: <comma-separated list of 2-4 candidate actions>\n"
-    "DECISION: <chosen action and why>\n"
-    "RISK: low | medium | high\n"
+    "\n\nBefore acting, output: SITUATION: <state> | OPTIONS: <a, b> | DECISION: <choice + why> | RISK: low/medium/high"
 )
 
 
@@ -51,6 +48,7 @@ def _parse_structured_thinking(raw_thinking: str) -> dict:
     if m:
         result["options"] = [o.strip() for o in m.group(1).split(",") if o.strip()]
     if result["risk"] not in ("low", "medium", "high"):
+        logger.debug("Unrecognized risk level %r, defaulting to 'low'", result["risk"])
         result["risk"] = "low"
     return result
 

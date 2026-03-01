@@ -1,6 +1,7 @@
 <script setup>
 import { computed } from 'vue'
 import BatteryBar from './BatteryBar.vue'
+import ReasoningCard from './ReasoningCard.vue'
 
 const props = defineProps({
   agentId: {
@@ -56,7 +57,7 @@ const mergedEvents = computed(() => {
     if (e.name === 'thinking') {
       const next = raw[i + 1]
       if (next && next.name !== 'thinking') {
-        result.push({ ...next, reason: e.payload?.text || '' })
+        result.push({ ...next, reason: e.payload?.text || '', structured: e.payload?.structured || null })
         i++
       }
       // Drop orphan thinking events (no following action)
@@ -149,8 +150,12 @@ function eventText(e) {
             v-if="e.reason"
             class="ae-reason"
           >{{ e.reason }}</span>
+          <ReasoningCard
+            v-if="e.structured?.situation"
+            :structured="e.structured"
+          />
           <div
-            v-if="e.reason"
+            v-if="e.reason && !e.structured?.situation"
             class="ae-tooltip"
           >
             {{ e.reason }}
@@ -240,6 +245,7 @@ function eventText(e) {
   font-size: 0.75rem;
   border-bottom: 1px solid var(--border-dim);
   display: flex;
+  flex-wrap: wrap;
   gap: 0.4rem;
   align-items: baseline;
   position: relative;

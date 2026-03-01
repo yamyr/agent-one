@@ -3,6 +3,13 @@
 ## [Unreleased]
 
 ### Added
+- **Agent Reasoning Transparency Panel (Feature C)**: Structured reasoning output from LLM agents with visual card display
+  - Compressed `STRUCTURED_REASONING_PROMPT` appended to rover and drone `_build_context()` — agents output SITUATION/OPTIONS/DECISION/RISK fields
+  - `_parse_structured_thinking()` parser extracts structured fields with graceful fallback defaults
+  - Risk-level logging: unrecognized risk values logged at DEBUG before defaulting to "low"
+  - `ReasoningCard.vue` component: risk-based color coding (green/amber/red), word-boundary option matching, fade-in animation
+  - `AgentPane.vue` integration: structured reasoning card shown when available, raw text tooltip fallback otherwise
+  - 6 unit tests for parser (full parse, defaults, partial, risk normalization, empty input, invalid risk warning)
 - **Agent Memory & Learning (Feature F)**: Persistent strategic memory system where agents periodically summarize exploration memories into strategic insights via LLM
   - `summarize_memories()` generates summary prompts from agent memories (triggers when >= 6 memories)
   - `record_strategic_insight()` stores insights with sliding window (capped at 5)
