@@ -345,6 +345,9 @@ class MistralRoverReasoner:
                 elif cmd["name"] == "assign_mission":
                     objective = cmd.get("payload", {}).get("objective", "")
                     parts.append(f"NEW MISSION: {objective}")
+                elif cmd["name"] == "voice_command":
+                    text = cmd.get("payload", {}).get("text", "")
+                    parts.append(f"⚡ COMMANDER ORDER: {text}")
                 else:
                     parts.append(f"{cmd['name'].upper()}: {cmd.get('payload', {})}")
 
@@ -646,6 +649,9 @@ class DroneAgent:
                 elif cmd["name"] == "assign_mission":
                     objective = cmd.get("payload", {}).get("objective", "")
                     parts.append(f"NEW MISSION: {objective}")
+                elif cmd["name"] == "voice_command":
+                    text = cmd.get("payload", {}).get("text", "")
+                    parts.append(f"⚡ COMMANDER ORDER: {text}")
                 else:
                     parts.append(f"{cmd['name'].upper()}: {cmd.get('payload', {})}")
 

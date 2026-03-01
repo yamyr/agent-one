@@ -197,3 +197,21 @@ class Host:
         await broadcaster.send(msg.to_dict())
         await self._narrator.feed(msg.to_dict())
         return {"ok": True, **result}
+
+    async def handle_voice_command(self, text: str):
+        """Route a transcribed voice command to all agent inboxes and feed narrator."""
+        # Send command to every registered agent inbox
+        for agent_id in self._inboxes:
+            self.send_command(
+                agent_id,
+                {"name": "voice_command", "payload": {"text": text}},
+            )
+
+        # Broadcast voice_command event (narrator picks this up via feed)
+        msg = make_message(
+            source="commander",
+            type="command",
+            name="voice_command",
+            payload={"text": text},
+        )
+        await self.broadcast(msg.to_dict())

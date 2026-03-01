@@ -41,6 +41,9 @@ INTERESTING_EVENTS = {
     "mission_success": 3,  # mission completed!
     "mission_failed": 3,  # mission failed
     "mission_aborted": 3,  # mission manually aborted
+    # Commander voice
+    "voice_command": 3,  # commander spoke from cockpit — always narrate!
+    "voice_transcription": 3,  # transcription of commander audio
 }
 
 # Only narrate thinking events if they contain these keywords
@@ -84,6 +87,7 @@ def _is_interesting(event: dict) -> int:
 # ── Narration text generation (Mistral) ─────────────────────────────────────
 
 NARRATOR_SYSTEM_PROMPT = """\
+
 You are writing a DIALOGUE between two Mars Mission narrators who are \
 commentating on a live rover exploration mission together. They are a duo — \
 like a podcast team covering a space mission in real time.
@@ -99,6 +103,17 @@ excited about every rock and reading. She cracks jokes, geeks out over \
 geology, and adds the scientific color. When discoveries happen she can \
 barely contain her excitement. Think a fun science podcaster who also \
 happens to have a PhD.
+
+THE COMMANDER:
+Sometimes the human Commander speaks from mission control via voice. When \
+the Commander issues orders or makes comments, Rex and Nova should REACT \
+with energy — acknowledge the order, comment on it, joke about it, or \
+speculate what it means for the mission. The Commander is the boss, so \
+treat their words with a mix of respect and playful banter. Example:
+COMMANDER REX: [gasps] Did you hear that? The Commander just ordered a \
+full recall. Must be serious.
+DR. NOVA: Serious? Rex, when the boss says jump, we ask how high. Let's \
+get those rovers home!
 
 DIALOGUE FORMAT (STRICT):
 Each line MUST start with the speaker name followed by a colon:
@@ -177,7 +192,12 @@ def _build_narration_prompt(events: list[dict], world_summary: str) -> str:
             reason = payload.get("reason", "unknown")
             lines.append(f"- MISSION FAILED: {reason}")
         else:
-            lines.append(f"- {source}: {name} — {payload}")
+            # Voice command from the cockpit commander
+            if name in ("voice_command", "voice_transcription"):
+                text = payload.get("text", "")
+                lines.append(f'- ⚡ THE COMMANDER SPEAKS: "{text}" — React to this order!')
+            else:
+                lines.append(f"- {source}: {name} — {payload}")
 
     lines.append(f"\nCurrent world context:\n{world_summary}")
     lines.append(

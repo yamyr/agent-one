@@ -6,7 +6,25 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
-### Added
+### Added (Voxtral Voice Commander)
+
+- **Voice Commander system**: Human Commander can speak orders from the cockpit via browser microphone; audio transcribed by Mistral Voxtral API and routed to all agents
+  - `server/app/voice.py` — `VoiceCommander` class: lazy Mistral client, `transcribe()` via `client.audio.transcriptions.complete_async()`, `handle_voice_command()` pipeline (transcribe → broadcast → route to agents)
+  - `POST /voice/command` endpoint accepting `UploadFile` multipart audio
+  - `server/app/host.py` — `handle_voice_command(text)`: sends `voice_command` to all agent inboxes + broadcasts event
+  - `server/app/narrator.py` — Added `voice_command` (weight 3) and `voice_transcription` (weight 3) to `INTERESTING_EVENTS`; added THE COMMANDER section to narrator system prompt so Rex and Nova react to voice orders; `_build_narration_prompt()` formats voice events as dramatic commander orders
+  - `server/app/agent.py` — Rover and drone context builders format voice commands as `⚡ COMMANDER ORDER: {text}`
+  - `server/app/config.py` — Added `voxtral_model` (`voxtral-mini-latest`) and `voice_command_enabled` (default `True`) settings
+  - `server/pyproject.toml` — Added `python-multipart` dependency for file upload support
+- **VoiceCommander.vue UI component**: Hold-to-talk microphone button with Mars cockpit aesthetic
+  - MediaRecorder captures webm/opus audio, POSTs to `/api/voice/command` as multipart FormData
+  - Four states: idle → recording → transcribing → error with visual feedback (pulsing red border, blinking REC dot, signal bar animations)
+  - Transcription display with fade-in and typewriter animation
+  - Responsive at 768px and 480px breakpoints, dark theme using existing CSS custom properties
+- **WebSocket integration**: `useWebSocket.js` routes `source="commander"` events to `voiceTranscription` ref; `App.vue` wires `VoiceCommander` component with transcription prop
+- **Test coverage**: `server/tests/test_voice.py` — 7 test classes (~20 tests) covering transcription, full pipeline, feature flag, lazy client, host routing, and narrator event weights
+
+### Added (Structured Voice Command Processing)
 
 * **voice:** add `/api/voice-command` endpoint — accepts audio uploads, transcribes via Mistral Voxtral, parses structured commands (recall_rover, abort_mission, pause/resume, etc.) via LLM, routes through Host, and broadcasts events via WebSocket
 * **voice:** new `VoiceCommandProcessor` class with lazy Mistral client, Mars domain context bias terms, and JSON command extraction

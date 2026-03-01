@@ -1,23 +1,33 @@
-"""Voice command processor — Voxtral transcription + LLM command parsing.
+"""Voice command system — Voxtral transcription + command routing + LLM parsing.
 
-Accepts audio from the human operator, transcribes it via Mistral's Voxtral
-model, then uses an LLM call to extract a structured command intent for
-routing through the Host.
+Provides two complementary voice processing classes:
+
+- ``VoiceCommander``: Cockpit-style pipeline — transcribe audio, broadcast to UI,
+  route raw text to all agent inboxes, and feed the narrator for dramatic reactions.
+- ``VoiceCommandProcessor``: Structured pipeline — transcribe audio, use LLM to
+  extract a structured command intent (recall_rover, abort_mission, etc.), and
+  return parsed results for Host routing.
 """
 
 from __future__ import annotations
 
+import json
 import logging
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from mistralai import Mistral
 from mistralai.models import File
 
 from .config import settings
+from .protocol import make_message
+
+if TYPE_CHECKING:
+    from .host import Host
 
 logger = logging.getLogger(__name__)
 
-# Audio formats accepted by the Voxtral transcription API
+# ── Audio formats accepted by the Voxtral transcription API ──────────────────
+
 SUPPORTED_AUDIO_TYPES = {
     "audio/mpeg",
     "audio/mp3",
@@ -28,7 +38,8 @@ SUPPORTED_AUDIO_TYPES = {
     "audio/webm",
 }
 
-# Mars domain terms to improve transcription accuracy
+# ── Mars domain terms to improve transcription accuracy ──────────────────────
+
 CONTEXT_BIAS_TERMS = [
     "rover",
     "drone",
@@ -54,7 +65,7 @@ CONTEXT_BIAS_TERMS = [
     "panel",
 ]
 
-# ── Command parsing prompt ──────────────────────────────────────────────────
+# ── Command parsing prompt ───────────────────────────────────────────────────
 
 COMMAND_PARSE_SYSTEM_PROMPT = """\
 You are a Mars mission command parser. You receive transcribed voice commands \
@@ -93,7 +104,71 @@ Transcript: "How are the rovers doing?"
 """
 
 
-# ── Voice command processor ─────────────────────────────────────────────────
+# ── VoiceCommander (cockpit pipeline) ────────────────────────────────────────
+
+
+class VoiceCommander:
+    """Transcribe commander audio via Voxtral and route as agent commands."""
+
+    def __init__(self, host: Host):
+        self._host = host
+        self._client: Mistral | None = None
+
+    # ── Lazy client ──
+
+    def _get_client(self) -> Mistral:
+        if self._client is None:
+            if not settings.mistral_api_key:
+                raise RuntimeError("MISTRAL_API_KEY required for voice commands")
+            self._client = Mistral(api_key=settings.mistral_api_key)
+        return self._client
+
+    # ── Core pipeline ──
+
+    async def transcribe(self, audio_bytes: bytes, filename: str = "audio.webm") -> str:
+        """Transcribe audio bytes via Voxtral. Returns transcribed text."""
+        client = self._get_client()
+        response = await client.audio.transcriptions.complete_async(
+            model=settings.voxtral_model,
+            file={"content": audio_bytes, "file_name": filename},
+        )
+        return response.text.strip() if response.text else ""
+
+    async def handle_voice_command(self, audio_bytes: bytes, filename: str = "audio.webm") -> dict:
+        """Full pipeline: transcribe → broadcast → route to agents → feed narrator."""
+        if not settings.voice_command_enabled:
+            return {"ok": False, "error": "Voice commands disabled"}
+
+        if not audio_bytes:
+            return {"ok": False, "error": "Empty audio"}
+
+        try:
+            text = await self.transcribe(audio_bytes, filename)
+        except Exception:
+            logger.exception("Voxtral transcription failed")
+            return {"ok": False, "error": "Transcription failed"}
+
+        if not text:
+            return {"ok": False, "error": "No speech detected"}
+
+        logger.info("Commander voice command: %s", text)
+
+        # 1. Broadcast transcription event to UI
+        transcription_msg = make_message(
+            source="commander",
+            type="event",
+            name="voice_transcription",
+            payload={"text": text},
+        )
+        await self._host.broadcast(transcription_msg.to_dict())
+
+        # 2. Route command to all agents via host
+        await self._host.handle_voice_command(text)
+
+        return {"ok": True, "text": text}
+
+
+# ── VoiceCommandProcessor (structured pipeline) ─────────────────────────────
 
 
 class VoiceCommandProcessor:
@@ -152,8 +227,6 @@ class VoiceCommandProcessor:
             temperature=0.1,
             response_format={"type": "json_object"},
         )
-
-        import json
 
         text = response.choices[0].message.content
         if not text:

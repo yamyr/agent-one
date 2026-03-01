@@ -6,6 +6,7 @@ export function useWebSocket({ onConnect, onEvent } = {}) {
   const worldState = ref(null)
   const narration = ref(null)
   const narrationChunk = ref(null)
+  const voiceTranscription = ref(null)
   let ws = null
   let eventUid = 0
 
@@ -43,6 +44,8 @@ export function useWebSocket({ onConnect, onEvent } = {}) {
         narration.value = event.payload
       } else if (event.source === 'narrator' && event.name === 'narration_chunk') {
         narrationChunk.value = event.payload
+      } else if (event.source === 'commander' && event.name === 'voice_transcription') {
+        voiceTranscription.value = event.payload
       } else {
         event._uid = ++eventUid
         events.value.unshift(event)
@@ -71,5 +74,5 @@ export function useWebSocket({ onConnect, onEvent } = {}) {
     if (ws) ws.close()
   })
 
-  return { events, connected, worldState, agentIds, agentEvents, narration, narrationChunk }
+  return { events, connected, worldState, agentIds, agentEvents, narration, narrationChunk, voiceTranscription }
 }

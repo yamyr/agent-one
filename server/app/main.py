@@ -14,7 +14,7 @@ from .db import init_db, close_db
 from .host import Host
 from .narrator import Narrator
 from .views import router as views_router
-from .voice import VoiceCommandProcessor, SUPPORTED_AUDIO_TYPES
+from .voice import VoiceCommander, VoiceCommandProcessor, SUPPORTED_AUDIO_TYPES
 from .world import reset_world, set_agent_model
 
 logging.basicConfig(
@@ -28,6 +28,7 @@ logger = logging.getLogger(__name__)
 
 narrator = Narrator(broadcast_fn=broadcaster.send)
 host = Host(narrator=narrator)
+voice_commander = VoiceCommander(host=host)
 voice_processor = VoiceCommandProcessor()
 
 AGENT_MAP = {
@@ -134,11 +135,18 @@ async def recall_rover(rover_id: str):
     return await host.recall_rover(rover_id)
 
 
-# ── Voice command endpoint ──────────────────────────────────────────────────
+# ── Voice command endpoints ──────────────────────────────────────────────────
+
+
+@app.post("/voice/command")
+async def voice_command_cockpit(audio: UploadFile):
+    """Accept audio upload, transcribe via Voxtral, route command to agents."""
+    audio_bytes = await audio.read()
+    return await voice_commander.handle_voice_command(audio_bytes, audio.filename or "audio.webm")
 
 
 @app.post("/api/voice-command")
-async def voice_command(audio: UploadFile):
+async def voice_command_structured(audio: UploadFile):
     """Accept audio upload, transcribe via Voxtral, parse command, and route."""
     from .protocol import make_message
 
