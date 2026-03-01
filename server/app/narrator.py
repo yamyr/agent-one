@@ -181,18 +181,14 @@ def _build_narration_prompt(events: list[dict], world_summary: str) -> str:
             reason = payload.get("reason", "unknown")
             lines.append(f"- MISSION FAILED: {reason}")
         elif name == "storm_warning":
-            lines.append(
-                f"- DUST STORM WARNING: {payload.get('message', 'Storm approaching!')}"
-            )
+            lines.append(f"- DUST STORM WARNING: {payload.get('message', 'Storm approaching!')}")
         elif name == "storm_started":
             lines.append(
                 f"- DUST STORM HIT: {payload.get('message', 'Storm arrived!')} "
                 f"Intensity: {payload.get('intensity', '?')}"
             )
         elif name == "storm_ended":
-            lines.append(
-                f"- Storm cleared: {payload.get('message', 'Storm has passed.')}"
-            )
+            lines.append(f"- Storm cleared: {payload.get('message', 'Storm has passed.')}")
         else:
             lines.append(f"- {source}: {name} — {payload}")
 

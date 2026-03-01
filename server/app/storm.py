@@ -68,41 +68,49 @@ def check_storm_tick(world):
             storm["active_start"] = tick + STORM_WARNING_TICKS
             storm["active_end"] = tick + STORM_WARNING_TICKS + duration
             storm["intensity"] = 0.0
-            events.append({
-                "name": "storm_warning",
-                "payload": {
-                    "message": "Dust storm approaching! ETA %d ticks." % STORM_WARNING_TICKS,
-                    "active_start": storm["active_start"],
-                    "active_end": storm["active_end"],
-                },
-            })
+            events.append(
+                {
+                    "name": "storm_warning",
+                    "payload": {
+                        "message": "Dust storm approaching! ETA %d ticks." % STORM_WARNING_TICKS,
+                        "active_start": storm["active_start"],
+                        "active_end": storm["active_end"],
+                    },
+                }
+            )
             logger.info(
                 "Storm warning at tick %d, active %d-%d",
-                tick, storm["active_start"], storm["active_end"],
+                tick,
+                storm["active_start"],
+                storm["active_end"],
             )
 
     elif storm["phase"] == "warning":
         if tick >= storm["active_start"]:
             storm["phase"] = "active"
             storm["intensity"] = 0.3
-            events.append({
-                "name": "storm_started",
-                "payload": {
-                    "message": "Dust storm has arrived!",
-                    "duration": storm["active_end"] - storm["active_start"],
-                    "intensity": storm["intensity"],
-                },
-            })
+            events.append(
+                {
+                    "name": "storm_started",
+                    "payload": {
+                        "message": "Dust storm has arrived!",
+                        "duration": storm["active_end"] - storm["active_start"],
+                        "intensity": storm["intensity"],
+                    },
+                }
+            )
             logger.info("Storm active at tick %d", tick)
 
     elif storm["phase"] == "active":
         if tick >= storm["active_end"]:
             storm["phase"] = "clear"
             storm["intensity"] = 0.0
-            events.append({
-                "name": "storm_ended",
-                "payload": {"message": "Dust storm has passed."},
-            })
+            events.append(
+                {
+                    "name": "storm_ended",
+                    "payload": {"message": "Dust storm has passed."},
+                }
+            )
             schedule_next_storm(world)
             logger.info("Storm ended at tick %d", tick)
         else:
@@ -145,9 +153,7 @@ def get_storm_info(world):
         "intensity": round(storm["intensity"], 2),
         "battery_multiplier": round(get_battery_multiplier(world), 2),
         "move_fail_chance": round(
-            STORM_MAX_MOVE_FAIL * storm["intensity"]
-            if storm["phase"] == "active"
-            else 0.0,
+            STORM_MAX_MOVE_FAIL * storm["intensity"] if storm["phase"] == "active" else 0.0,
             3,
         ),
     }
