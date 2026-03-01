@@ -10,6 +10,7 @@ export function useWebSocket({ onConnect, onEvent } = {}) {
   const RECONNECT_MAX = 30000
   let ws = null
   let eventUid = 0
+  let isFirstConnect = true
 
   const agentEvents = computed(() => {
     const byAgent = {}
@@ -36,9 +37,13 @@ export function useWebSocket({ onConnect, onEvent } = {}) {
 
     ws.onopen = () => {
       connected.value = true
-      events.value = []
-      worldState.value = null
-      if (onConnect) onConnect()
+      const first = isFirstConnect
+      isFirstConnect = false
+      if (first) {
+        events.value = []
+        worldState.value = null
+      }
+      if (onConnect) onConnect(first)
       reconnectDelay = 2000  // reset backoff on successful connection
     }
 
