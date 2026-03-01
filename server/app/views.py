@@ -7,8 +7,10 @@ from pydantic import BaseModel
 from .broadcast import broadcaster
 from .config import settings
 from .finetuning import fine_tuning_manager
+from .protocol import make_message
 from .training import collector
 from .training_logger import training_logger
+from .world import get_snapshot
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -157,6 +159,10 @@ async def websocket_stream(ws: WebSocket):
     """WebSocket endpoint for streaming simulation events to the UI."""
     await broadcaster.connect(ws)
     try:
+        # Send current world state immediately so the client doesn't wait for next tick
+        snapshot = get_snapshot()
+        if snapshot:
+            await ws.send_json(make_message("world", "event", "state", snapshot).to_dict())
         while True:
             # keep connection alive; we don't expect input from client
             await ws.receive_text()
