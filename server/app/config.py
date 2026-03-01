@@ -41,6 +41,9 @@ class Settings(BaseSettings):
     narration_voice_id_male: str = "JBFqnCBsd6RMkjVDRZzb"  # George - Commander Rex
     narration_voice_id_female: str = "21m00Tcm4TlvDq8ikWAM"  # Rachel - Dr. Nova
     narration_model: str = "mistral-medium-latest"
+    narration_max_tokens: int = Field(default=350, gt=0)
+    narration_temperature: float = Field(default=0.9, ge=0.0, le=2.0)
+    elevenlabs_model_id: str = "eleven_v3"
     narration_min_interval_seconds: float = Field(default=5.0, ge=0)
 
     # Voice command (Voxtral transcription)
@@ -50,6 +53,7 @@ class Settings(BaseSettings):
     # Fine-tuning
     training_data_enabled: bool = False
     training_data_dir: str = "./training_data"
+    training_snapshot_interval: int = 10
     fine_tuned_agent_model: str = ""
     fine_tuned_narration_model: str = ""
 

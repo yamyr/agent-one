@@ -260,7 +260,7 @@ def _generate_dialogue_audio(dialogue: list[tuple[str, str]], client: ElevenLabs
     try:
         audio_iter = client.text_to_dialogue.convert(
             inputs=inputs,
-            model_id="eleven_v3",
+            model_id=settings.elevenlabs_model_id,
             output_format="mp3_22050_32",
         )
         chunks = []
@@ -281,7 +281,7 @@ def _generate_audio_single(text: str, client: ElevenLabs) -> bytes | None:
         audio_iter = client.text_to_speech.convert(
             voice_id=settings.narration_voice_id_male,
             text=text,
-            model_id="eleven_v3",
+            model_id=settings.elevenlabs_model_id,
             output_format="mp3_22050_32",
         )
         chunks = []
@@ -538,8 +538,8 @@ class Narrator:
                     {"role": "system", "content": NARRATOR_SYSTEM_PROMPT},
                     {"role": "user", "content": prompt},
                 ],
-                max_tokens=350,
-                temperature=0.9,
+                max_tokens=settings.narration_max_tokens,
+                temperature=settings.narration_temperature,
             )
             from .training import collector
 
@@ -574,8 +574,8 @@ class Narrator:
                     {"role": "system", "content": NARRATOR_SYSTEM_PROMPT},
                     {"role": "user", "content": prompt},
                 ],
-                max_tokens=350,
-                temperature=0.9,
+                max_tokens=settings.narration_max_tokens,
+                temperature=settings.narration_temperature,
             )
 
             full_text = ""
