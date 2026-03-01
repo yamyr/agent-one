@@ -1514,7 +1514,7 @@ class DroneLoop(BaseAgent):
             training_logger.log_turn(training_turn)
             training_logger.log_world_snapshot(self._world.get_tick(), get_snapshot())
         except Exception:
-            logger.debug("Training turn logging failed for %s", self.agent_id, exc_info=True)
+            logger.warning("Training turn logging failed for %s", self.agent_id, exc_info=True)
 
         # Auto-charge drone when at station
         drone = self._world.get_agents().get(self.agent_id)
@@ -1679,4 +1679,4 @@ class StationLoop(BaseAgent):
             training_logger.log_turn(training_turn)
             training_logger.log_world_snapshot(current_tick, get_snapshot())
         except Exception:
-            logger.debug("Training turn logging failed for station", exc_info=True)
+            logger.warning("Training turn logging failed for station", exc_info=True)

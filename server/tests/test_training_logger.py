@@ -224,3 +224,92 @@ class TestTrainingLoggerDB(CaseWithDB):
         # Meta should contain session_id
         self.assertEqual(record["meta"]["session_id"], sid)
         self.assertEqual(record["meta"]["agent_type"], "rover")
+
+
+class TestSafeJsonStr(unittest.TestCase):
+    """Unit tests for _safe_json_str helper."""
+
+    def test_serializes_dict(self):
+        from app.training_logger import _safe_json_str
+
+        result = _safe_json_str({"key": "value", "num": 42})
+        self.assertIn('"key"', result)
+        self.assertIn("42", result)
+
+    def test_handles_non_serializable(self):
+        from app.training_logger import _safe_json_str
+
+        result = _safe_json_str({"obj": object()})
+        self.assertIn("obj", result)
+
+    def test_empty_dict(self):
+        from app.training_logger import _safe_json_str
+
+        self.assertEqual(_safe_json_str({}), "{}")
+
+    def test_serializes_nested(self):
+        from app.training_logger import _safe_json_str
+
+        result = _safe_json_str({"a": [1, 2, {"b": True}]})
+        self.assertIn('"a"', result)
+        self.assertIn("true", result)
+
+
+class TestBuildTurnSnapshot(unittest.TestCase):
+    """Unit tests for _build_turn_snapshot helper."""
+
+    def test_basic_snapshot(self):
+        from unittest.mock import MagicMock
+
+        from app.agent import _build_turn_snapshot
+
+        world = MagicMock()
+        world.get_agents.return_value = {"station": {"position": [5, 5]}}
+        world.get_mission.return_value = {
+            "status": "running",
+            "collected": 10,
+            "target_quantity": 100,
+        }
+
+        agent_state = {
+            "position": [3, 4],
+            "battery": 0.75,
+            "inventory": [{"type": "basalt", "grade": "A", "quantity": 1}],
+            "memory": ["moved east", "dug rock"],
+            "tasks": ["collect basalt"],
+        }
+
+        snap = _build_turn_snapshot(agent_state, world)
+        self.assertEqual(snap.agent_position, [3, 4])
+        self.assertAlmostEqual(snap.agent_battery, 0.75)
+        self.assertEqual(snap.distance_to_station, 3)
+        self.assertEqual(snap.mission_status, "running")
+        self.assertEqual(snap.collected_quantity, 10)
+
+    def test_missing_fields_default_safely(self):
+        from unittest.mock import MagicMock
+
+        from app.agent import _build_turn_snapshot
+
+        world = MagicMock()
+        world.get_agents.return_value = {}
+        world.get_mission.return_value = {}
+
+        snap = _build_turn_snapshot({}, world)
+        self.assertEqual(snap.agent_position, [0, 0])
+        self.assertEqual(snap.agent_battery, 0)
+        self.assertEqual(snap.distance_to_station, 0)
+
+    def test_invalid_position_type(self):
+        from unittest.mock import MagicMock
+
+        from app.agent import _build_turn_snapshot
+
+        world = MagicMock()
+        world.get_agents.return_value = {"station": {"position": "invalid"}}
+        world.get_mission.return_value = None
+
+        agent_state = {"position": "not-a-list", "battery": "not-a-number"}
+        snap = _build_turn_snapshot(agent_state, world)
+        self.assertEqual(snap.agent_position, [0, 0])
+        self.assertEqual(snap.agent_battery, 0)

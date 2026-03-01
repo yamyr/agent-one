@@ -4,6 +4,15 @@
 
 ### Bug Fixes
 
+* **training-logger:** fix critical `SyntaxError` in `_safe_json_str()` — `except TypeError, ValueError:` is invalid Python 3 syntax, changed to `except (TypeError, ValueError):` with `# fmt: skip` to prevent ruff from reverting
+* **agent:** upgrade training turn logging from `debug` to `warning` level for production observability
+
+### Tests
+
+* **training-logger:** add 7 new tests for `_safe_json_str` (4 tests) and `_build_turn_snapshot` (3 tests) — total training tests now 18
+
+### Bug Fixes
+
 * **ci:** fix 3 CI failures blocking all branches — remove broken `training_logger` import, fix `client` variable scoping in narrator streaming, apply `ruff format` to 5 unformatted files
 * **narrator:** fix `UnboundLocalError` in `_generate_text_streaming()` — remove dead duplicate code block, add proper `client = self._get_mistral()` in Mistral branch
 * **tests:** fix `test_generate_text_streaming_mistral_by_default` mock to use `AsyncMock` with `stream_async`

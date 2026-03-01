@@ -487,7 +487,7 @@ def _safe_json_str(obj: Any) -> str:
 
     try:
         return json.dumps(obj, ensure_ascii=False, default=str)
-    except TypeError, ValueError:
+    except (TypeError, ValueError):  # fmt: skip
         return "{}"
 
 
