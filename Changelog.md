@@ -1,5 +1,25 @@
 # Changelog
 
+## [0.5.0](https://github.com/mhack-agent-one/agent-one/compare/v0.4.0...v0.5.0) (2026-03-01)
+
+
+### Features
+
+* add environmental hazards — ice mountains and air geysers ([#220](https://github.com/mhack-agent-one/agent-one/issues/220)) ([f36cbdd](https://github.com/mhack-agent-one/agent-one/commit/f36cbdd9886865c40738a7fafeba45db543283cd))
+* add SurrealDB training data logging for agent decision replay and fine-tuning ([#212](https://github.com/mhack-agent-one/agent-one/issues/212)) ([98b2d75](https://github.com/mhack-agent-one/agent-one/commit/98b2d75ebaadcee2ae16f2b26c1b2a7d13d95883))
+* **ui:** add obstacle visualization to WorldMap SVG ([#221](https://github.com/mhack-agent-one/agent-one/issues/221)) ([36c9dfa](https://github.com/mhack-agent-one/agent-one/commit/36c9dfa50229778e404dd1580cd0ae6968bb2431))
+
+
+### Bug Fixes
+
+* **ci:** resolve 3 CI failures blocking all branches ([#216](https://github.com/mhack-agent-one/agent-one/issues/216)) ([eddcddd](https://github.com/mhack-agent-one/agent-one/commit/eddcdddea7a781ee3a9d755157e0f9fbb6ab637d))
+* correct SyntaxError in training_logger, improve logging, add tests ([#218](https://github.com/mhack-agent-one/agent-one/issues/218)) ([8adfe61](https://github.com/mhack-agent-one/agent-one/commit/8adfe61aa0a7aad0543408f2f6151b9ad3d7be9f))
+* resolve PR [#145](https://github.com/mhack-agent-one/agent-one/issues/145) runtime crashes in memory summarization ([b7642d1](https://github.com/mhack-agent-one/agent-one/commit/b7642d12ff7085f22ac695ed41276c006e9922a7))
+* resolve PR [#145](https://github.com/mhack-agent-one/agent-one/issues/145) runtime crashes in memory summarization ([#210](https://github.com/mhack-agent-one/agent-one/issues/210)) ([94e5914](https://github.com/mhack-agent-one/agent-one/commit/94e59141db2fb7d0a6c0542e3d68dd83be27889c))
+* resolve production site issues — PORT, SPA routing, WS initial state ([#219](https://github.com/mhack-agent-one/agent-one/issues/219)) ([a64700f](https://github.com/mhack-agent-one/agent-one/commit/a64700f1bbc9f9bad2268ecf906ac6dc0e77badd))
+* **tests:** add assertions to tests that verified nothing ([#142](https://github.com/mhack-agent-one/agent-one/issues/142)) ([8323908](https://github.com/mhack-agent-one/agent-one/commit/8323908815889655a0396a97f41097ca2b2329ee))
+* **ui:** guard AgentDetailModal against null properties ([#89](https://github.com/mhack-agent-one/agent-one/issues/89)) ([#217](https://github.com/mhack-agent-one/agent-one/issues/217)) ([2d73524](https://github.com/mhack-agent-one/agent-one/commit/2d7352475718d7204ce102a5495579371bf3342a))
+
 ## [Unreleased]
 
 ### Features
