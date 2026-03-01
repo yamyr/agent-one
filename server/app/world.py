@@ -1201,11 +1201,13 @@ def check_mission_status():
                 len(inventory),
                 agent_id,
             )
-            delivery_events.append({
-                "agent": agent_id,
-                "items_deposited": len(inventory),
-                "target_deposited": delivered_count,
-            })
+            delivery_events.append(
+                {
+                    "agent": agent_id,
+                    "items_deposited": len(inventory),
+                    "target_deposited": delivered_count,
+                }
+            )
             agent["inventory"] = []
         else:
             for stone in inventory:
