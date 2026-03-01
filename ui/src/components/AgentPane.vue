@@ -171,7 +171,7 @@ function eventText(e) {
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-md);
   background: var(--bg-card);
-  height: 200px;
+  height: 300px;
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -338,13 +338,13 @@ function eventText(e) {
 
 @media (max-width: 768px) {
   .agent-pane {
-    height: 160px;
+    height: 240px;
   }
 }
 
 @media (max-width: 480px) {
   .agent-pane {
-    height: 140px;
+    height: 210px;
   }
 
   .agent-name {
