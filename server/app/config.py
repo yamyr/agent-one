@@ -34,14 +34,14 @@ class Settings(BaseSettings):
 
     # Simulation timing
     agent_turn_interval_seconds: float = Field(default=0.5, gt=0)
-    llm_turn_interval_seconds: float = Field(default=3.0, gt=0)
-    drone_turn_interval_seconds: float = Field(default=2.0, gt=0)
+    llm_turn_interval_seconds: float = Field(default=6.0, gt=0)
+    drone_turn_interval_seconds: float = Field(default=5.0, gt=0)
 
     # World generation seed (empty = random)
     world_seed: str = ""
 
-    # Active agents (comma-separated: "rover-mistral,drone-mistral")
-    active_agents: str = "rover-mistral,rover-2,drone-mistral,station-loop"
+    # Active agents (comma-separated; rover-2 available but inactive to reduce API load)
+    active_agents: str = "rover-mistral,drone-mistral,station-loop"
 
     # ElevenLabs narration
     elevenlabs_api_key: str = ""

@@ -38,9 +38,17 @@ const mobileAgents = computed(() => {
 
 
 async function onWsConnect(isFirst) {
-  paused.value = false
   if (isFirst) {
+    // Pause briefly so the audience sees all agents at their starting positions
+    paused.value = true
+    fetch('/api/simulation/pause', { method: 'POST' }).catch(() => {})
     fetch('/api/simulation/reset', { method: 'POST' }).catch(() => {})
+    setTimeout(async () => {
+      paused.value = false
+      fetch('/api/simulation/resume', { method: 'POST' }).catch(() => {})
+    }, 3000)
+  } else {
+    paused.value = false
   }
   try {
     const res = await fetch('/api/narration/status')

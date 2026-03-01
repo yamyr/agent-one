@@ -71,6 +71,55 @@ function toggle() {
           </div>
         </div>
         <div class="legend-section">
+          <h4>Hazards</h4>
+          <div class="legend-grid">
+            <div class="legend-item">
+              <span class="swatch mountain" />
+              <span>Mountain</span>
+            </div>
+            <div class="legend-item">
+              <span
+                class="dot"
+                style="background: #447788"
+              />
+              <span>Geyser</span>
+            </div>
+            <div class="legend-item">
+              <span
+                class="dot"
+                style="background: #cc8844"
+              />
+              <span>Geyser (warn)</span>
+            </div>
+            <div class="legend-item">
+              <span
+                class="dot erupting"
+                style="background: #ee4444"
+              />
+              <span>Geyser (erupt)</span>
+            </div>
+          </div>
+        </div>
+        <div class="legend-section">
+          <h4>Structures</h4>
+          <div class="legend-grid">
+            <div class="legend-item">
+              <span
+                class="swatch solar"
+                style="background: #f0c040"
+              />
+              <span>Solar panel</span>
+            </div>
+            <div class="legend-item">
+              <span
+                class="swatch solar"
+                style="background: #555555"
+              />
+              <span>Depleted</span>
+            </div>
+          </div>
+        </div>
+        <div class="legend-section">
           <h4>Communication</h4>
           <div class="legend-grid comm-grid">
             <div class="legend-item">
@@ -206,6 +255,32 @@ h4 {
   flex-shrink: 0;
   border-radius: 1px;
   opacity: 0.9;
+}
+
+.swatch.mountain {
+  width: 0;
+  height: 0;
+  border-left: 4px solid transparent;
+  border-right: 4px solid transparent;
+  border-bottom: 7px solid #8899bb;
+  flex-shrink: 0;
+  opacity: 0.85;
+}
+
+.swatch.solar {
+  width: 10px;
+  height: 5px;
+  flex-shrink: 0;
+  border-radius: 1px;
+}
+
+.dot.erupting {
+  animation: pulse-glow 1s ease-in-out infinite;
+}
+
+@keyframes pulse-glow {
+  0%, 100% { opacity: 0.7; transform: scale(1); }
+  50% { opacity: 1; transform: scale(1.3); }
 }
 
 .comm-grid {
