@@ -33,6 +33,7 @@ dev = [
     "ruff>=0.8.0",
     "rut",
     "import-deps>=0.5.1",
+    "pytest>=9.0.2",
 ]
 
 [tool.uv.sources]

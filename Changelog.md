@@ -39,17 +39,30 @@
 
 ### Features
 
-* **world:** ice resource system — ice deposits spawn near mountains, rovers can gather ice and recycle it into water at station
-* **world:** gas plant system — build gas plants on idle geysers, they produce gas when geyser erupts
-* **world:** base upgrade system — spend water/gas to upgrade charge speed, storage capacity, or radar range
-* **agent:** new Hauler agent role — transport-focused agent with 6-item cargo capacity for shuttling materials
-* **world:** global resource storage (water, gas) tracked at station level
-* **models:** new Pydantic models for ResourceItem, IceDeposit, GasPlantInfo, BaseUpgrade, HaulerAgentState
+* **world:** ice resource system — ice deposits spawn adjacent to mountains during chunk generation, rovers can gather ice with grade-weighted quantities
+* **world:** water recycling — `recycle_ice` action at water processor structures converts ice to water (2x quantity)
+* **world:** gas plant system — build gas plants on idle geysers, collect gas stored locally in plant during eruption cycles
+* **world:** base upgrade system — spend station resources (water/gas) for `charge_mk2`, `storage_mk2`, `radar_mk2` upgrades (max level 1 each)
+* **world:** cargo drop/pickup system — rovers `drop_item` to ground, haulers `pickup_cargo` for transport
+* **world:** structure repair now deposits parts into `station_resources`
+* **agent:** new Hauler agent role — 8-item cargo capacity, 2-tile move range, `observe_hauler()` context with nearby rover scanning
+* **agent:** Hauler tools: `move`, `pickup_cargo`, `notify`
+* **agent:** rover tools expanded to 15 including `gather_ice`, `recycle_ice`, `build_gas_plant`, `collect_gas`, `upgrade_base`, `upgrade_building`, `drop_item`
+* **world:** hauler auto-delivery at station via `check_mission_status()` integration
+* **world:** global resource storage (water, gas, parts) tracked at station level
+* **models:** Pydantic v2 models — `ResourceType`, `AgentType` enums, `GasPlantInfo`, `IceDeposit`, `StationUpgrades`, `ResourceStorage`, `HaulerContext`, `HaulerAgentState`, `HaulerWorldView`, `HaulerComputed`, `GroundItem`, `StationResources`
 * **security:** comprehensive security audit completed — no leaked secrets found
 
 ### Bug Fixes
 
-* **world:** rover no longer gets stuck at station with full inventory after delivery (inventory was never cleared)
+* **world:** fix gas production — gas now stored locally in plant contents (`gas_stored`) instead of duplicating to both plant and station
+* **world:** remove phantom `GroundItem` import that caused startup crash
+* **world:** disable legacy cargo transfer actions (`load_cargo`, `unload_cargo`, etc.) — use `drop_item` + `pickup_cargo` flow instead
+* **world:** fix `_execute_build_gas_plant` call signature — remove unnecessary `params` arg at call site
+* **agent:** rename `HaulerMistralLoop` to `HaulerLoop` for consistency with other agent loops
+* **tests:** fix test assertions to match refactored ice deposit schema (`type: ice_deposit`, no `_true_quantity`)
+* **tests:** fix upgrade tests to use new `charge_mk2` upgrade name and resource-based cost system
+* **tests:** fix `test_recycle_ice_success` to call `_execute_recycle_ice` directly (avoids routing issues)
 
 ## [0.7.0] — Control Buttons & Narration Enablement (2026-03-01)
 

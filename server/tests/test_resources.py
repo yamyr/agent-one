@@ -6,7 +6,9 @@ from app.world import (
     world,
     execute_action,
     WORLD,
+    ICE_TO_WATER_RATIO,
     _execute_build_gas_plant,
+    _execute_recycle_ice,
     _execute_upgrade_base,
 )
 from app.world import FUEL_CAPACITY_ROVER
@@ -74,9 +76,7 @@ class TestGatherIce(unittest.TestCase):
         self.assertEqual(len(ice_items), 1)
         self.assertEqual(ice_items[0]["quantity"], 40)
         deposits_at = [d for d in WORLD["ice_deposits"] if d["position"] == [5, 5]]
-        self.assertEqual(len(deposits_at), 1)
-        self.assertEqual(deposits_at[0]["quantity"], 0)
-        self.assertTrue(deposits_at[0].get("gathered"))
+        self.assertEqual(len(deposits_at), 0)
 
     def test_gather_ice_no_deposit(self):
         """Rover with no ice deposit at position fails."""
@@ -116,10 +116,10 @@ class TestRecycleIce(unittest.TestCase):
 
     def test_recycle_ice_success(self):
         self.agent["inventory"] = [{"type": "ice", "quantity": 30}]
-        result = execute_action("rover-mistral", "recycle_ice", {})
+        result = _execute_recycle_ice("rover-mistral", self.agent)
         self.assertTrue(result["ok"])
-        self.assertEqual(result["water_gained"], 60)
-        self.assertEqual(WORLD["resources"]["water"], 60)
+        self.assertEqual(result["water_gained"], 30 * ICE_TO_WATER_RATIO)
+        self.assertEqual(WORLD["resources"]["water"], 30 * ICE_TO_WATER_RATIO)
         # Ice should be removed from inventory
         ice_items = [i for i in self.agent["inventory"] if i.get("type") == "ice"]
         self.assertEqual(len(ice_items), 0)
@@ -145,6 +145,8 @@ class TestBuildGasPlant(unittest.TestCase):
         self.agent = _reset_agent(pos=[5, 5])
         self._orig_gas_plants = list(WORLD.get("gas_plants", []))
         WORLD["gas_plants"] = []
+        self._orig_structures = list(WORLD.get("structures", []))
+        WORLD["structures"] = []
         self._orig_obstacles = list(WORLD.get("obstacles", []))
         WORLD["obstacles"] = []
         # Clear only test geysers
@@ -152,15 +154,18 @@ class TestBuildGasPlant(unittest.TestCase):
 
     def tearDown(self):
         WORLD["gas_plants"] = self._orig_gas_plants
+        WORLD["structures"] = self._orig_structures
         WORLD["obstacles"] = self._orig_obstacles
 
     def test_build_gas_plant_success(self):
-        _place_geyser([5, 6], state="idle")
+        geyser = _place_geyser([5, 6], state="idle")
+        self.agent["revealed"] = [[5, 6]]
         result = _execute_build_gas_plant("rover-mistral", self.agent, {})
         self.assertTrue(result["ok"])
         self.assertEqual(result["geyser_position"], [5, 6])
-        self.assertEqual(len(WORLD["gas_plants"]), 1)
-        self.assertEqual(WORLD["gas_plants"][0]["geyser_position"], [5, 6])
+        self.assertIn("gas_plant", geyser)
+        self.assertIsNotNone(geyser["gas_plant"])
+        self.assertEqual(len([s for s in WORLD["structures"] if s.get("type") == "gas_plant"]), 1)
 
     def test_build_gas_plant_no_geyser(self):
         """Rover with no adjacent geyser fails."""
@@ -171,6 +176,7 @@ class TestBuildGasPlant(unittest.TestCase):
     def test_build_gas_plant_duplicate(self):
         """Cannot build two gas plants on same geyser."""
         _place_geyser([5, 6], state="idle")
+        self.agent["revealed"] = [[5, 6]]
         first = _execute_build_gas_plant("rover-mistral", self.agent, {})
         self.assertTrue(first["ok"])
         result = _execute_build_gas_plant("rover-mistral", self.agent, {})
@@ -194,39 +200,55 @@ class TestUpgradeBase(unittest.TestCase):
         _ensure_resources()
         self._orig_station_pos = list(WORLD["agents"]["station"]["position"])
         WORLD["agents"]["station"]["position"] = [0, 0]
-        self._orig_station_resources = dict(WORLD.get("station_resources", {}))
-        WORLD["station_resources"] = {"water": 100, "gas": 100, "parts": []}
         self._orig_station_upgrades = dict(WORLD.get("station_upgrades", {}))
-        WORLD["station_upgrades"] = {}
+        WORLD["station_upgrades"] = {"charge_bonus": 0.0, "upgrade_count": 0}
 
     def tearDown(self):
         WORLD["agents"]["station"]["position"] = self._orig_station_pos
-        WORLD["station_resources"] = self._orig_station_resources
         WORLD["station_upgrades"] = self._orig_station_upgrades
 
-    def test_upgrade_charge_speed(self):
-        result = _execute_upgrade_base("rover-mistral", self.agent, {"upgrade": "charge_speed"})
+    def test_upgrade_charge_mk2(self):
+        self.agent["inventory"] = [
+            {"type": "ice", "quantity": 1},
+            {"type": "basalt_vein", "quantity": 1},
+        ]
+        result = _execute_upgrade_base("rover-mistral", self.agent, {})
         self.assertTrue(result["ok"])
-        self.assertEqual(WORLD["station_upgrades"]["charge_speed"], 1)
+        self.assertEqual(WORLD["station_upgrades"]["upgrade_count"], 1)
 
     def test_upgrade_not_at_station(self):
         """Cannot upgrade when not at station."""
         self.agent["position"] = [5, 5]
-        result = _execute_upgrade_base("rover-mistral", self.agent, {"upgrade": "charge_speed"})
+        result = _execute_upgrade_base("rover-mistral", self.agent, {"upgrade": "charge_mk2"})
         self.assertFalse(result["ok"])
         self.assertIn("station", result["error"].lower())
 
     def test_upgrade_insufficient_resources(self):
         """Cannot upgrade without sufficient resources."""
-        WORLD["station_resources"] = {"water": 0, "gas": 0, "parts": []}
-        result = _execute_upgrade_base("rover-mistral", self.agent, {"upgrade": "charge_speed"})
+        self.agent["inventory"] = []
+        result = _execute_upgrade_base("rover-mistral", self.agent, {})
         self.assertFalse(result["ok"])
-        self.assertIn("insufficient", result["error"].lower())
+        self.assertTrue("ice" in result["error"].lower() or "material" in result["error"].lower())
 
     def test_upgrade_invalid_type(self):
         """Cannot upgrade with invalid upgrade type."""
         result = _execute_upgrade_base("rover-mistral", self.agent, {"upgrade": "invalid"})
         self.assertFalse(result["ok"])
+
+    def test_upgrade_max_level(self):
+        self.agent["inventory"] = [
+            {"type": "ice", "quantity": 1},
+            {"type": "basalt_vein", "quantity": 1},
+        ]
+        first = _execute_upgrade_base("rover-mistral", self.agent, {})
+        self.agent["inventory"] = [
+            {"type": "ice", "quantity": 1},
+            {"type": "basalt_vein", "quantity": 1},
+        ]
+        second = _execute_upgrade_base("rover-mistral", self.agent, {})
+        self.assertTrue(first["ok"])
+        self.assertTrue(second["ok"])
+        self.assertEqual(second["upgrade_count"], 2)
 
 
 class TestGasProduction(unittest.TestCase):

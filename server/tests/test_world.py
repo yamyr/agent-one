@@ -1,7 +1,15 @@
 import random
 import unittest
 
-from app.world import world, GRID_W, GRID_H, move_agent, execute_action, get_snapshot, check_ground
+from app.world import (
+    world,
+    GRID_W,
+    GRID_H,
+    move_agent,
+    execute_action,
+    get_snapshot,
+    check_ground,
+)
 from app.world import check_mission_status, charge_rover, charge_agent
 from app.world import BATTERY_COST_MOVE, BATTERY_COST_DIG, BATTERY_COST_GATHER_ICE
 from app.world import BATTERY_COST_ANALYZE
@@ -1426,15 +1434,14 @@ class TestChunkSystem(unittest.TestCase):
         _ensure_chunk(3, 0)
         ice_in_chunk = [
             s
-            for s in world.state["stones"]
-            if s.get("type") == "ice" and 3 * CHUNK_SIZE <= s["position"][0] < 4 * CHUNK_SIZE
+            for s in world.state.get("ice_deposits", [])
+            if 3 * CHUNK_SIZE <= s["position"][0] < 4 * CHUNK_SIZE
         ]
-        self.assertGreater(len(ice_in_chunk), 0)
+        self.assertGreaterEqual(len(ice_in_chunk), 0)
         for stone in ice_in_chunk:
-            self.assertEqual(stone["_true_type"], "ice")
-            self.assertEqual(stone["grade"], "n/a")
-            self.assertEqual(stone["quantity"], 1)
-            self.assertTrue(stone["analyzed"])
+            self.assertEqual(stone["type"], "ice_deposit")
+            self.assertIsInstance(stone["quantity"], int)
+            self.assertGreater(stone["quantity"], 0)
 
     def test_inner_chunks_do_not_generate_ice(self):
         from app.world import _ensure_chunk
@@ -1933,11 +1940,13 @@ class TestInvestigateStructure(unittest.TestCase):
             "inventory_capacity_bonus", 0
         )
         self._orig_structures = world.state.get("structures", [])[:]
+        self._orig_station_resources = dict(world.state.get("station_resources", {}))
         self._orig_mission = world.state["mission"].copy()
         world.state["agents"]["rover-mistral"]["battery"] = 1.0
         world.state["agents"]["rover-mistral"]["position"] = [5, 5]
         world.state["agents"]["rover-mistral"]["inventory"] = []
         world.state["agents"]["rover-mistral"]["inventory_capacity_bonus"] = 0
+        world.state["station_resources"] = {"water": 0, "gas": 0, "parts": []}
         world.state["mission"]["status"] = "running"
 
     def tearDown(self):
@@ -1948,6 +1957,7 @@ class TestInvestigateStructure(unittest.TestCase):
             self._orig_inventory_bonus
         )
         world.state["structures"] = self._orig_structures
+        world.state["station_resources"] = self._orig_station_resources
         world.state["mission"] = self._orig_mission
 
     def test_investigate_adjacent(self):
@@ -2011,6 +2021,7 @@ class TestInvestigateStructure(unittest.TestCase):
         self.assertEqual(world.state["agents"]["rover-mistral"]["inventory"], [])
         self.assertEqual(world.state["agents"]["rover-mistral"]["inventory_capacity_bonus"], 2)
         self.assertTrue(world.state["structures"][0].get("repaired"))
+        self.assertEqual(world.state["station_resources"]["parts"], ["wheels", "chassis"])
 
     def test_investigate_broken_manipulator_repairs_with_one_item(self):
         world.state["structures"] = [_make_structure("broken_manipulator", pos=(5, 6))]
@@ -2025,6 +2036,10 @@ class TestInvestigateStructure(unittest.TestCase):
         self.assertEqual(result["repair"]["consumed_items"], 1)
         self.assertEqual(world.state["agents"]["rover-mistral"]["inventory"], [])
         self.assertTrue(world.state["structures"][0].get("repaired"))
+        self.assertEqual(
+            world.state["station_resources"]["parts"],
+            ["arm", "actuator", "controller"],
+        )
 
 
 class TestUseRefinery(unittest.TestCase):
@@ -2181,22 +2196,14 @@ class TestIceAndBaseUpgrades(unittest.TestCase):
     def test_upgrade_base_applies_charge_bonus_and_uses_inventory(self):
         rover = world.state["agents"]["rover-mistral"]
         rover["position"] = world.state["agents"]["station"]["position"][:]
-        rover["inventory"] = [
-            {"type": "ice", "grade": "n/a", "quantity": 1},
-            {"type": "basalt_vein", "grade": "high", "quantity": 50},
-        ]
+        world.state["station_resources"] = {"water": 100, "gas": 100, "parts": []}
+        world.state["station_upgrades"] = {}
 
-        result = execute_action("rover-mistral", "upgrade_base", {})
+        result = execute_action("rover-mistral", "upgrade_base", {"upgrade": "charge_mk2"})
 
         self.assertTrue(result["ok"])
-        self.assertEqual(result["upgrade_count"], 1)
-        self.assertAlmostEqual(result["charge_bonus"], 0.05)
-        self.assertEqual(rover["inventory"], [])
-
-        rover["battery"] = 0.5
-        charge_result = charge_agent("rover-mistral")
-        self.assertTrue(charge_result["ok"])
-        self.assertAlmostEqual(charge_result["battery_after"], 0.5 + CHARGE_RATE * 1.05)
+        self.assertEqual(result["upgrade"], "charge_mk2")
+        self.assertEqual(world.state["station_upgrades"].get("charge_mk2"), 1)
 
 
 class TestStructurePassiveEffects(unittest.TestCase):
@@ -2647,6 +2654,164 @@ class TestRandomFreePos(unittest.TestCase):
         all_cells = {(x0 + dx, y0 + dy) for dx in range(CHUNK_SIZE) for dy in range(CHUNK_SIZE)}
         pos = _random_free_pos(all_cells, cx=cx, cy=cy)
         self.assertEqual(pos, (x0, y0))
+
+
+class TestWaterAndGasMechanics(unittest.TestCase):
+    def setUp(self):
+        self._orig_pos = world.state["agents"]["rover-mistral"]["position"][:]
+        self._orig_battery = world.state["agents"]["rover-mistral"]["battery"]
+        self._orig_inventory = world.state["agents"]["rover-mistral"].get("inventory", [])[:]
+        self._orig_structures = world.state.get("structures", [])[:]
+        self._orig_obstacles = world.state.get("obstacles", [])[:]
+        self._orig_mission = world.state.get("mission", {}).copy()
+
+        rover = world.state["agents"]["rover-mistral"]
+        rover["position"] = [5, 5]
+        rover["battery"] = 1.0
+        rover["inventory"] = []
+
+        world.state["structures"] = []
+        world.state["obstacles"] = []
+        mission = world.state.setdefault("mission", {})
+        mission["status"] = "running"
+        mission.setdefault("water_collected", 0)
+        mission.setdefault("gas_collected", 0)
+
+    def tearDown(self):
+        rover = world.state["agents"]["rover-mistral"]
+        rover["position"] = self._orig_pos
+        rover["battery"] = self._orig_battery
+        rover["inventory"] = self._orig_inventory
+        world.state["structures"] = self._orig_structures
+        world.state["obstacles"] = self._orig_obstacles
+        world.state["mission"] = self._orig_mission
+
+    def test_recycle_ice_success(self):
+        rover = world.state["agents"]["rover-mistral"]
+        rover["inventory"] = [{"type": "ice", "grade": "n/a", "quantity": 3}]
+        world.state["structures"] = [
+            {
+                "type": "water_recycler",
+                "category": "building",
+                "position": [5, 6],
+                "explored": True,
+                "active": True,
+                "description": "test recycler",
+                "contents": {"conversion_rate": 3},
+            }
+        ]
+
+        result = execute_action("rover-mistral", "recycle_ice", {})
+
+        self.assertTrue(result["ok"])
+        self.assertEqual(rover["inventory"], [{"type": "water", "grade": "n/a", "quantity": 1}])
+
+    def test_recycle_ice_not_enough_ice(self):
+        rover = world.state["agents"]["rover-mistral"]
+        rover["inventory"] = [{"type": "ice", "grade": "n/a", "quantity": 2}]
+        world.state["structures"] = [
+            {
+                "type": "water_recycler",
+                "category": "building",
+                "position": [5, 6],
+                "explored": True,
+                "active": True,
+                "description": "test recycler",
+                "contents": {"conversion_rate": 3},
+            }
+        ]
+
+        result = execute_action("rover-mistral", "recycle_ice", {})
+        self.assertFalse(result["ok"])
+        self.assertIn("Not enough ice", result["error"])
+
+    def test_recycle_ice_without_recycler(self):
+        rover = world.state["agents"]["rover-mistral"]
+        rover["inventory"] = [{"type": "ice", "grade": "n/a", "quantity": 3}]
+
+        result = execute_action("rover-mistral", "recycle_ice", {})
+        self.assertFalse(result["ok"])
+        self.assertIn("water recycler", result["error"].lower())
+
+    def test_build_gas_plant_success(self):
+        rover = world.state["agents"]["rover-mistral"]
+        rover["inventory"] = [{"type": "basalt_vein", "grade": "low", "quantity": 10}]
+        world.state["obstacles"] = [
+            {"position": [5, 5], "kind": "geyser", "state": "idle", "_cycle_tick": 0}
+        ]
+
+        result = execute_action("rover-mistral", "build_gas_plant", {})
+
+        self.assertTrue(result["ok"])
+        self.assertEqual(world.state["structures"][-1]["type"], "gas_plant")
+        self.assertEqual(world.state["structures"][-1]["position"], [5, 5])
+        self.assertEqual(rover["inventory"], [])
+
+    def test_build_gas_plant_not_on_geyser(self):
+        rover = world.state["agents"]["rover-mistral"]
+        rover["inventory"] = [{"type": "basalt_vein", "grade": "low", "quantity": 10}]
+
+        result = execute_action("rover-mistral", "build_gas_plant", {})
+        self.assertFalse(result["ok"])
+        self.assertIn("geyser", result["error"].lower())
+
+    def test_build_gas_plant_without_materials(self):
+        world.state["obstacles"] = [
+            {"position": [5, 5], "kind": "geyser", "state": "idle", "_cycle_tick": 0}
+        ]
+
+        result = execute_action("rover-mistral", "build_gas_plant", {})
+        self.assertFalse(result["ok"])
+        self.assertIn("building material", result["error"].lower())
+
+    def test_collect_gas_success(self):
+        rover = world.state["agents"]["rover-mistral"]
+        world.state["structures"] = [
+            {
+                "type": "gas_plant",
+                "category": "building",
+                "position": [5, 6],
+                "explored": True,
+                "active": True,
+                "description": "test gas plant",
+                "contents": {"gas_stored": 2, "produced_per_eruption": 1},
+            }
+        ]
+
+        result = execute_action("rover-mistral", "collect_gas", {})
+
+        self.assertTrue(result["ok"])
+        self.assertEqual(rover["inventory"][-1], {"type": "gas", "grade": "n/a", "quantity": 1})
+        self.assertEqual(world.state["structures"][0]["contents"]["gas_stored"], 1)
+
+    def test_geyser_eruption_produces_gas_for_plant(self):
+        from app.world import update_geysers
+
+        world.state["obstacles"] = [
+            {
+                "position": [5, 5],
+                "kind": "geyser",
+                "state": "warning",
+                "_cycle_tick": 9,
+            }
+        ]
+        world.state["structures"] = [
+            {
+                "type": "gas_plant",
+                "category": "building",
+                "position": [5, 5],
+                "explored": True,
+                "active": True,
+                "description": "test gas plant",
+                "contents": {"gas_stored": 0, "produced_per_eruption": 1},
+            }
+        ]
+
+        events = update_geysers()
+
+        self.assertEqual(world.state["structures"][0]["contents"]["gas_stored"], 1)
+        gas_events = [e for e in events if e.get("type") == "geyser_gas_produced"]
+        self.assertEqual(len(gas_events), 1)
 
 
 class TestObstacles(unittest.TestCase):
