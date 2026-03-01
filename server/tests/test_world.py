@@ -1279,6 +1279,23 @@ class TestObserveRover(unittest.TestCase):
         self.assertEqual(ctx.world.target_type, world.state["mission"]["target_type"])
         self.assertEqual(ctx.world.target_quantity, world.state["mission"]["target_quantity"])
 
+    def test_unvisited_dirs_beyond_legacy_grid(self):
+        """Rover at position beyond legacy 20x20 grid sees all 4 directions (#131)."""
+        world.state["agents"]["rover-mistral"]["position"] = [25, 30]
+        world.state["agents"]["rover-mistral"]["visited"] = [[25, 30]]
+        ctx = observe_rover("rover-mistral")
+        # All 4 cardinal neighbors of (25,30) are unvisited and must be available
+        for d in ["north", "south", "east", "west"]:
+            self.assertIn(d, ctx.computed.unvisited_dirs, f"{d} missing at (25,30)")
+        self.assertEqual(len(ctx.computed.unvisited_dirs), 4)
+
+    def test_unvisited_dirs_negative_coords(self):
+        """Rover at negative coordinates sees all directions (#131)."""
+        world.state["agents"]["rover-mistral"]["position"] = [-5, -10]
+        world.state["agents"]["rover-mistral"]["visited"] = [[-5, -10]]
+        ctx = observe_rover("rover-mistral")
+        for d in ["north", "south", "east", "west"]:
+            self.assertIn(d, ctx.computed.unvisited_dirs, f"{d} missing at (-5,-10)")
 
 class TestObserveStation(unittest.TestCase):
     def setUp(self):
