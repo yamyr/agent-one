@@ -477,6 +477,7 @@ def _build_initial_world():
                 "memory": [],
             },
             "rover-mistral": _make_rover(0, 0),
+            "rover-2": _make_rover(0, 0),
             "drone-mistral": _make_drone(0, 0),
         },
         "stones": [],

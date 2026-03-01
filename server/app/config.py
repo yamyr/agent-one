@@ -29,8 +29,8 @@ class Settings(BaseSettings):
     hugging_face_read: str = ""
     hugging_face_write: str = ""
     llm_provider: str = "mistral"  # "mistral" or "huggingface"
-    huggingface_model: str = "Qwen/Qwen2.5-72B-Instruct"
-    huggingface_narration_model: str = "Qwen/Qwen2.5-72B-Instruct"
+    huggingface_model: str = "Qwen/Qwen3-32B"
+    huggingface_narration_model: str = "Qwen/Qwen3-32B"
 
     # Simulation timing
     agent_turn_interval_seconds: float = Field(default=0.5, gt=0)
@@ -40,8 +40,8 @@ class Settings(BaseSettings):
     # World generation seed (empty = random)
     world_seed: str = ""
 
-    # Active agents (comma-separated; rover-2 available but inactive to reduce API load)
-    active_agents: str = "rover-mistral,drone-mistral,station-loop"
+    # Active agents (comma-separated)
+    active_agents: str = "rover-mistral,rover-2,drone-mistral,station-loop"
 
     # ElevenLabs narration
     elevenlabs_api_key: str = ""
