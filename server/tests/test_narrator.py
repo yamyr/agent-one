@@ -195,7 +195,7 @@ class TestNarrator(unittest.IsolatedAsyncioTestCase):
         self.narrator.stop()
 
     def test_initial_state(self):
-        self.assertFalse(self.narrator.enabled)
+        self.assertTrue(self.narrator.enabled)
         self.assertEqual(len(self.narrator._event_buffer), 0)
 
     def test_toggle_enabled(self):
@@ -211,10 +211,12 @@ class TestNarrator(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(self.narrator._event_buffer), 0)
 
     async def test_feed_drops_without_api_key(self):
-        """Without API key, narration defaults to disabled — events dropped."""
+        """Without API key, narration is enabled by config default but events still buffer."""
         narrator = Narrator(broadcast_fn=self.broadcast)
+        # With narration_enabled=True (config default), events are buffered
+        # even without an API key — TTS errors are handled at generation time
         await narrator.feed({"name": "dig", "payload": {}})
-        self.assertEqual(len(narrator._event_buffer), 0)
+        self.assertEqual(len(narrator._event_buffer), 1)
 
     async def test_feed_skips_uninteresting_event(self):
         self.narrator._enabled = True

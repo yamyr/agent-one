@@ -13,6 +13,26 @@
 
 * **world:** rover no longer gets stuck at station with full inventory after delivery (inventory was never cleared)
 
+## [0.7.0] — Control Buttons & Narration Enablement (2026-03-01)
+
+### Features
+
+* **config:** enable narration by default (`narration_enabled: True`) — dual-narrator dialogue pipeline (Mistral LLM + ElevenLabs TTS) now activates when API keys are present
+* **ui:** fix narration state sync — UI defaults to `false` and fetches actual state from server on WebSocket connect, preventing stale toggle state
+
+### Bug Fixes
+
+* **ui:** fix narration toggle showing wrong initial state — UI defaulted to `ref(true)` while server defaulted to `false`, causing 3-second mismatch window on first load
+
+### Tests
+
+* **test_control_buttons:** add comprehensive test suite for all simulation control endpoints (pause, resume, reset, abort) and narration toggle (toggle, status), 10+ new tests
+
+### Errors Identified & Prevented
+
+* **UI/Server state mismatch:** `narrationEnabled` in SimulationPage.vue defaulted to `ref(true)` but server config had `narration_enabled=False` — users saw "Voice ON" but narration was actually off. Fixed by making UI default conservative (`false`) and syncing from server.
+* **Silent narration disablement:** Two independent blockers (config default `False` + missing API key) both had to be resolved — config now defaults to `True` so only the API key is needed.
+
 ## [0.5.0](https://github.com/mhack-agent-one/agent-one/compare/v0.4.0...v0.5.0) (2026-03-01)
 
 

@@ -19,7 +19,7 @@ import HelpModal from '../components/HelpModal.vue'
 const selectedAgent = ref(null)
 const helpVisible = ref(false)
 const paused = ref(false)
-const narrationEnabled = ref(true)
+const narrationEnabled = ref(false)
 const worldMapRef = ref(null)
 const followAgent = ref(null)  // which agent the camera follows (null = free camera)
 const camXVal = computed(() => worldMapRef.value?.camX ?? -10)
