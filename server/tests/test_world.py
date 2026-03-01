@@ -10,6 +10,7 @@ from app.world import CHARGE_RATE, REVEAL_RADIUS, ROVER_REVEAL_RADIUS, DRONE_REV
 from app.world import AGENT_STARTS
 from app.world import abort_mission, all_agents_at_station
 from app.world import assign_mission, _cells_in_radius, record_memory, MEMORY_MAX
+from app.world import _random_free_pos, CHUNK_SIZE
 from app.world import direction_hint, best_drone_hotspot
 from app.world import summarize_memories, record_strategic_insight
 from app.world import set_agent_model, set_agent_last_context, set_pending_commands
@@ -1740,16 +1741,19 @@ class TestInterAgentCommunication(unittest.TestCase):
 
     def setUp(self):
         from app.world import AGENT_MESSAGES
+
         self._orig_messages = list(AGENT_MESSAGES)
         AGENT_MESSAGES.clear()
 
     def tearDown(self):
         from app.world import AGENT_MESSAGES
+
         AGENT_MESSAGES.clear()
         AGENT_MESSAGES.extend(self._orig_messages)
 
     def test_send_message(self):
         from app.world import send_agent_message, AGENT_MESSAGES
+
         result = send_agent_message("drone-mistral", "rover-mistral", "Found high concentration")
         self.assertTrue(result["ok"])
         self.assertEqual(len(AGENT_MESSAGES), 1)
@@ -1759,6 +1763,7 @@ class TestInterAgentCommunication(unittest.TestCase):
 
     def test_get_unread_messages(self):
         from app.world import send_agent_message, get_unread_messages
+
         send_agent_message("drone-mistral", "rover-mistral", "msg1")
         send_agent_message("drone-mistral", "rover-mistral", "msg2")
         unread = get_unread_messages("rover-mistral")
@@ -1767,6 +1772,7 @@ class TestInterAgentCommunication(unittest.TestCase):
 
     def test_messages_marked_read(self):
         from app.world import send_agent_message, get_unread_messages
+
         send_agent_message("drone-mistral", "rover-mistral", "test")
         get_unread_messages("rover-mistral")
         unread2 = get_unread_messages("rover-mistral")
@@ -1774,6 +1780,7 @@ class TestInterAgentCommunication(unittest.TestCase):
 
     def test_messages_filtered_by_recipient(self):
         from app.world import send_agent_message, get_unread_messages
+
         send_agent_message("drone-mistral", "rover-mistral", "for rover")
         send_agent_message("drone-mistral", "station", "for station")
         rover_msgs = get_unread_messages("rover-mistral")
@@ -1782,6 +1789,7 @@ class TestInterAgentCommunication(unittest.TestCase):
 
     def test_get_drone_intel_for_rover(self):
         from app.world import get_drone_intel_for_rover, WORLD
+
         WORLD["drone_scans"] = [
             {"position": [3, 4], "readings": {"3,4": 0.8}, "scanner": "drone-mistral", "tick": 5},
             {"position": [1, 1], "readings": {"1,1": 0.2}, "scanner": "drone-mistral", "tick": 6},
@@ -1794,6 +1802,7 @@ class TestInterAgentCommunication(unittest.TestCase):
 
     def test_get_drone_intel_excludes_visited(self):
         from app.world import get_drone_intel_for_rover, WORLD
+
         WORLD["drone_scans"] = [
             {"position": [3, 4], "readings": {"3,4": 0.8}, "scanner": "drone-mistral", "tick": 5},
         ]
@@ -1803,8 +1812,14 @@ class TestInterAgentCommunication(unittest.TestCase):
 
     def test_get_drone_intel_max_five(self):
         from app.world import get_drone_intel_for_rover, WORLD
+
         WORLD["drone_scans"] = [
-            {"position": [i, i], "readings": {f"{i},{i}": 0.5 + i * 0.01}, "scanner": "drone-mistral", "tick": i}
+            {
+                "position": [i, i],
+                "readings": {f"{i},{i}": 0.5 + i * 0.01},
+                "scanner": "drone-mistral",
+                "tick": i,
+            }
             for i in range(10)
         ]
         intel = get_drone_intel_for_rover("rover-mistral")
@@ -1812,11 +1827,13 @@ class TestInterAgentCommunication(unittest.TestCase):
 
     def test_get_drone_intel_invalid_rover(self):
         from app.world import get_drone_intel_for_rover
+
         intel = get_drone_intel_for_rover("no-such-agent")
         self.assertEqual(len(intel), 0)
 
     def test_agent_messages_in_snapshot(self):
         from app.world import send_agent_message, get_snapshot
+
         send_agent_message("drone-mistral", "rover-mistral", "test snapshot")
         snap = get_snapshot()
         self.assertIn("agent_messages", snap)
@@ -1825,7 +1842,60 @@ class TestInterAgentCommunication(unittest.TestCase):
 
     def test_reset_clears_messages(self):
         from app.world import send_agent_message, AGENT_MESSAGES, reset_world
+
         send_agent_message("drone-mistral", "rover-mistral", "before reset")
         self.assertEqual(len(AGENT_MESSAGES), 1)
         reset_world()
         self.assertEqual(len(AGENT_MESSAGES), 0)
+
+
+class TestRandomFreePos(unittest.TestCase):
+    """Tests for _random_free_pos infinite-loop guard (#118)."""
+
+    def test_returns_free_position(self):
+        occupied = {(0, 0), (1, 0)}
+        pos = _random_free_pos(occupied, cx=0, cy=0)
+        self.assertNotIn(pos, occupied)
+        x, y = pos
+        self.assertGreaterEqual(x, 0)
+        self.assertLess(x, CHUNK_SIZE)
+        self.assertGreaterEqual(y, 0)
+        self.assertLess(y, CHUNK_SIZE)
+
+    def test_empty_occupied_returns_valid_pos(self):
+        pos = _random_free_pos(set(), cx=0, cy=0)
+        x, y = pos
+        self.assertGreaterEqual(x, 0)
+        self.assertLess(x, CHUNK_SIZE)
+
+    def test_nearly_full_chunk_uses_fallback(self):
+        """When all but one cell is occupied, the linear scan fallback finds it."""
+        all_cells = {(x, y) for x in range(CHUNK_SIZE) for y in range(CHUNK_SIZE)}
+        free_cell = (3, 7)
+        all_cells.discard(free_cell)
+        pos = _random_free_pos(all_cells, cx=0, cy=0)
+        self.assertEqual(pos, free_cell)
+
+    def test_fully_occupied_returns_origin(self):
+        """When chunk is 100% occupied, returns origin as last resort."""
+        all_cells = {(x, y) for x in range(CHUNK_SIZE) for y in range(CHUNK_SIZE)}
+        pos = _random_free_pos(all_cells, cx=0, cy=0)
+        self.assertEqual(pos, (0, 0))
+
+    def test_nonzero_chunk_offset(self):
+        """Positions respect chunk offset (cx, cy)."""
+        occupied = set()
+        pos = _random_free_pos(occupied, cx=2, cy=3)
+        x, y = pos
+        self.assertGreaterEqual(x, 2 * CHUNK_SIZE)
+        self.assertLess(x, 3 * CHUNK_SIZE)
+        self.assertGreaterEqual(y, 3 * CHUNK_SIZE)
+        self.assertLess(y, 4 * CHUNK_SIZE)
+
+    def test_fully_occupied_nonzero_chunk_returns_chunk_origin(self):
+        """Fully occupied non-zero chunk returns that chunk's origin."""
+        cx, cy = 1, 2
+        x0, y0 = cx * CHUNK_SIZE, cy * CHUNK_SIZE
+        all_cells = {(x0 + dx, y0 + dy) for dx in range(CHUNK_SIZE) for dy in range(CHUNK_SIZE)}
+        pos = _random_free_pos(all_cells, cx=cx, cy=cy)
+        self.assertEqual(pos, (x0, y0))
