@@ -1,10 +1,15 @@
 <script setup>
+import { computed } from 'vue'
 import BatteryBar from './BatteryBar.vue'
 
-defineProps({
+const props = defineProps({
   agentId: {
     type: String,
     required: true,
+  },
+  model: {
+    type: String,
+    default: '',
   },
   position: {
     type: String,
@@ -18,17 +23,13 @@ defineProps({
     type: Number,
     default: 0,
   },
-  inventoryCount: {
-    type: Number,
-    default: 0,
+  inventorySummary: {
+    type: String,
+    default: '',
   },
   mission: {
     type: String,
     default: '',
-  },
-  memory: {
-    type: Array,
-    default: () => [],
   },
   events: {
     type: Array,
@@ -41,6 +42,34 @@ defineProps({
 })
 
 const emit = defineEmits(['select-agent'])
+
+// Merge consecutive thinking+action pairs into single rows
+const mergedEvents = computed(() => {
+  const raw = props.events || []
+  const result = []
+  for (let i = 0; i < raw.length; i++) {
+    const e = raw[i]
+    if (e.name === 'thinking') {
+      const next = raw[i + 1]
+      if (next && next.name !== 'thinking') {
+        result.push({ ...next, reason: e.payload?.text || '' })
+        i++
+      }
+      // Drop orphan thinking events (no following action)
+      continue
+    }
+    result.push({ ...e, reason: '' })
+  }
+  return result
+})
+
+function eventText(e) {
+  if (e.name === 'move' && e.payload?.from) {
+    return `(${e.payload.from[0]},${e.payload.from[1]}) → (${e.payload.to[0]},${e.payload.to[1]})`
+  }
+  return e.payload?.result || ''
+}
+
 </script>
 
 <template>
@@ -50,18 +79,24 @@ const emit = defineEmits(['select-agent'])
       style="cursor:pointer"
       @click="emit('select-agent', agentId)"
     >
-      <span
-        class="agent-name"
-        :style="{ color }"
-      >{{ agentId }}</span>
-      <span class="agent-stats">
-        {{ position }} &middot;
-        <BatteryBar :level="batteryLevel" />
+      <div class="agent-row-1">
         <span
-          v-if="inventoryCount > 0"
+          class="agent-name"
+          :style="{ color }"
+        >{{ agentId }}</span>
+        <span
+          v-if="model"
+          class="agent-model"
+        >{{ model }}</span>
+      </div>
+      <div class="agent-row-2">
+        {{ position }}
+        <span
+          v-if="inventorySummary"
           class="agent-inv"
-        >&middot; inv {{ inventoryCount }}</span>
-      </span>
+        >&middot; {{ inventorySummary }}</span>
+        &middot; <BatteryBar :level="batteryLevel" />
+      </div>
     </div>
     <div
       v-if="mission"
@@ -71,50 +106,39 @@ const emit = defineEmits(['select-agent'])
     </div>
     <div class="agent-log">
       <div
-        v-if="(!memory || memory.length === 0) && (!events || events.length === 0)"
+        v-if="mergedEvents.length === 0"
         class="empty"
       >
         No activity yet
       </div>
-      <!-- Memory (recent actions from world state) -->
-      <div
-        v-for="(m, i) in (memory || [])"
-        :key="'m-'+i"
-        class="memory-entry"
-      >
-        {{ m }}
-      </div>
-      <!-- All events chronologically -->
-      <div
-        v-for="(e, i) in (events || [])"
+      <template
+        v-for="(e, i) in mergedEvents"
         :key="'e-'+i"
-        class="agent-event"
       >
-        <span
-          v-if="e.name === 'thinking'"
-          class="ae-type think"
-        >think</span>
-        <span
-          v-else
-          class="ae-type action"
-        >{{ e.name }}</span>
-        <span
-          v-if="e.name === 'thinking'"
-          class="ae-text"
-        >{{ e.payload.text }}</span>
-        <span
-          v-else-if="e.name === 'move' && e.payload && e.payload.from"
-          class="ae-text action-text"
+        <div
+          v-if="e.name === 'task_update'"
+          class="ae-task-pill"
         >
-          ({{ e.payload.from[0] }},{{ e.payload.from[1] }}) → ({{ e.payload.to[0] }},{{ e.payload.to[1] }})
-        </span>
-        <span
+          {{ e.payload?.task || '' }}
+        </div>
+        <div
           v-else
-          class="ae-text action-text"
+          class="agent-event"
         >
-          {{ e.payload && e.payload.result ? e.payload.result : '' }}
-        </span>
-      </div>
+          <span class="ae-type action">{{ e.name }}</span>
+          <span class="ae-text action-text">{{ eventText(e) }}</span>
+          <span
+            v-if="e.reason"
+            class="ae-reason"
+          >{{ e.reason }}</span>
+          <div
+            v-if="e.reason"
+            class="ae-tooltip"
+          >
+            {{ e.reason }}
+          </div>
+        </div>
+      </template>
     </div>
   </div>
 </template>
@@ -131,12 +155,21 @@ const emit = defineEmits(['select-agent'])
 }
 
 .agent-header {
+  padding: 0.3rem 0.6rem;
+  border-bottom: 1px solid var(--border-subtle);
+  flex-shrink: 0;
+}
+
+.agent-row-1 {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 0.4rem 0.6rem;
-  border-bottom: 1px solid var(--border-subtle);
-  flex-shrink: 0;
+}
+
+.agent-row-2 {
+  font-size: 0.7rem;
+  color: var(--text-tertiary);
+  margin-top: 0.15rem;
 }
 
 .agent-name {
@@ -144,9 +177,9 @@ const emit = defineEmits(['select-agent'])
   font-weight: bold;
 }
 
-.agent-stats {
+.agent-model {
   font-size: 0.7rem;
-  color: var(--text-tertiary);
+  color: var(--text-muted);
 }
 
 .agent-inv {
@@ -170,13 +203,6 @@ const emit = defineEmits(['select-agent'])
   padding: 0.25rem;
 }
 
-.memory-entry {
-  padding: 0.15rem 0.35rem;
-  font-size: 0.7rem;
-  color: var(--accent-memory);
-  border-bottom: 1px solid var(--border-dim);
-}
-
 .agent-event {
   padding: 0.2rem 0.35rem;
   font-size: 0.75rem;
@@ -184,16 +210,13 @@ const emit = defineEmits(['select-agent'])
   display: flex;
   gap: 0.4rem;
   align-items: baseline;
+  position: relative;
 }
 
 .ae-type {
   font-size: 0.65rem;
   color: var(--text-muted);
   flex-shrink: 0;
-}
-
-.ae-type.think {
-  color: var(--accent-think);
 }
 
 .ae-type.action {
@@ -214,6 +237,53 @@ const emit = defineEmits(['select-agent'])
 
 .ae-text.action-text {
   color: var(--accent-memory);
+}
+
+.ae-reason {
+  font-size: 0.65rem;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex-shrink: 1;
+  min-width: 0;
+}
+
+.ae-tooltip {
+  display: none;
+  position: absolute;
+  left: 0;
+  top: 100%;
+  z-index: 10;
+  max-width: 320px;
+  padding: 0.4rem 0.6rem;
+  font-size: 0.65rem;
+  line-height: 1.4;
+  color: var(--text-primary);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-medium);
+  border-radius: var(--radius-sm);
+  white-space: pre-wrap;
+  word-break: break-word;
+  pointer-events: none;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+}
+
+.agent-event:hover .ae-tooltip {
+  display: block;
+}
+
+.ae-task-pill {
+  font-size: 0.65rem;
+  color: var(--accent-task);
+  background: rgba(224, 160, 64, 0.08);
+  border: 1px solid rgba(224, 160, 64, 0.25);
+  border-radius: 9999px;
+  padding: 0.15rem 0.6rem;
+  margin: 0.2rem 0.1rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 @media (max-width: 768px) {

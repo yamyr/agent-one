@@ -3,7 +3,7 @@ import { ref, computed } from 'vue'
 import { useWebSocket } from './composables/useWebSocket.js'
 import { useKeyboard } from './composables/useKeyboard.js'
 import { useToasts } from './composables/useToasts.js'
-import { agentColor } from './constants.js'
+import { VIEWPORT_W, VIEWPORT_H, agentColor } from './constants.js'
 import AppHeader from './components/AppHeader.vue'
 import WorldMap from './components/WorldMap.vue'
 import MiniMap from './components/MiniMap.vue'
@@ -14,14 +14,19 @@ import AgentDetailModal from './components/AgentDetailModal.vue'
 import NarrationPlayer from './components/NarrationPlayer.vue'
 import StatsBar from './components/StatsBar.vue'
 import ToastOverlay from './components/ToastOverlay.vue'
+import HelpModal from './components/HelpModal.vue'
+import VoiceCommander from './components/VoiceCommander.vue'
 
 const selectedAgent = ref(null)
+const helpVisible = ref(false)
 const paused = ref(false)
 const narrationEnabled = ref(true)
 const worldMapRef = ref(null)
 const followAgent = ref(null)  // which agent the camera follows (null = free camera)
 const camXVal = computed(() => worldMapRef.value?.camX ?? -10)
 const camYVal = computed(() => worldMapRef.value?.camY ?? -10)
+const visibleWVal = computed(() => worldMapRef.value?.visibleW ?? VIEWPORT_W)
+const visibleHVal = computed(() => worldMapRef.value?.visibleH ?? VIEWPORT_H)
 
 const mobileAgents = computed(() => {
   if (!agentIds.value) return []
@@ -87,7 +92,7 @@ function onSimEvent(event) {
   }
 }
 
-const { events, connected, worldState, agentIds, agentEvents, narration, narrationChunk } = useWebSocket({ onConnect: onWsConnect, onEvent: onSimEvent })
+const { events, connected, worldState, agentIds, agentEvents, narration, narrationChunk, voiceTranscription } = useWebSocket({ onConnect: onWsConnect, onEvent: onSimEvent })
 
 async function togglePause() {
   const endpoint = paused.value ? '/api/simulation/resume' : '/api/simulation/pause'
@@ -111,8 +116,7 @@ function agentData(id) {
 
 function onMinimapNavigate(x, y) {
   if (worldMapRef.value) {
-    worldMapRef.value.camX = x
-    worldMapRef.value.camY = y
+    worldMapRef.value.navigateTo(x, y)
     followAgent.value = null
   }
 }
@@ -140,7 +144,11 @@ useKeyboard({
     }
   },
   onFreeCamera: () => { followAgent.value = null },
-  onCloseModal: () => { selectedAgent.value = null },
+  onCloseModal: () => {
+    if (selectedAgent.value) selectedAgent.value = null
+    else if (helpVisible.value) helpVisible.value = false
+  },
+  onToggleHelp: () => { helpVisible.value = !helpVisible.value },
 })
 </script>
 
@@ -158,6 +166,10 @@ useKeyboard({
       :narration-chunk="narrationChunk"
       :narration-enabled="narrationEnabled"
       @toggle-narration="toggleNarration"
+    />
+
+    <VoiceCommander
+      :voice-transcription="voiceTranscription"
     />
 
     <MissionBar
@@ -208,6 +220,8 @@ useKeyboard({
           :agent-ids="agentIds"
           :cam-x="camXVal"
           :cam-y="camYVal"
+          :viewport-w="visibleWVal"
+          :viewport-h="visibleHVal"
           @navigate="onMinimapNavigate"
         />
         <EventLog :events="events" />
@@ -223,6 +237,11 @@ useKeyboard({
     <ToastOverlay
       :toasts="toasts"
       @dismiss="dismissToast"
+    />
+
+    <HelpModal
+      :visible="helpVisible"
+      @close="helpVisible = false"
     />
 
     <Transition name="modal">

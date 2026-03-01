@@ -1,26 +1,23 @@
-# Task: Simplify Rover Actions
+# Round 3 — UI Polish (All Phases)
 
-## Changes
+## Phase 2: Zoom Fix & EventLog Virtualization
+- [x] Dynamic viewport tile count based on zoom level
+- [x] Zoom re-centering, MiniMap navigation, dead code cleanup
+- [x] EventLog virtual scrolling with UID-based animations
+- [x] Build passes, code review complete, PR #52 merged
 
-### 1. Remove `check_ground` as an explicit action
-- [x] Remove from rover tools list in `world.py` WORLD init
-- [x] Remove from `execute_action` dispatcher (if present)
-- [x] Keep `check_ground()` function — it's used internally for auto-scan after moves
-- [x] Update tests: remove tests that call check_ground as an action
-- [x] Update agent context to clarify ground is auto-scanned
+## Phase 4: Toast Dedupe & Rate-Limiting (US2)
+- [x] T006: Deduplication — identical messages increment count instead of duplicating
+- [x] T007: Rate-limiting — MAX_VISIBLE=5, oldest evicted when full
+- [x] T008: Count badge — `×N` rendered inline with toast message
+- [x] T009: Build verification passed
 
-### 2. Make `charge` a station-only action
-- [x] Remove `charge` from rover tools list in `world.py` WORLD init
-- [x] Add `charge_rover` tool to station's Mistral tools in `station.py`
-- [x] Station calls charge when rover is co-located
-- [x] Keep `_execute_charge` in world.py (station invokes it)
-- [x] Update `execute_action` to accept charge from station context
-- [x] Update tests for new charge flow
-- [x] Update rover agent context to say "return to station for charging"
+## Phase 6: Loading Skeletons (US4 — remaining)
+- [x] T016: EventLog skeleton state — 6 pulsing rows with staggered animation
+- [x] T018: Build verification passed
 
-### 3. Carry over .kiro files
-- [x] Commit .kiro steering files
-
-### 4. Verify
-- [x] All tests pass
-- [x] Update Changelog.md
+## Phase 9: Polish
+- [x] T025: Full build verification
+- [x] T026: Changelog updated
+- [x] T027: This file updated
+- [x] T028: PR created

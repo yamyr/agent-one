@@ -1,6 +1,5 @@
 """In-memory world state for the Mars simulation."""
 
-import asyncio
 import copy
 import hashlib
 import logging
@@ -18,9 +17,8 @@ logger = logging.getLogger(__name__)
 #   inventory capacity. It NEVER computes strategy or tells agents what to do.
 # - Agents (LLM / mock fallback): observe raw state (battery %, position, station
 #   position, fuel costs) and reason about actions. Return-to-base is the agent's call.
-# - update_tasks(): generates observational hints (what's at current tile, nearby veins)
-#   but NEVER injects strategic directives like "return to base" or pre-computed costs.
-#   Providing pre-computed answers is cheating — agents must reason from raw observations.
+# - Tasks are LLM-owned: agents set their own task via ---TASK--- separator in their
+#   text response. No Python code computes tasks or injects strategic directives.
 
 if settings.world_seed:
     random.seed(settings.world_seed)
@@ -46,11 +44,9 @@ FUEL_CAPACITY_ROVER = 350  # rover carries 350 fuel units
 FUEL_CAPACITY_DRONE = 250  # drone carries 250 fuel units
 
 BATTERY_COST_MOVE = 1 / FUEL_CAPACITY_ROVER  # ~0.00286 per tile
-BATTERY_COST_MOVE_DRONE = 1 / FUEL_CAPACITY_DRONE  # 0.004 per tile
+BATTERY_COST_MOVE_DRONE = 3 / FUEL_CAPACITY_DRONE  # 3 fuel units per tile (flying is expensive)
 BATTERY_COST_DIG = 6 / FUEL_CAPACITY_ROVER  # 6 fuel units
-BATTERY_COST_PICKUP = 2 / FUEL_CAPACITY_ROVER  # 2 fuel units
 BATTERY_COST_ANALYZE = 3 / FUEL_CAPACITY_ROVER  # 3 fuel units
-BATTERY_COST_ANALYZE_GROUND = 3 / FUEL_CAPACITY_ROVER  # 3 fuel units
 BATTERY_COST_SCAN = 2 / FUEL_CAPACITY_DRONE  # 2 fuel units
 BATTERY_COST_NOTIFY = 2 / FUEL_CAPACITY_ROVER  # 2 fuel units (radio notification)
 CHARGE_RATE = 0.20
@@ -69,7 +65,7 @@ VEIN_QUANTITY_RANGES = {
     "rich": (351, 700),
     "pristine": (701, 1000),
 }
-TARGET_QUANTITY = 100  # mission success threshold (total basalt delivered)
+TARGET_QUANTITY = 300  # mission success threshold (total basalt delivered)
 
 ROVER_REVEAL_RADIUS = 3
 DRONE_REVEAL_RADIUS = 6
@@ -150,7 +146,6 @@ def _ensure_chunk(cx, cy):
                         "_true_grade": grade,
                         "quantity": 0,
                         "_true_quantity": true_quantity,
-                        "extracted": False,
                         "analyzed": False,
                     }
                 )
@@ -171,7 +166,6 @@ def _ensure_chunk(cx, cy):
                 "_true_grade": grade,
                 "quantity": 0,
                 "_true_quantity": true_quantity,
-                "extracted": False,
                 "analyzed": False,
             }
         )
@@ -259,40 +253,24 @@ def _update_bounds(x, y):
     bounds["max_y"] = max(bounds["max_y"], y)
 
 
-_ROVER_TOOL_DEFS = [
-    {
-        "name": "move",
-        "description": "Move 1-3 tiles in a cardinal direction (north/south/east/west). Costs 1 fuel unit per tile (~0.29% battery). Ground is auto-scanned after each move.",
-    },
-    {
-        "name": "analyze",
-        "description": "Analyze an unknown vein at current tile to reveal its grade (low/medium/high/rich/pristine) and basalt quantity. Costs 3 fuel units (~0.86% battery).",
-    },
-    {
-        "name": "dig",
-        "description": "Dig at current tile to extract a vein. Costs 6 fuel units (~1.71% battery). Vein must be analyzed first.",
-    },
-    {
-        "name": "pickup",
-        "description": "Pick up an extracted vein at current tile into inventory (with its basalt quantity). Costs 2 fuel units (~0.57% battery).",
-    },
-    {
-        "name": "analyze_ground",
-        "description": "Analyze ground concentration at current tile to detect nearby basalt vein deposits. Costs 3 fuel units (~0.86% battery). Returns a 0.0-1.0 reading.",
-    },
-]
+def _tools_for_ui(tool_schemas):
+    """Extract {name, description} from Mistral tool schemas for the UI."""
+    return [
+        {"name": t["function"]["name"], "description": t["function"]["description"]}
+        for t in tool_schemas
+    ]
 
 
-_DRONE_TOOL_DEFS = [
-    {
-        "name": "move",
-        "description": "Fly 1-6 tiles in a cardinal direction (north/south/east/west). Costs 1 fuel unit per tile (~0.4% battery).",
-    },
-    {
-        "name": "scan",
-        "description": "Scan the area below and around the drone to sample concentration readings. Returns probability values for surrounding tiles indicating likelihood of precious stone deposits. Costs 2 fuel units (~0.8% battery).",
-    },
-]
+def _rover_tools_for_ui():
+    from .agent import ROVER_TOOLS
+
+    return _tools_for_ui(ROVER_TOOLS)
+
+
+def _drone_tools_for_ui():
+    from .agent import DRONE_TOOLS
+
+    return _tools_for_ui(DRONE_TOOLS)
 
 
 def _make_drone(start_x, start_y):
@@ -306,9 +284,7 @@ def _make_drone(start_x, start_y):
         "memory": [],
         "tasks": [],
         "type": "drone",
-        "ground_readings": {},
-        "tools": list(_DRONE_TOOL_DEFS),
-        "rag_context": {},
+        "tools": None,  # populated lazily via _ensure_agent_tools()
     }
 
 
@@ -323,10 +299,8 @@ def _make_rover(start_x, start_y):
         "memory": [],
         "tasks": [],
         "type": "rover",
-        "ground_readings": {},
-        "tools": list(_ROVER_TOOL_DEFS),
+        "tools": None,  # populated lazily via _ensure_agent_tools()
         "solar_panels_remaining": MAX_SOLAR_PANELS,
-        "rag_context": {},
     }
 
 
@@ -342,14 +316,14 @@ def _build_initial_world():
                 "battery": 1.0,
                 "mission": {"objective": "Coordinate Mars mission", "plan": []},
                 "visited": [[0, 0]],
-                "rag_context": {},
+                "memory": [],
             },
             "rover-mistral": _make_rover(0, 0),
+            "rover-2": _make_rover(0, 0),
             "drone-mistral": _make_drone(0, 0),
         },
         "stones": [],
         "chunks": {},
-        "concentration_map": {},
         "solar_panels": [],
         "drone_scans": [],
         "tick": 0,
@@ -374,6 +348,64 @@ def _init_world_chunks():
 
 WORLD = _build_initial_world()
 _init_world_chunks()
+
+
+class World:
+    """Instance-based wrapper around the world state dict.
+
+    Enables multi-simulation and thread-safe access (future).
+    During migration, wraps the module-level WORLD dict.
+    """
+
+    def __init__(self, state: dict | None = None):
+        self._state = state if state is not None else _build_initial_world()
+        if state is None:
+            _init_world_chunks()
+
+    @property
+    def state(self) -> dict:
+        """Raw world state dict. Prefer typed accessors; use this for
+        test setup or bulk reads that don't have a dedicated method yet."""
+        return self._state
+
+    # --- Reads ---
+    def get_agent(self, agent_id: str) -> dict:
+        return self._state["agents"][agent_id]
+
+    def get_agents(self) -> dict:
+        return self._state["agents"]
+
+    def get_mission(self) -> dict:
+        return self._state["mission"]
+
+    def get_stones(self) -> list:
+        return self._state.get("stones", [])
+
+    def get_solar_panels(self) -> list:
+        return self._state.get("solar_panels", [])
+
+    def get_drone_scans(self) -> list:
+        return self._state.get("drone_scans", [])
+
+    def get_tick(self) -> int:
+        return self._state["tick"]
+
+    # --- Setters ---
+    def set_agent_model(self, agent_id: str, model: str):
+        self._state["agents"][agent_id]["model"] = model
+
+    def set_agent_last_context(self, agent_id: str, context: str):
+        self._state["agents"][agent_id]["last_context"] = context
+
+    def set_pending_commands(self, agent_id: str, commands: list | None):
+        if commands:
+            self._state["agents"][agent_id]["pending_commands"] = commands
+        else:
+            self._state["agents"][agent_id].pop("pending_commands", None)
+
+
+# Module-level singleton wrapping the global WORLD dict
+world = World(WORLD)
 
 
 def reset_world():
@@ -404,7 +436,6 @@ def check_ground(agent_id):
                     "type": stone["type"],
                     "grade": stone.get("grade", "unknown"),
                     "quantity": stone.get("quantity", 0),
-                    "extracted": stone.get("extracted", False),
                 }
             }
     return {"stone": None}
@@ -496,13 +527,6 @@ def execute_action(agent_id, action_name, params):
                 agent_id,
                 f"Analyzed vein at ({result['position'][0]},{result['position'][1]}), grade={result['stone']['grade']}, qty={result['stone']['quantity']}",
             )
-    elif action_name == "analyze_ground":
-        result = _execute_analyze_ground(agent_id, agent)
-        if result["ok"]:
-            record_memory(
-                agent_id,
-                f"Ground concentration at ({result['position'][0]},{result['position'][1]}): {result['concentration']:.3f}",
-            )
     elif action_name == "dig":
         if is_drone:
             return {"ok": False, "error": "Drones cannot dig"}
@@ -510,16 +534,7 @@ def execute_action(agent_id, action_name, params):
         if result["ok"]:
             record_memory(
                 agent_id,
-                f"Dug out {result['stone']['grade']} vein at ({result['position'][0]},{result['position'][1]}), qty={result['stone']['quantity']}",
-            )
-    elif action_name == "pickup":
-        if is_drone:
-            return {"ok": False, "error": "Drones cannot pick up veins"}
-        result = _execute_pickup(agent_id, agent)
-        if result["ok"]:
-            record_memory(
-                agent_id,
-                f"Picked up {result['stone']['grade']} vein (qty={result['stone']['quantity']}) at ({result['position'][0]},{result['position'][1]}), inventory={result['inventory_count']}",
+                f"Dug and collected {result['stone']['grade']} vein (qty={result['stone']['quantity']}) at ({result['position'][0]},{result['position'][1]}), inventory={result['inventory_count']}",
             )
     elif action_name == "scan":
         result = _execute_scan(agent_id, agent)
@@ -536,12 +551,10 @@ def execute_action(agent_id, action_name, params):
         if is_drone:
             return {"ok": False, "error": "Drones cannot use solar batteries"}
         result = _execute_use_solar_battery(agent_id)
-    elif action_name == "notify_base":
-        if is_drone:
-            return {"ok": False, "error": "Drones cannot notify base"}
-        result = _execute_notify_base(agent_id, agent)
+    elif action_name == "notify":
+        result = _execute_notify(agent_id, agent, params)
         if result["ok"]:
-            record_memory(agent_id, f"Notified base: {result['message']}")
+            record_memory(agent_id, f"Notified station: {result['message']}")
     else:
         return {"ok": False, "error": f"Unknown action: {action_name}"}
 
@@ -553,30 +566,6 @@ def execute_action(agent_id, action_name, params):
         if mission_event:
             result["mission"] = mission_event
 
-    # RAG: store memory async if enabled
-    if result["ok"] and settings.rag_enabled:
-        # Find the memory text that was just recorded
-        agent_mem = agent.get("memory", [])
-        if agent_mem:
-            memory_text = agent_mem[-1]  # last recorded memory
-            try:
-                loop = asyncio.get_running_loop()
-                from .rag import store_memory as rag_store_memory
-
-                loop.create_task(rag_store_memory(agent_id, memory_text, action_name, True))
-            except RuntimeError:
-                pass  # no running loop (e.g., in sync tests)
-    elif not result["ok"] and settings.rag_enabled:
-        error_text = f"Failed {action_name}: {result.get('error', '?')}"
-        try:
-            loop = asyncio.get_running_loop()
-            from .rag import store_memory as rag_store_memory
-
-            loop.create_task(rag_store_memory(agent_id, error_text, action_name, False))
-        except RuntimeError:
-            pass
-
-    update_tasks(agent_id)
     return result
 
 
@@ -625,22 +614,6 @@ def _execute_analyze(agent_id, agent):
     }
 
 
-def _execute_analyze_ground(agent_id, agent):
-    """Analyze ground concentration at current tile to detect nearby core deposits."""
-    if agent["battery"] < BATTERY_COST_ANALYZE_GROUND:
-        return {"ok": False, "error": "Not enough battery to analyze ground"}
-
-    x, y = agent["position"]
-    agent["battery"] = max(0.0, agent["battery"] - BATTERY_COST_ANALYZE_GROUND)
-    concentration = get_concentration(x, y)
-    readings = agent.setdefault("ground_readings", {})
-    readings[f"{x},{y}"] = concentration
-    logger.info(
-        "Agent %s analyzed ground at (%d,%d), concentration=%.2f", agent_id, x, y, concentration
-    )
-    return {"ok": True, "position": [x, y], "concentration": round(concentration, 3)}
-
-
 def _execute_scan(agent_id, agent):
     """Drone aerial scan: sample concentration map around current position."""
     if agent["battery"] < BATTERY_COST_SCAN:
@@ -669,7 +642,9 @@ def _execute_scan(agent_id, agent):
 
 
 def _execute_dig(agent_id, agent):
-    """Dig at current tile to extract a buried vein."""
+    """Dig and collect an analyzed vein at current tile into inventory."""
+    if len(agent.get("inventory", [])) >= MAX_INVENTORY_ROVER:
+        return {"ok": False, "error": "Inventory full (max 3 veins)"}
     if agent["battery"] < BATTERY_COST_DIG:
         return {"ok": False, "error": "Not enough battery to dig"}
 
@@ -679,48 +654,8 @@ def _execute_dig(agent_id, agent):
         return {"ok": False, "error": f"No vein at ({x}, {y})"}
     if not stone.get("analyzed"):
         return {"ok": False, "error": "Vein not yet analyzed (analyze first)"}
-    if stone.get("extracted"):
-        return {"ok": False, "error": f"Vein at ({x}, {y}) already extracted"}
 
     agent["battery"] = max(0.0, agent["battery"] - BATTERY_COST_DIG)
-    stone["extracted"] = True
-    logger.info(
-        "Agent %s dug at (%d,%d), extracted %s grade=%s qty=%d",
-        agent_id,
-        x,
-        y,
-        stone["type"],
-        stone["grade"],
-        stone["quantity"],
-    )
-    return {
-        "ok": True,
-        "position": [x, y],
-        "stone": {
-            "type": stone["type"],
-            "grade": stone["grade"],
-            "quantity": stone["quantity"],
-        },
-    }
-
-
-def _execute_pickup(agent_id, agent):
-    """Pick up an extracted vein into the agent's inventory."""
-    if len(agent.get("inventory", [])) >= MAX_INVENTORY_ROVER:
-        return {"ok": False, "error": "Inventory full (max 3 veins)"}
-    if agent["battery"] < BATTERY_COST_PICKUP:
-        return {"ok": False, "error": "Not enough battery to pick up"}
-
-    x, y = agent["position"]
-    stone = _find_stone_at(x, y)
-    if stone is None:
-        return {"ok": False, "error": f"No vein at ({x}, {y})"}
-    if not stone.get("analyzed"):
-        return {"ok": False, "error": "Vein not yet analyzed (analyze first)"}
-    if not stone.get("extracted"):
-        return {"ok": False, "error": f"Vein at ({x}, {y}) not yet extracted (dig first)"}
-
-    agent["battery"] = max(0.0, agent["battery"] - BATTERY_COST_PICKUP)
     agent.setdefault("inventory", []).append(
         {
             "type": stone["type"],
@@ -730,7 +665,7 @@ def _execute_pickup(agent_id, agent):
     )
     WORLD["stones"].remove(stone)
     logger.info(
-        "Agent %s picked up %s grade=%s qty=%d at (%d,%d)",
+        "Agent %s dug and collected %s grade=%s qty=%d at (%d,%d)",
         agent_id,
         stone["type"],
         stone["grade"],
@@ -750,20 +685,18 @@ def _execute_pickup(agent_id, agent):
     }
 
 
-def _execute_notify_base(agent_id, agent):
-    """Send a radio notification to station about collected stone. Costs 2 fuel."""
+def _execute_notify(agent_id, agent, params):
+    """Send a radio notification to station. Costs 2 fuel."""
     if agent["battery"] < BATTERY_COST_NOTIFY:
-        return {"ok": False, "error": "Not enough battery to notify base"}
-    inventory = agent.get("inventory", [])
-    if not inventory:
-        return {"ok": False, "error": "Nothing to report — inventory is empty"}
+        return {"ok": False, "error": "Not enough battery to notify"}
+    message = params.get("message", "")
+    if not message:
+        return {"ok": False, "error": "Empty message"}
     agent["battery"] = max(0.0, agent["battery"] - BATTERY_COST_NOTIFY)
-    last_stone = inventory[-1]
     return {
         "ok": True,
         "position": list(agent["position"]),
-        "message": f"Collected {last_stone['grade']} {last_stone['type']} (qty={last_stone['quantity']})",
-        "inventory_summary": [{"grade": s["grade"], "quantity": s["quantity"]} for s in inventory],
+        "message": message,
     }
 
 
@@ -784,7 +717,12 @@ def _execute_charge(agent_id, agent):
     logger.info(
         "Agent %s charged %.0f%% -> %.0f%%", agent_id, old_battery * 100, agent["battery"] * 100
     )
-    return {"ok": True, "battery_before": old_battery, "battery_after": agent["battery"]}
+    return {
+        "ok": True,
+        "agent_id": agent_id,
+        "battery_before": old_battery,
+        "battery_after": agent["battery"],
+    }
 
 
 def charge_agent(agent_id):
@@ -805,6 +743,21 @@ def charge_agent(agent_id):
 
 # Backward-compat alias
 charge_rover = charge_agent
+
+
+# --- Agent setters (seal direct WORLD writes from other modules) ---
+
+
+def set_agent_model(agent_id: str, model: str):
+    world.set_agent_model(agent_id, model)
+
+
+def set_agent_last_context(agent_id: str, context: str):
+    world.set_agent_last_context(agent_id, context)
+
+
+def set_pending_commands(agent_id: str, commands: list | None):
+    world.set_pending_commands(agent_id, commands)
 
 
 def _execute_deploy_solar_panel(agent_id):
@@ -965,7 +918,7 @@ def record_memory(agent_id, text):
         del mem[: len(mem) - MEMORY_MAX]
 
 
-def _direction_hint(dx, dy):
+def direction_hint(dx, dy):
     """Return human-readable direction hint from deltas.
 
     Math convention: north = +Y, south = -Y.
@@ -982,155 +935,7 @@ def _direction_hint(dx, dy):
     return ", ".join(parts) if parts else "here"
 
 
-def update_tasks(agent_id):
-    """Recompute short-term tasks for an agent based on current world state."""
-    agent = WORLD["agents"].get(agent_id)
-    if agent is None:
-        return
-    # Mission aborted — only task is return to station
-    if WORLD["mission"]["status"] == "aborted":
-        station = WORLD["agents"].get("station")
-        sp = station["position"] if station else [0, 0]
-        x, y = agent["position"]
-        if [x, y] == sp:
-            agent["tasks"] = ["At station — mission aborted, standing by"]
-        else:
-            dist = abs(sp[0] - x) + abs(sp[1] - y)
-            hint = _direction_hint(sp[0] - x, sp[1] - y)
-            agent["tasks"] = [
-                f"MISSION ABORTED — return to station at ({sp[0]},{sp[1]}) — {hint}, {dist} tiles"
-            ]
-        return
-    if agent.get("type") == "drone":
-        _update_drone_tasks(agent_id, agent)
-    else:
-        _update_rover_tasks(agent_id, agent)
-
-
-def _update_drone_tasks(agent_id, agent):
-    """Recompute tasks for a drone — scan unscanned areas, explore the map."""
-    x, y = agent["position"]
-    _ = {tuple(c) for c in agent.get("visited", [])}  # reserved for future use
-    tasks = []
-
-    # Check if current area has been scanned already
-    scanned_positions = {tuple(s["position"]) for s in WORLD.get("drone_scans", [])}
-    if (x, y) not in scanned_positions:
-        tasks.append(f"Scan area at current position ({x},{y})")
-
-    # Find nearest unscanned region within a search radius around the drone
-    search_radius = 30
-    best_target = None
-    best_dist = float("inf")
-    for gx in range(x - search_radius, x + search_radius + 1):
-        for gy in range(y - search_radius, y + search_radius + 1):
-            if (gx, gy) in scanned_positions:
-                continue
-            min_scan_dist = min(
-                (abs(gx - sp[0]) + abs(gy - sp[1]) for sp in scanned_positions),
-                default=search_radius * 2,
-            )
-            if min_scan_dist < DRONE_REVEAL_RADIUS:
-                continue
-            d = abs(gx - x) + abs(gy - y)
-            if d < best_dist:
-                best_dist = d
-                best_target = (gx, gy)
-
-    if best_target and best_dist > 0:
-        hint = _direction_hint(best_target[0] - x, best_target[1] - y)
-        tasks.append(
-            f"Fly to unscanned area at ({best_target[0]},{best_target[1]}) — {hint}, {best_dist} tiles"
-        )
-
-    if not tasks:
-        tasks.append("All areas scanned — patrol for new readings")
-
-    agent["tasks"] = tasks
-
-
-def _update_rover_tasks(agent_id, agent):
-    """Recompute short-term tasks for a rover based on current world state."""
-    x, y = agent["position"]
-    mission = WORLD["mission"]
-    target_type = mission["target_type"]
-    inventory = agent.get("inventory", [])
-    revealed_set = {tuple(c) for c in agent.get("revealed", [])}
-    tasks = []
-
-    # Inventory status (observational — agent decides what to do with this info)
-    inv_count = len(inventory)
-    inv_qty = sum(s.get("quantity", 0) for s in inventory if s["type"] == target_type)
-    if inv_count >= MAX_INVENTORY_ROVER:
-        tasks.append(
-            f"Inventory full ({inv_count}/{MAX_INVENTORY_ROVER} veins, {inv_qty} basalt units)"
-        )
-    elif inv_count > 0:
-        tasks.append(f"Inventory: {inv_count}/{MAX_INVENTORY_ROVER} veins ({inv_qty} basalt units)")
-
-    # Vein at current tile → analyze, dig, or pickup (priority order)
-    stone_here = _find_stone_at(x, y)
-    if stone_here:
-        if not stone_here.get("analyzed"):
-            tasks.append(f"Analyze unknown vein at current tile ({x},{y})")
-        elif not stone_here.get("extracted"):
-            tasks.append(
-                f"Dig {stone_here['grade']} vein (qty={stone_here['quantity']}) at current tile ({x},{y})"
-            )
-        else:
-            tasks.append(
-                f"Pick up {stone_here['grade']} vein (qty={stone_here['quantity']}) at current tile ({x},{y})"
-            )
-        agent["tasks"] = tasks
-        return
-
-    # Known veins on revealed tiles → navigate to best one
-    # Prefer: unknown veins (might be high-grade) first, then by grade (higher = better), then distance
-    known_stones = []
-    for stone in WORLD.get("stones", []):
-        sp = tuple(stone["position"])
-        if sp in revealed_set:
-            dist = abs(sp[0] - x) + abs(sp[1] - y)
-            if stone["type"] == "unknown":
-                # Unknown veins get top priority (might be high-grade)
-                priority = 0
-            else:
-                # Analyzed veins: prioritize higher grades (lower priority number = better)
-                grade = stone.get("grade", "low")
-                grade_idx = VEIN_GRADES.index(grade) if grade in VEIN_GRADES else 0
-                # Invert: pristine(4) → priority 1, low(0) → priority 5
-                priority = len(VEIN_GRADES) - grade_idx
-            known_stones.append((priority, dist, stone))
-    known_stones.sort(key=lambda t: (t[0], t[1]))
-
-    if known_stones:
-        _priority, dist, stone = known_stones[0]
-        sx, sy = stone["position"]
-        hint = _direction_hint(sx - x, sy - y)
-        if stone["type"] == "unknown":
-            label = "unknown vein"
-        else:
-            label = f"{stone.get('grade', '?')} vein (qty={stone.get('quantity', 0)})"
-        tasks.append(f"Navigate to {label} at ({sx},{sy}) — {hint}, {dist} tiles")
-
-    # Check drone scan hotspots — navigate toward high-concentration areas
-    if not tasks:
-        best_hotspot = _best_drone_hotspot(x, y, revealed_set)
-        if best_hotspot:
-            hx, hy, conc = best_hotspot
-            hint = _direction_hint(hx - x, hy - y)
-            dist = abs(hx - x) + abs(hy - y)
-            tasks.append(
-                f"Navigate to drone-scanned hotspot at ({hx},{hy}) — {hint}, {dist} tiles, concentration={conc:.2f}"
-            )
-
-    if not tasks:
-        tasks.append("Explore unvisited tiles to find veins")
-
-    agent["tasks"] = tasks
-
-
-def _best_drone_hotspot(rx, ry, revealed_set):
+def best_drone_hotspot(rx, ry, revealed_set):
     """Find the highest-concentration unvisited cell from drone scans."""
     best = None
     best_conc = 0.15  # minimum threshold to consider
@@ -1178,10 +983,10 @@ def observe_rover(agent_id):
     if stone_info:
         if stone_info["type"] == "unknown":
             stone_line = "unknown vein (needs analyze to reveal grade and quantity)"
-        elif stone_info["extracted"]:
-            stone_line = f"{stone_info['grade']} vein, qty={stone_info['quantity']} (extracted — ready for pickup)"
         else:
-            stone_line = f"{stone_info['grade']} vein, qty={stone_info['quantity']} (analyzed, buried — needs dig)"
+            stone_line = (
+                f"{stone_info['grade']} vein, qty={stone_info['quantity']} (analyzed — needs dig)"
+            )
     else:
         stone_line = "none"
 
@@ -1193,7 +998,6 @@ def observe_rover(agent_id):
             type=raw_stone["type"],
             grade=raw_stone.get("grade", "unknown"),
             quantity=raw_stone.get("quantity", 0),
-            extracted=raw_stone.get("extracted", False),
             analyzed=raw_stone.get("analyzed", False),
         )
     else:
@@ -1206,8 +1010,8 @@ def observe_rover(agent_id):
         sp = tuple(stone["position"])
         if sp in revealed_set and list(sp) != [x, y]:
             dist = abs(sp[0] - x) + abs(sp[1] - y)
-            status = "extracted" if stone.get("extracted") else "buried"
-            hint = _direction_hint(sp[0] - x, sp[1] - y)
+            status = "analyzed" if stone.get("analyzed") else "unknown"
+            hint = direction_hint(sp[0] - x, sp[1] - y)
             grade_info = stone.get("grade", "unknown")
             qty_info = stone.get("quantity", 0)
             label = (
@@ -1230,7 +1034,6 @@ def observe_rover(agent_id):
             tasks=list(agent.get("tasks", [])),
             visited=list(agent.get("visited", [])),
             visited_count=len(agent.get("visited", [])),
-            ground_readings=dict(agent.get("ground_readings", {})),
         ),
         world=RoverWorldView(
             grid_w=GRID_W,
@@ -1258,6 +1061,7 @@ def observe_station():
         rovers.append(
             RoverSummary(
                 id=aid,
+                agent_type=agent.get("type", "rover"),
                 position=list(agent["position"]),
                 battery=agent["battery"],
                 mission=AgentMission(**agent["mission"]),
@@ -1276,16 +1080,29 @@ def observe_station():
             )
         )
 
+    station_agent = WORLD["agents"].get("station", {})
     return StationContext(
         grid_w=GRID_W,
         grid_h=GRID_H,
         rovers=rovers,
         stones=stones,
+        memory=station_agent.get("memory", []),
     )
+
+
+def _ensure_agent_tools():
+    """Lazily populate agent tool lists from the canonical LLM schemas in agent.py."""
+    for name, agent in WORLD["agents"].items():
+        if agent.get("tools") is None:
+            if agent.get("type") == "drone":
+                agent["tools"] = _drone_tools_for_ui()
+            elif agent.get("type") == "rover":
+                agent["tools"] = _rover_tools_for_ui()
 
 
 def get_snapshot():
     """Return a deep copy of the current world state, filtered by fog-of-war."""
+    _ensure_agent_tools()
     snap = copy.deepcopy(WORLD)
     # Remove internal chunk data
     snap.pop("chunks", None)
@@ -1303,10 +1120,6 @@ def get_snapshot():
             s.pop("_true_quantity", None)
             visible.append(s)
     snap["stones"] = visible
-    # Serialize concentration_map tuple keys to JSON-safe "x,y" strings
-    conc = snap.get("concentration_map")
-    if conc and isinstance(conc, dict):
-        snap["concentration_map"] = {f"{k[0]},{k[1]}": v for k, v in conc.items()}
     # Ensure bounds are present
     if "bounds" not in snap:
         snap["bounds"] = {"min_x": 0, "max_x": GRID_W - 1, "min_y": 0, "max_y": GRID_H - 1}

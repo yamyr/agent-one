@@ -32,14 +32,7 @@ class Settings(BaseSettings):
     world_seed: str = ""
 
     # Active agents (comma-separated: "rover-mistral,drone-mistral")
-    active_agents: str = "rover-mistral,drone-mistral"
-
-    # RAG (Retrieval-Augmented Generation)
-    rag_enabled: bool = True
-    rag_knowledge_top_k: int = 3
-    rag_memory_top_k: int = 3
-    rag_timeout_seconds: float = 2.0
-    rag_max_context_tokens: int = 800
+    active_agents: str = "rover-mistral,rover-2,drone-mistral"
 
     # ElevenLabs narration
     elevenlabs_api_key: str = ""
@@ -48,6 +41,14 @@ class Settings(BaseSettings):
     narration_voice_id_female: str = "21m00Tcm4TlvDq8ikWAM"  # Rachel - Dr. Nova
     narration_model: str = "mistral-medium-latest"
     narration_min_interval_seconds: float = 5.0
+
+    # Voxtral voice commander
+    voxtral_model: str = "voxtral-mini-latest"
+    voice_command_enabled: bool = True
+
+    # Voice command (Voxtral transcription + LLM parsing)
+    voice_transcription_model: str = "voxtral-mini-latest"
+    voice_command_model: str = "mistral-small-latest"
 
 
 settings = Settings()

@@ -1,5 +1,6 @@
 <script setup>
 import { computed } from 'vue'
+import MapLegend from './MapLegend.vue'
 import { VIEWPORT_W, VIEWPORT_H, VEIN_COLORS, agentColor } from '../constants.js'
 
 const props = defineProps({
@@ -13,6 +14,8 @@ const props = defineProps({
   },
   camX: { type: Number, default: 0 },
   camY: { type: Number, default: 0 },
+  viewportW: { type: Number, default: VIEWPORT_W },
+  viewportH: { type: Number, default: VIEWPORT_H },
 })
 
 const veins = computed(() => {
@@ -39,9 +42,9 @@ const bounds = computed(() => {
   const b = props.worldState.bounds
   return {
     min_x: Math.min(b.min_x, props.camX) - PADDING,
-    max_x: Math.max(b.max_x, props.camX + VIEWPORT_W) + PADDING,
+    max_x: Math.max(b.max_x, props.camX + props.viewportW) + PADDING,
     min_y: Math.min(b.min_y, props.camY) - PADDING,
-    max_y: Math.max(b.max_y, props.camY + VIEWPORT_H) + PADDING,
+    max_y: Math.max(b.max_y, props.camY + props.viewportH) + PADDING,
   }
 })
 
@@ -93,9 +96,9 @@ const agents = computed(() => {
 // Viewport rectangle on minimap
 const viewRect = computed(() => ({
   x: (props.camX - bounds.value.min_x) * MINI_TILE,
-  y: (bounds.value.max_y - (props.camY + VIEWPORT_H - 1)) * MINI_TILE,
-  w: VIEWPORT_W * MINI_TILE,
-  h: VIEWPORT_H * MINI_TILE,
+  y: (bounds.value.max_y - (props.camY + props.viewportH - 1)) * MINI_TILE,
+  w: props.viewportW * MINI_TILE,
+  h: props.viewportH * MINI_TILE,
 }))
 
 function onClick(e) {
@@ -103,8 +106,8 @@ function onClick(e) {
   const rect = svg.getBoundingClientRect()
   const mx = (e.clientX - rect.left) / rect.width * mapW.value
   const my = (e.clientY - rect.top) / rect.height * mapH.value
-  const worldX = Math.round(mx / MINI_TILE + bounds.value.min_x - VIEWPORT_W / 2)
-  const worldY = Math.round(bounds.value.max_y - my / MINI_TILE - VIEWPORT_H / 2)
+  const worldX = Math.round(mx / MINI_TILE + bounds.value.min_x - props.viewportW / 2)
+  const worldY = Math.round(bounds.value.max_y - my / MINI_TILE - props.viewportH / 2)
   emit('navigate', worldX, worldY)
 }
 </script>
@@ -178,6 +181,7 @@ function onClick(e) {
     >
       No data
     </div>
+    <MapLegend />
   </section>
 </template>
 
@@ -187,6 +191,7 @@ function onClick(e) {
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-md);
   background: var(--bg-card);
+  position: relative;
 }
 
 .minimap-svg {

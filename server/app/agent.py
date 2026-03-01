@@ -15,16 +15,35 @@ from .base_agent import BaseAgent
 from .broadcast import broadcaster
 from .config import settings
 from .protocol import make_message
-from .world import WORLD, GRID_W, GRID_H, DIRECTIONS, MAX_MOVE_DISTANCE, MAX_MOVE_DISTANCE_DRONE
+from .world import World, world as default_world
+from .world import GRID_W, GRID_H, DIRECTIONS, MAX_MOVE_DISTANCE, MAX_MOVE_DISTANCE_DRONE
 from .world import FUEL_CAPACITY_ROVER, FUEL_CAPACITY_DRONE, DRONE_REVEAL_RADIUS
 from .world import BATTERY_COST_MOVE, BATTERY_COST_MOVE_DRONE, BATTERY_COST_DIG
-from .world import BATTERY_COST_PICKUP, BATTERY_COST_ANALYZE, BATTERY_COST_ANALYZE_GROUND
-from .world import BATTERY_COST_SCAN, BATTERY_COST_NOTIFY, MAX_INVENTORY_ROVER
-from .world import check_ground, _direction_hint
+from .world import BATTERY_COST_ANALYZE, BATTERY_COST_SCAN, BATTERY_COST_NOTIFY
+from .world import MAX_INVENTORY_ROVER
+from .world import check_ground, direction_hint, best_drone_hotspot
+from .world import set_agent_model
 from .world import execute_action, get_snapshot, charge_agent, next_tick
-from .rag import format_rag_context, retrieve_context
 
 logger = logging.getLogger(__name__)
+
+TASK_SEPARATOR = "---TASK---"
+
+
+def parse_task_separator(text):
+    """Split LLM text on ---TASK--- separator.
+
+    Returns (thinking, task) where task is None if no separator found.
+    """
+    if not text:
+        return (None, None)
+    if TASK_SEPARATOR in text:
+        parts = text.split(TASK_SEPARATOR, 1)
+        thinking = parts[0].strip() or None
+        task = parts[1].strip() or None
+        return (thinking, task)
+    return (text.strip() or None, None)
+
 
 MOVE_TOOL = {
     "type": "function",
@@ -55,16 +74,7 @@ DIG_TOOL = {
     "type": "function",
     "function": {
         "name": "dig",
-        "description": f"Dig at current tile to extract a vein. Costs 6 fuel units (~{BATTERY_COST_DIG:.2%} battery). The vein must be analyzed first.",
-        "parameters": {"type": "object", "properties": {}},
-    },
-}
-
-PICKUP_TOOL = {
-    "type": "function",
-    "function": {
-        "name": "pickup",
-        "description": "Pick up an extracted vein at current tile into inventory (with its basalt quantity). The vein must have been dug out first.",
+        "description": f"Dig and collect an analyzed vein at current tile into inventory. Costs 6 fuel units (~{BATTERY_COST_DIG:.2%} battery). The vein must be analyzed first.",
         "parameters": {"type": "object", "properties": {}},
     },
 }
@@ -74,15 +84,6 @@ ANALYZE_TOOL = {
     "function": {
         "name": "analyze",
         "description": f"Analyze an unknown vein at current tile to reveal its grade (low/medium/high/rich/pristine) and basalt quantity. Costs 3 fuel units (~{BATTERY_COST_ANALYZE:.2%} battery). Must be done before dig/pickup.",
-        "parameters": {"type": "object", "properties": {}},
-    },
-}
-
-ANALYZE_GROUND_TOOL = {
-    "type": "function",
-    "function": {
-        "name": "analyze_ground",
-        "description": f"Analyze ground concentration at current tile to detect nearby basalt vein deposits. Returns a 0.0-1.0 reading (higher = closer to high-grade veins). Costs 3 fuel units (~{BATTERY_COST_ANALYZE_GROUND:.2%} battery).",
         "parameters": {"type": "object", "properties": {}},
     },
 }
@@ -105,12 +106,21 @@ USE_SOLAR_BATTERY_TOOL = {
     },
 }
 
-NOTIFY_BASE_TOOL = {
+NOTIFY_TOOL = {
     "type": "function",
     "function": {
-        "name": "notify_base",
-        "description": f"Send a radio notification to station about collected stones. Costs 2 fuel units (~{BATTERY_COST_NOTIFY:.2%} battery). Use after picking up a vein to inform the station.",
-        "parameters": {"type": "object", "properties": {}},
+        "name": "notify",
+        "description": f"Send a radio message to station. Costs {BATTERY_COST_NOTIFY:.0%} battery. Use to report discoveries, request help, or share status updates.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "message": {
+                    "type": "string",
+                    "description": "The message to send to station.",
+                },
+            },
+            "required": ["message"],
+        },
     },
 }
 
@@ -118,11 +128,9 @@ ROVER_TOOLS = [
     MOVE_TOOL,
     ANALYZE_TOOL,
     DIG_TOOL,
-    PICKUP_TOOL,
-    ANALYZE_GROUND_TOOL,
     DEPLOY_SOLAR_PANEL_TOOL,
     USE_SOLAR_BATTERY_TOOL,
-    NOTIFY_BASE_TOOL,
+    NOTIFY_TOOL,
 ]
 
 
@@ -132,10 +140,13 @@ ROVER_TOOLS = [
 class MistralRoverReasoner:
     """Rover reasoner that decides via Mistral LLM. Returns action dict, does not execute."""
 
-    def __init__(self, agent_id="rover-mistral", model="mistral-small-latest"):
+    def __init__(
+        self, agent_id="rover-mistral", model="mistral-small-latest", world: World | None = None
+    ):
         self.agent_id = agent_id
         self.model = model
         self._client = None
+        self._world = world or default_world
 
     def _get_client(self):
         if self._client is None:
@@ -146,14 +157,14 @@ class MistralRoverReasoner:
 
     def _build_context(self):
         """Assemble LLM context: identity, state, environment, memory."""
-        agent = WORLD["agents"][self.agent_id]
+        agent = self._world.get_agent(self.agent_id)
         x, y = agent["position"]
         mission = agent["mission"]
         battery = agent["battery"]
         inventory = agent.get("inventory", [])
         memory = agent.get("memory", [])
 
-        station = WORLD["agents"].get("station")
+        station = self._world.get_agents().get("station")
         station_pos = station["position"] if station else [0, 0]
         dist_to_station = abs(x - station_pos[0]) + abs(y - station_pos[1])
         moves_on_battery = int(battery / BATTERY_COST_MOVE)
@@ -172,17 +183,15 @@ class MistralRoverReasoner:
         if stone_info:
             if stone_info["type"] == "unknown":
                 stone_line = "unknown vein (needs analyze to reveal grade and quantity)"
-            elif stone_info["extracted"]:
-                stone_line = f"{stone_info.get('grade', '?')} vein, qty={stone_info.get('quantity', 0)} (extracted — ready for pickup)"
             else:
-                stone_line = f"{stone_info.get('grade', '?')} vein, qty={stone_info.get('quantity', 0)} (analyzed, buried — needs dig)"
+                stone_line = f"{stone_info.get('grade', '?')} vein, qty={stone_info.get('quantity', 0)} (analyzed — needs dig)"
         else:
             stone_line = "none"
 
         # Mission target
-        world_mission = WORLD.get("mission", {})
+        world_mission = self._world.get_mission()
         target_quantity = world_mission.get("target_quantity", 100)
-        collected_qty = world_mission.get("collected_quantity", 0)
+        inventory_full = len(inventory) >= MAX_INVENTORY_ROVER
 
         parts = []
 
@@ -199,22 +208,31 @@ class MistralRoverReasoner:
             "VEIN WORKFLOW:\n"
             "- Veins start as 'unknown'. You must ANALYZE them first to reveal grade + quantity.\n"
             "- Grades: low, medium, high, rich, pristine. Higher grade = more basalt.\n"
-            "- After analyzing: DIG to extract, then PICKUP to collect into inventory.\n"
-            "- Use analyze_ground to read concentration (0.0-1.0). Higher = closer to rich veins.\n"
+            "- After analyzing: DIG to extract and collect into inventory in one step.\n"
+            "\n"
+            "RADIO (notify tool):\n"
+            f"- Costs 2 fuel units (~{BATTERY_COST_NOTIFY:.2%} battery). Use sparingly — battery is precious.\n"
+            "- Notify station when you dig a high/rich/pristine vein so it can track mission progress.\n"
+            "- Notify station when your battery is critically low and you might not make it back.\n"
+            "- Notify station when you think you have collected enough basalt to meet the target,\n"
+            "  so it can decide whether to recall you or send you for more.\n"
+            "- Do NOT notify for routine moves or low-grade finds — save fuel for exploration.\n"
             "\n"
             "RULES:\n"
-            f"- Battery is your lifeline. Move costs 1 fuel unit/tile (~{BATTERY_COST_MOVE:.2%}), dig 6 units (~{BATTERY_COST_DIG:.2%}), analyze 3 units (~{BATTERY_COST_ANALYZE:.2%}), pickup 2 units (~{BATTERY_COST_PICKUP:.2%}).\n"
+            f"- Battery is your lifeline. Move costs 1 fuel unit/tile (~{BATTERY_COST_MOVE:.2%}), dig 6 units (~{BATTERY_COST_DIG:.2%}), analyze 3 units (~{BATTERY_COST_ANALYZE:.2%}).\n"
             "- Station is your base at ({sx},{sy}). Return there when battery is low — "
             "the station will recharge you automatically.\n"
-            "- ALWAYS keep enough battery to return to station. When your battery drops to 67% or below, \n"
-            "head back to station IMMEDIATELY — this is the return-to-base threshold.\n"
-            "- If you find an unknown vein: analyze → dig → pickup. All on the same tile.\n"
+            "- ALWAYS keep enough battery to return to station. Check 'moves remaining' vs 'distance to station'.\n"
+            "  If moves remaining <= distance to station + 5 (safety margin), head back IMMEDIATELY.\n"
+            "- But if there is a vein at your CURRENT TILE, analyze/dig it first — it costs no move fuel to stay.\n"
+            "- If you find an unknown vein: analyze → dig. Both on the same tile.\n"
             "- Once you have collected enough basalt, RETURN TO STATION to deliver and complete the mission.\n"
             "- CRITICAL: Once you have collected the target quantity of basalt, STOP exploring and RETURN TO STATION IMMEDIATELY.\n"
             "- Prefer unvisited tiles when exploring. Don't backtrack aimlessly.\n"
             "- Ground is auto-scanned after every move. No need to check manually.\n"
-            "- Follow your current tasks list. It tells you exactly what to do next.\n"
-            "- Real-time world state always takes precedence over knowledge base content. If retrieved knowledge contradicts what you observe, trust your current observations.".format(
+            f"- MOVEMENT EFFICIENCY: You can move up to {MAX_MOVE_DISTANCE} tiles per move action.\n"
+            f"  When heading to a known target, ALWAYS set distance={MAX_MOVE_DISTANCE} (or the remaining distance if closer).\n"
+            "  Moving 1 tile at a time wastes turns. Use the full distance.".format(
                 sx=station_pos[0], sy=station_pos[1]
             )
         )
@@ -222,27 +240,23 @@ class MistralRoverReasoner:
         parts.append(
             f"\n== Mission ==\n"
             f"Objective: {mission['objective']}\n"
-            f"Target: collect {target_quantity} units of basalt from veins ({collected_qty}/{target_quantity} delivered)"
-            + (
-                "\n🏁 MISSION TARGET MET — RETURN TO STATION NOW!"
-                if collected_qty >= target_quantity
-                else ""
-            )
+            f"Target: collect {target_quantity} units of basalt and deliver to station.\n"
+            f"Your inventory: {len(inventory)}/{MAX_INVENTORY_ROVER} veins"
+            + ("\n🏁 INVENTORY FULL — RETURN TO STATION NOW TO DELIVER!" if inventory_full else "")
         )
 
-        tasks = agent.get("tasks", [])
-        if tasks:
-            parts.append("\n== Current Tasks ==")
-            for i, task in enumerate(tasks, 1):
-                parts.append(f"{i}. {task}")
-        else:
-            parts.append("\n== Current Tasks ==\n1. Explore unvisited tiles to find veins")
+        current_task = agent.get("tasks", [None])[0] if agent.get("tasks") else None
+        if current_task:
+            parts.append(f"\n== Current Task ==\n{current_task}")
+
+        safety_margin = dist_to_station + 5
+        battery_critical = moves_on_battery <= safety_margin
 
         parts.append(
             f"\n== State ==\n"
             f"Position: ({x}, {y})\n"
             f"Battery: {battery:.0%} ({moves_on_battery} moves remaining, {FUEL_CAPACITY_ROVER} fuel capacity)\n"
-            f"Distance to station: {dist_to_station} tiles\n"
+            f"Distance to station: {dist_to_station} tiles (need {safety_margin} moves to return safely)\n"
             f"Inventory: {len(inventory)}/{MAX_INVENTORY_ROVER} veins"
             + (
                 " ("
@@ -252,11 +266,12 @@ class MistralRoverReasoner:
                 else ""
             )
             + f"\nSolar panels remaining: {agent.get('solar_panels_remaining', 0)}"
+            + ("\n⚠️ BATTERY CRITICAL — return to station now!" if battery_critical else "")
         )
 
         # Nearby solar panels
         nearby_panels = []
-        for panel in WORLD.get("solar_panels", []):
+        for panel in self._world.get_solar_panels():
             px, py = panel["position"]
             pd = abs(px - x) + abs(py - y)
             if pd <= 10:
@@ -269,12 +284,12 @@ class MistralRoverReasoner:
         # Visible veins (on revealed tiles)
         revealed_set = {tuple(c) for c in agent.get("revealed", [])}
         visible_stones = []
-        for stone in WORLD.get("stones", []):
+        for stone in self._world.get_stones():
             sp = tuple(stone["position"])
             if sp in revealed_set and list(sp) != [x, y]:
                 dist = abs(sp[0] - x) + abs(sp[1] - y)
-                status = "extracted" if stone.get("extracted") else "buried"
-                hint = _direction_hint(sp[0] - x, sp[1] - y)
+                status = "analyzed" if stone.get("analyzed") else "unknown"
+                hint = direction_hint(sp[0] - x, sp[1] - y)
                 grade_info = stone.get("grade", "unknown")
                 qty_info = stone.get("quantity", 0)
                 label = (
@@ -300,24 +315,24 @@ class MistralRoverReasoner:
             for vs in visible_stones:
                 parts.append(f"  - {vs}")
 
-        readings = agent.get("ground_readings", {})
-        if readings:
-            parts.append("Ground concentration readings:")
-            for pos, val in readings.items():
-                parts.append(f"  - ({pos}): {val:.3f}")
+        # Drone scan hotspots — areas discovered by aerial scans not yet visited by rover
+        hotspot = best_drone_hotspot(x, y, revealed_set)
+        if hotspot:
+            hx, hy, conc = hotspot
+            hdx, hdy = hx - x, hy - y
+            hint = direction_hint(hdx, hdy)
+            dist = abs(hdx) + abs(hdy)
+            parts.append(
+                f"\n== Drone Scan Hotspots ==\n"
+                f"Hotspot at ({hx},{hy}) — {hint}, {dist} tiles (concentration: {conc:.3f})\n"
+                "Consider navigating toward this drone-discovered area for potential veins."
+            )
 
         if memory:
             recent = memory[-5:]
             parts.append("\n== Recent actions ==")
             for entry in recent:
                 parts.append(f"- {entry}")
-
-        # RAG-enhanced context (Mars knowledge + mission memory)
-        rag_ctx = agent.get("rag_context")
-        if rag_ctx:
-            rag_text = format_rag_context(rag_ctx)
-            if rag_text:
-                parts.append(rag_text)
 
         # Urgent commands from Host inbox
         pending = agent.get("pending_commands", [])
@@ -330,6 +345,9 @@ class MistralRoverReasoner:
                 elif cmd["name"] == "assign_mission":
                     objective = cmd.get("payload", {}).get("objective", "")
                     parts.append(f"NEW MISSION: {objective}")
+                elif cmd["name"] == "voice_command":
+                    text = cmd.get("payload", {}).get("text", "")
+                    parts.append(f"⚡ COMMANDER ORDER: {text}")
                 else:
                     parts.append(f"{cmd['name'].upper()}: {cmd.get('payload', {})}")
 
@@ -340,7 +358,7 @@ class MistralRoverReasoner:
         try:
             client = self._get_client()
             context = self._build_context()
-            WORLD["agents"][self.agent_id]["last_context"] = context
+            self._world.set_agent_last_context(self.agent_id, context)
 
             messages = [
                 {"role": "system", "content": context},
@@ -354,12 +372,8 @@ class MistralRoverReasoner:
                 tools=ROVER_TOOLS,
             )
             choice = response.choices[0]
-
             thinking = choice.message.content or None
             action = None
-
-            if thinking:
-                logger.info("Rover thinking: %s", thinking)
 
             if choice.message.tool_calls:
                 tc = choice.message.tool_calls[0]
@@ -372,32 +386,30 @@ class MistralRoverReasoner:
                 if name in (
                     "move",
                     "dig",
-                    "pickup",
                     "analyze",
-                    "analyze_ground",
                     "deploy_solar_panel",
                     "use_solar_battery",
-                    "notify_base",
+                    "notify",
                 ):
                     action = {"name": name, "params": args}
                 else:
                     logger.warning("%s called unknown tool %r, ignoring", self.agent_id, name)
 
             if action is None:
-                logger.warning(
-                    "%s returned no valid tool action (thinking=%r), using fallback",
-                    self.agent_id,
-                    thinking,
+                raise RuntimeError(
+                    f"{self.agent_id} returned no valid tool action (thinking={thinking!r})"
                 )
-                return self._fallback_turn("No valid tool action from model")
+
+            if thinking:
+                logger.info("Rover thinking: %s", thinking)
 
             return {"thinking": thinking, "action": action}
-        except (SDKError, ConnectionError, TimeoutError, RuntimeError) as exc:
+        except (SDKError, ConnectionError, TimeoutError) as exc:
             logger.exception("Rover LLM turn failed for %s, using fallback", self.agent_id)
             return self._fallback_turn(f"LLM unavailable ({type(exc).__name__})")
 
     def _fallback_turn(self, reason):
-        agent = WORLD["agents"][self.agent_id]
+        agent = self._world.get_agent(self.agent_id)
         x, y = agent["position"]
         # Default: explore unvisited tiles (inline fallback — no mock rover)
         visited_set = {tuple(p) for p in agent.get("visited", [])}
@@ -460,17 +472,20 @@ SCAN_TOOL = {
     },
 }
 
-DRONE_TOOLS = [DRONE_MOVE_TOOL, SCAN_TOOL]
+DRONE_TOOLS = [DRONE_MOVE_TOOL, SCAN_TOOL, NOTIFY_TOOL]
 
 
 class DroneAgent:
     """Drone scout agent powered by Mistral LLM. Moves fast, scans for basalt vein deposits."""
 
-    def __init__(self, agent_id="drone-mistral", model="mistral-small-latest"):
+    def __init__(
+        self, agent_id="drone-mistral", model="mistral-small-latest", world: World | None = None
+    ):
         self.agent_id = agent_id
         self.model = model
         self._client = None
-        self._mock_fallback = MockDroneAgent(agent_id=agent_id)
+        self._world = world or default_world
+        self._mock_fallback = MockDroneAgent(agent_id=agent_id, world=self._world)
 
     def _get_client(self):
         if self._client is None:
@@ -481,30 +496,49 @@ class DroneAgent:
 
     def _build_context(self):
         """Assemble LLM context for the drone scout."""
-        agent = WORLD["agents"][self.agent_id]
+        agent = self._world.get_agent(self.agent_id)
         x, y = agent["position"]
         mission = agent["mission"]
         battery = agent["battery"]
         memory = agent.get("memory", [])
 
-        station = WORLD["agents"].get("station")
+        station = self._world.get_agents().get("station")
         station_pos = station["position"] if station else [0, 0]
         dist_to_station = abs(x - station_pos[0]) + abs(y - station_pos[1])
         moves_on_battery = int(battery / BATTERY_COST_MOVE_DRONE)
 
-        visited_set = {tuple(p) for p in agent.get("visited", [])}
-        unvisited_dirs = []
-        for name, (dx, dy) in DIRECTIONS.items():
-            nx, ny = x + dx, y + dy
-            if 0 <= nx < GRID_W and 0 <= ny < GRID_H and (nx, ny) not in visited_set:
-                unvisited_dirs.append(name)
+        scanned_positions = {tuple(s["position"]) for s in self._world.get_drone_scans()}
 
-        scanned_positions = {tuple(s["position"]) for s in WORLD.get("drone_scans", [])}
-        total_tiles = GRID_W * GRID_H
-        coverage = len(scanned_positions) / total_tiles * 100
+        # Safety margin — same logic as rover
+        safety_margin = dist_to_station + 5
+        battery_critical = moves_on_battery <= safety_margin
+
+        # Nearest unscanned area hint (same logic as MockDroneAgent)
+        search_radius = 30
+        best_target = None
+        best_dist = float("inf")
+        for gx in range(x - search_radius, x + search_radius + 1):
+            for gy in range(y - search_radius, y + search_radius + 1):
+                if (gx, gy) in scanned_positions:
+                    continue
+                min_scan_dist = min(
+                    (abs(gx - sp[0]) + abs(gy - sp[1]) for sp in scanned_positions),
+                    default=search_radius * 2,
+                )
+                if min_scan_dist < DRONE_REVEAL_RADIUS:
+                    continue
+                d = abs(gx - x) + abs(gy - y)
+                if d < best_dist:
+                    best_dist = d
+                    best_target = (gx, gy)
+
+        # Last scan result
+        drone_scans = self._world.get_drone_scans()
+        last_scan = drone_scans[-1] if drone_scans else None
 
         parts = []
 
+        # -- Instructions --
         parts.append(
             f"You are {self.agent_id}, an autonomous Mars drone scout.\n"
             "Your job: fly over the terrain and SCAN areas to detect basalt vein deposits.\n"
@@ -519,53 +553,77 @@ class DroneAgent:
             "- Use 'scan' to sample concentration readings at your current position.\n"
             "- Readings range 0.0-1.0. Higher values indicate high-grade basalt veins nearby.\n"
             "- Scan data is shared with rovers automatically — they will navigate to hotspots you find.\n"
-            "- Try to cover the map systematically. Don't scan the same area twice.\n"
-            "- Prioritize scanning unexplored areas far from previous scan positions.\n"
+            "- Scan outward from station in expanding rings. Cover NEARBY areas first, then push further.\n"
+            "- Don't fly far when there are unscanned areas close by. Check 'Nearest unscanned area' below.\n"
+            "- Don't scan the same area twice.\n"
+            "\n"
+            "RADIO (notify tool):\n"
+            f"- Costs 2 fuel units (~{BATTERY_COST_NOTIFY:.2%} battery).\n"
+            "- MANDATORY: After any scan with peak >= 0.5, you MUST call notify BEFORE moving.\n"
+            "  Include the position and peak reading so station can dispatch rovers.\n"
+            "- Also notify station when your battery is low or you have completed a sweep.\n"
+            "- You are the eyes of the mission. Rovers are blind without your reports.\n"
             "\n"
             "RULES:\n"
-            f"- Battery: move costs 1 fuel unit/tile (~{BATTERY_COST_MOVE_DRONE:.2%}), scan costs 2 fuel units (~{BATTERY_COST_SCAN:.2%}). You can fly up to {MAX_MOVE_DISTANCE_DRONE} tiles per move.\n"
-            "- Station is at ({sx},{sy}). Return when battery is low for recharge.\n"
-            "- ALWAYS keep enough battery to return to station.\n"
-            "- Follow your current tasks list.\n"
-            "- Real-time world state always takes precedence over knowledge base content. If retrieved knowledge contradicts what you observe, trust your current observations.".format(
+            f"- Battery: move costs 3 fuel units/tile (~{BATTERY_COST_MOVE_DRONE:.2%}), scan costs 2 fuel units (~{BATTERY_COST_SCAN:.2%}), notify costs 2 fuel units (~{BATTERY_COST_NOTIFY:.2%}). You can fly up to {MAX_MOVE_DISTANCE_DRONE} tiles per move.\n"
+            "- Station is at ({sx},{sy}). Return there when battery is low — "
+            "the station will recharge you automatically.\n"
+            "- ALWAYS keep enough battery to return to station. Check 'moves remaining' vs 'distance to station'.\n"
+            "  If moves remaining <= distance to station + 5 (safety margin), return to station IMMEDIATELY.\n"
+            "- Prefer unvisited areas when exploring. Don't backtrack aimlessly.".format(
                 sx=station_pos[0], sy=station_pos[1]
             )
         )
 
+        # -- Mission --
         parts.append(
             f"\n== Mission ==\n"
             f"Objective: {mission['objective']}\n"
-            f"Scan coverage: {coverage:.0f}% of map"
+            f"Scans performed: {len(drone_scans)}"
         )
 
-        tasks = agent.get("tasks", [])
-        if tasks:
-            parts.append("\n== Current Tasks ==")
-            for i, task in enumerate(tasks, 1):
-                parts.append(f"{i}. {task}")
-        else:
-            parts.append(
-                "\n== Current Tasks ==\n1. Scan current area, then fly to unscanned regions"
-            )
+        current_task = agent.get("tasks", [None])[0] if agent.get("tasks") else None
+        if current_task:
+            parts.append(f"\n== Current Task ==\n{current_task}")
 
+        # -- State --
         parts.append(
             f"\n== State ==\n"
             f"Position: ({x}, {y})\n"
             f"Battery: {battery:.0%} ({moves_on_battery} moves remaining, {FUEL_CAPACITY_DRONE} fuel capacity)\n"
-            f"Distance to station: {dist_to_station} tiles\n"
-            f"Tiles visited: {len(agent.get('visited', []))}\n"
-            f"Scans performed: {len(WORLD.get('drone_scans', []))}"
+            f"Distance to station: {dist_to_station} tiles (need {safety_margin} moves to return safely)\n"
+            f"Tiles visited: {len(agent.get('visited', []))}"
+            + ("\n⚠️ BATTERY CRITICAL — return to station now!" if battery_critical else "")
         )
 
+        # -- Last Scan --
+        if last_scan:
+            scan_pos = last_scan["position"]
+            scan_peak = last_scan["peak"]
+            parts.append(
+                f"\n== Last Scan ==\n"
+                f"Position: ({scan_pos[0]}, {scan_pos[1]}), peak concentration: {scan_peak:.2f}"
+            )
+            # Check if hotspot was notified
+            if scan_peak >= 0.5:
+                last_action_was_notify = memory and "notify" in memory[-1].lower()
+                if not last_action_was_notify:
+                    parts.append("⚠️ HOTSPOT — notify station before moving!")
+
+        # -- Environment --
         parts.append(
             f"\n== Environment ==\n"
-            f"Grid: {GRID_W}x{GRID_H}\n"
-            f"Unvisited neighbors: {', '.join(unvisited_dirs) if unvisited_dirs else 'none'}\n"
             f"Already scanned here: {'yes' if (x, y) in scanned_positions else 'no'}"
         )
+        if best_target:
+            tx, ty = best_target
+            hint = direction_hint(tx - x, ty - y)
+            parts.append(f"Nearest unscanned area: ({tx},{ty}) — {hint}, {best_dist} tiles")
+        else:
+            parts.append("Nearest unscanned area: none within range")
 
         hot_scans = []
-        for scan in WORLD.get("drone_scans", [])[-5:]:
+        for scan in drone_scans[-5:]:
             if scan["peak"] > 0.2:
                 hot_scans.append(
                     f"  - ({scan['position'][0]},{scan['position'][1]}): peak={scan['peak']:.2f}"
@@ -580,12 +638,22 @@ class DroneAgent:
             for entry in recent:
                 parts.append(f"- {entry}")
 
-        # RAG-enhanced context (Mars knowledge + mission memory)
-        rag_ctx = agent.get("rag_context")
-        if rag_ctx:
-            rag_text = format_rag_context(rag_ctx)
-            if rag_text:
-                parts.append(rag_text)
+        # -- Urgent commands from Host inbox --
+        pending = agent.get("pending_commands", [])
+        if pending:
+            parts.append("\n== URGENT COMMANDS ==")
+            for cmd in pending:
+                if cmd["name"] == "recall":
+                    reason = cmd.get("payload", {}).get("reason", "No reason given")
+                    parts.append(f"RECALL: Return to station immediately. Reason: {reason}")
+                elif cmd["name"] == "assign_mission":
+                    objective = cmd.get("payload", {}).get("objective", "")
+                    parts.append(f"NEW MISSION: {objective}")
+                elif cmd["name"] == "voice_command":
+                    text = cmd.get("payload", {}).get("text", "")
+                    parts.append(f"⚡ COMMANDER ORDER: {text}")
+                else:
+                    parts.append(f"{cmd['name'].upper()}: {cmd.get('payload', {})}")
 
         return "\n".join(parts)
 
@@ -594,7 +662,7 @@ class DroneAgent:
         try:
             client = self._get_client()
             context = self._build_context()
-            WORLD["agents"][self.agent_id]["last_context"] = context
+            self._world.set_agent_last_context(self.agent_id, context)
 
             messages = [
                 {"role": "system", "content": context},
@@ -611,12 +679,8 @@ class DroneAgent:
                 tools=DRONE_TOOLS,
             )
             choice = response.choices[0]
-
             thinking = choice.message.content or None
             action = None
-
-            if thinking:
-                logger.info("Drone thinking: %s", thinking)
 
             if choice.message.tool_calls:
                 tc = choice.message.tool_calls[0]
@@ -626,20 +690,30 @@ class DroneAgent:
                     if isinstance(tc.function.arguments, str)
                     else tc.function.arguments
                 )
-                if name in ("move", "scan"):
+                if name in ("move", "scan", "notify"):
                     action = {"name": name, "params": args}
                 else:
                     logger.warning("%s called unknown tool %r, ignoring", self.agent_id, name)
 
             if action is None:
-                logger.warning(
-                    "%s returned no valid tool action, using fallback",
-                    self.agent_id,
-                )
-                return self._fallback_turn("No valid tool action from model")
+                agent = self._world.get_agent(self.agent_id)
+                is_first_turn = not agent.get("memory")
+                if is_first_turn:
+                    logger.warning(
+                        "%s returned no tool call on first turn, falling back to scan",
+                        self.agent_id,
+                    )
+                    action = {"name": "scan", "params": {}}
+                else:
+                    raise RuntimeError(
+                        f"{self.agent_id} returned no valid tool action (thinking={thinking!r})"
+                    )
+
+            if thinking:
+                logger.info("Drone thinking: %s", thinking)
 
             return {"thinking": thinking, "action": action}
-        except (SDKError, ConnectionError, TimeoutError, RuntimeError) as exc:
+        except (SDKError, ConnectionError, TimeoutError) as exc:
             logger.exception("Drone LLM turn failed for %s, using fallback", self.agent_id)
             return self._fallback_turn(f"LLM unavailable ({type(exc).__name__})")
 
@@ -654,23 +728,24 @@ class DroneAgent:
 class MockDroneAgent:
     """Mock drone that systematically scans the map — no LLM calls."""
 
-    def __init__(self, agent_id="drone-mistral"):
+    def __init__(self, agent_id="drone-mistral", world: World | None = None):
         self.agent_id = agent_id
+        self._world = world or default_world
 
     def run_turn(self):
-        agent = WORLD["agents"][self.agent_id]
+        agent = self._world.get_agent(self.agent_id)
         x, y = agent["position"]
 
         context = (
             f"Mock drone at ({x},{y}), battery={agent['battery']:.0%}, "
-            f"scans={len(WORLD.get('drone_scans', []))}"
+            f"scans={len(self._world.get_drone_scans())}"
         )
-        agent["last_context"] = context
+        self._world.set_agent_last_context(self.agent_id, context)
 
         # Check for recall command — override everything, head to station
         for cmd in agent.get("pending_commands", []):
             if cmd["name"] == "recall":
-                station = WORLD["agents"].get("station")
+                station = self._world.get_agents().get("station")
                 sp = station["position"] if station else [0, 0]
                 dx, dy = sp[0] - x, sp[1] - y
                 if dx == 0 and dy == 0:
@@ -696,7 +771,7 @@ class MockDroneAgent:
                 }
 
         # Battery safety — mock agent's own reasoning (not engine logic)
-        station = WORLD["agents"].get("station")
+        station = self._world.get_agents().get("station")
         sp = station["position"] if station else [0, 0]
         dist = abs(x - sp[0]) + abs(y - sp[1])
         cost_to_return = dist * BATTERY_COST_MOVE_DRONE
@@ -723,7 +798,7 @@ class MockDroneAgent:
             }
 
         # Scan if current position not yet scanned
-        scanned_positions = {tuple(s["position"]) for s in WORLD.get("drone_scans", [])}
+        scanned_positions = {tuple(s["position"]) for s in self._world.get_drone_scans()}
         if (x, y) not in scanned_positions:
             thinking = f"I'm at ({x}, {y}). Scanning area for concentration readings."
             return {"thinking": thinking, "action": {"name": "scan", "params": {}}}
@@ -789,7 +864,7 @@ class RoverLoop(BaseAgent):
     _reasoner: MistralRoverReasoner
 
     async def tick(self, host) -> None:
-        mission_status = WORLD["mission"]["status"]
+        mission_status = self._world.get_mission()["status"]
 
         # Inject pending commands from inbox into WORLD for reasoner to read
         pending = host.drain_inbox(self.agent_id)
@@ -798,14 +873,11 @@ class RoverLoop(BaseAgent):
             pending = [
                 {"name": "recall", "payload": {"reason": "Mission aborted — return to station"}}
             ]
-        if pending:
-            WORLD["agents"][self.agent_id]["pending_commands"] = pending
-        else:
-            WORLD["agents"][self.agent_id].pop("pending_commands", None)
+        self._world.set_pending_commands(self.agent_id, pending if pending else None)
 
         # If aborted and already at station, stop this agent's loop
-        rover = WORLD["agents"].get(self.agent_id)
-        station_agent = WORLD["agents"].get("station")
+        rover = self._world.get_agents().get(self.agent_id)
+        station_agent = self._world.get_agents().get("station")
         if (
             mission_status == "aborted"
             and rover
@@ -815,35 +887,16 @@ class RoverLoop(BaseAgent):
             logger.info("Agent %s at station — abort complete", self.agent_id)
             return
 
-        # RAG: retrieve relevant knowledge + memory before reasoning
-        if settings.rag_enabled:
-            try:
-                await retrieve_context(self.agent_id)
-            except Exception:
-                logger.warning("RAG retrieval failed for %s, continuing without", self.agent_id)
-
         turn = await asyncio.to_thread(self._reasoner.run_turn)
         next_tick()
         messages = []
 
         if turn["thinking"]:
-            payload = {"text": turn["thinking"]}
-            if settings.rag_enabled:
-                rag_ctx = WORLD["agents"][self.agent_id].get("rag_context", {})
-                if rag_ctx.get("knowledge_chunks") or rag_ctx.get("memory_entries"):
-                    payload["rag_context"] = {
-                        "knowledge_used": [
-                            c["content"][:100] for c in rag_ctx.get("knowledge_chunks", [])
-                        ],
-                        "memories_used": [
-                            m["content"][:100] for m in rag_ctx.get("memory_entries", [])
-                        ],
-                    }
             msg = make_message(
                 source=self.agent_id,
                 type="event",
                 name="thinking",
-                payload=payload,
+                payload={"text": turn["thinking"]},
             )
             messages.append(msg)
 
@@ -872,6 +925,25 @@ class RoverLoop(BaseAgent):
                     )
                     messages.append(check_msg)
 
+                # Save notify to station memory and emit station thinking log
+                if turn["action"]["name"] == "notify" and result.get("message"):
+                    pos = result["position"]
+                    station_state = self._world.get_agents().get("station")
+                    if station_state:
+                        mem = station_state.setdefault("memory", [])
+                        mem.append(
+                            f"Radio from {self.agent_id} at ({pos[0]},{pos[1]}): {result['message']}"
+                        )
+                    station_log = make_message(
+                        source="station",
+                        type="event",
+                        name="thinking",
+                        payload={
+                            "text": f"Radio from {self.agent_id} at ({pos[0]},{pos[1]}): {result['message']}"
+                        },
+                    )
+                    messages.append(station_log)
+
                 # Don't check mission success/failure during abort
                 if mission_status != "aborted":
                     mission_event = result.get("mission")
@@ -884,13 +956,28 @@ class RoverLoop(BaseAgent):
                         )
                         messages.append(mission_msg)
 
+        # LLM-owned task: update agent tasks from LLM output
+        llm_task = turn.get("task")
+        if llm_task is not None:
+            agent_state = self._world.get_agent(self.agent_id)
+            old_task = agent_state.get("tasks", [None])[0]
+            if llm_task != old_task:
+                agent_state["tasks"] = [llm_task]
+                task_msg = make_message(
+                    source=self.agent_id,
+                    type="event",
+                    name="task_update",
+                    payload={"task": llm_task},
+                )
+                messages.append(task_msg)
+
         for msg in messages:
             await host.broadcast(msg.to_dict())
 
         await broadcaster.send(make_message("world", "event", "state", get_snapshot()).to_dict())
 
         # Auto-charge rover when it arrives at station
-        rover = WORLD["agents"].get(self.agent_id)
+        rover = self._world.get_agents().get(self.agent_id)
         if (
             rover
             and station_agent
@@ -902,7 +989,7 @@ class RoverLoop(BaseAgent):
                 charge_msg = make_message(
                     source="station",
                     type="action",
-                    name="charge_rover",
+                    name="charge_agent",
                     payload=charge_result,
                 )
                 await host.broadcast(charge_msg.to_dict())
@@ -911,9 +998,12 @@ class RoverLoop(BaseAgent):
 class RoverMistralLoop(RoverLoop):
     """Rover loop wired to MistralRoverReasoner."""
 
-    def __init__(self, interval: float = 3.0):
-        super().__init__(agent_id="rover-mistral", interval=interval)
-        self._reasoner = MistralRoverReasoner(agent_id=self.agent_id)
+    def __init__(
+        self, agent_id: str = "rover-mistral", interval: float = 3.0, world: World | None = None
+    ):
+        super().__init__(agent_id=agent_id, interval=interval, world=world)
+        self._reasoner = MistralRoverReasoner(agent_id=self.agent_id, world=self._world)
+        set_agent_model(self.agent_id, self._reasoner.model)
 
 
 class DroneLoop(BaseAgent):
@@ -922,9 +1012,9 @@ class DroneLoop(BaseAgent):
     _reasoner: DroneAgent | MockDroneAgent
 
     async def tick(self, host) -> None:
-        mission_status = WORLD["mission"]["status"]
-        drone = WORLD["agents"].get(self.agent_id)
-        station_agent = WORLD["agents"].get("station")
+        mission_status = self._world.get_mission()["status"]
+        drone = self._world.get_agents().get(self.agent_id)
+        station_agent = self._world.get_agents().get("station")
 
         # If aborted and at station, stop this agent
         if (
@@ -938,39 +1028,21 @@ class DroneLoop(BaseAgent):
 
         # During abort, force recall so drone heads to station
         if mission_status == "aborted":
-            WORLD["agents"][self.agent_id]["pending_commands"] = [
-                {"name": "recall", "payload": {"reason": "Mission aborted — return to station"}}
-            ]
-
-        # RAG: retrieve relevant knowledge + memory before reasoning
-        if settings.rag_enabled:
-            try:
-                await retrieve_context(self.agent_id)
-            except Exception:
-                logger.warning("RAG retrieval failed for %s, continuing without", self.agent_id)
+            self._world.set_pending_commands(
+                self.agent_id,
+                [{"name": "recall", "payload": {"reason": "Mission aborted — return to station"}}],
+            )
 
         turn = await asyncio.to_thread(self._reasoner.run_turn)
         next_tick()
         messages = []
 
         if turn["thinking"]:
-            payload = {"text": turn["thinking"]}
-            if settings.rag_enabled:
-                rag_ctx = WORLD["agents"][self.agent_id].get("rag_context", {})
-                if rag_ctx.get("knowledge_chunks") or rag_ctx.get("memory_entries"):
-                    payload["rag_context"] = {
-                        "knowledge_used": [
-                            c["content"][:100] for c in rag_ctx.get("knowledge_chunks", [])
-                        ],
-                        "memories_used": [
-                            m["content"][:100] for m in rag_ctx.get("memory_entries", [])
-                        ],
-                    }
             msg = make_message(
                 source=self.agent_id,
                 type="event",
                 name="thinking",
-                payload=payload,
+                payload={"text": turn["thinking"]},
             )
             messages.append(msg)
 
@@ -989,12 +1061,47 @@ class DroneLoop(BaseAgent):
                 )
                 messages.append(action_msg)
 
+                # Save notify to station memory and emit station thinking log
+                if turn["action"]["name"] == "notify" and result.get("message"):
+                    pos = result["position"]
+                    station_state = self._world.get_agents().get("station")
+                    if station_state:
+                        mem = station_state.setdefault("memory", [])
+                        mem.append(
+                            f"Radio from {self.agent_id} at ({pos[0]},{pos[1]}): {result['message']}"
+                        )
+                    station_log = make_message(
+                        source="station",
+                        type="event",
+                        name="thinking",
+                        payload={
+                            "text": f"Radio from {self.agent_id} at ({pos[0]},{pos[1]}): {result['message']}"
+                        },
+                    )
+                    messages.append(station_log)
+
+        # LLM-owned task: update agent tasks from LLM output
+        llm_task = turn.get("task")
+        if llm_task is not None:
+            agent_state = self._world.get_agent(self.agent_id)
+            old_task = agent_state.get("tasks", [None])[0]
+            if llm_task != old_task:
+                agent_state["tasks"] = [llm_task]
+                task_msg = make_message(
+                    source=self.agent_id,
+                    type="event",
+                    name="task_update",
+                    payload={"task": llm_task},
+                )
+                messages.append(task_msg)
+
         for msg in messages:
             await host.broadcast(msg.to_dict())
 
         await broadcaster.send(make_message("world", "event", "state", get_snapshot()).to_dict())
 
         # Auto-charge drone when at station
+        drone = self._world.get_agents().get(self.agent_id)
         if (
             drone
             and station_agent
@@ -1006,7 +1113,7 @@ class DroneLoop(BaseAgent):
                 charge_msg = make_message(
                     source="station",
                     type="action",
-                    name="charge_rover",
+                    name="charge_agent",
                     payload=charge_result,
                 )
                 await host.broadcast(charge_msg.to_dict())
@@ -1015,6 +1122,7 @@ class DroneLoop(BaseAgent):
 class DroneMistralLoop(DroneLoop):
     """Drone loop wired to DroneAgent (Mistral)."""
 
-    def __init__(self, interval: float = 2.0):
-        super().__init__(agent_id="drone-mistral", interval=interval)
-        self._reasoner = DroneAgent(agent_id=self.agent_id)
+    def __init__(self, interval: float = 2.0, world: World | None = None):
+        super().__init__(agent_id="drone-mistral", interval=interval, world=world)
+        self._reasoner = DroneAgent(agent_id=self.agent_id, world=self._world)
+        set_agent_model(self.agent_id, self._reasoner.model)

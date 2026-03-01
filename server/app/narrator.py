@@ -29,20 +29,21 @@ INTERESTING_EVENTS = {
     "check": 2,  # stone found at position
     # Agent actions
     "move": 1,  # movement (only narrate occasionally)
-    "dig": 2,  # digging a stone
-    "pickup": 2,  # picking up a stone
+    "dig": 2,  # digging and collecting a stone
     "analyze": 2,  # analyzing unknown stone
-    "analyze_ground": 1,  # ground concentration reading
     # Station events
     "assign_mission": 3,  # mission assigned to rover
     "alert": 3,  # station broadcast alert
-    "charge_rover": 2,  # rover being charged
+    "charge_agent": 2,  # rover being charged
     # Agent internal
     "thinking": 1,  # agent reasoning (narrate sparingly)
     # Mission-level
     "mission_success": 3,  # mission completed!
     "mission_failed": 3,  # mission failed
     "mission_aborted": 3,  # mission manually aborted
+    # Commander voice
+    "voice_command": 3,  # commander spoke from cockpit — always narrate!
+    "voice_transcription": 3,  # transcription of commander audio
 }
 
 # Only narrate thinking events if they contain these keywords
@@ -86,6 +87,7 @@ def _is_interesting(event: dict) -> int:
 # ── Narration text generation (Mistral) ─────────────────────────────────────
 
 NARRATOR_SYSTEM_PROMPT = """\
+
 You are writing a DIALOGUE between two Mars Mission narrators who are \
 commentating on a live rover exploration mission together. They are a duo — \
 like a podcast team covering a space mission in real time.
@@ -101,6 +103,17 @@ excited about every rock and reading. She cracks jokes, geeks out over \
 geology, and adds the scientific color. When discoveries happen she can \
 barely contain her excitement. Think a fun science podcaster who also \
 happens to have a PhD.
+
+THE COMMANDER:
+Sometimes the human Commander speaks from mission control via voice. When \
+the Commander issues orders or makes comments, Rex and Nova should REACT \
+with energy — acknowledge the order, comment on it, joke about it, or \
+speculate what it means for the mission. The Commander is the boss, so \
+treat their words with a mix of respect and playful banter. Example:
+COMMANDER REX: [gasps] Did you hear that? The Commander just ordered a \
+full recall. Must be serious.
+DR. NOVA: Serious? Rex, when the boss says jump, we ask how high. Let's \
+get those rovers home!
 
 DIALOGUE FORMAT (STRICT):
 Each line MUST start with the speaker name followed by a colon:
@@ -149,10 +162,7 @@ def _build_narration_prompt(events: list[dict], world_summary: str) -> str:
         if name == "check":
             stone = payload.get("stone", {})
             if stone:
-                lines.append(
-                    f"- {source} found a {stone.get('type', 'unknown')} stone "
-                    f"(extracted={stone.get('extracted', False)})"
-                )
+                lines.append(f"- {source} found a {stone.get('type', 'unknown')} stone")
         elif name == "thinking":
             text = payload.get("text", "")
             lines.append(f'- {source} is thinking: "{text[:150]}"')
@@ -163,11 +173,12 @@ def _build_narration_prompt(events: list[dict], world_summary: str) -> str:
             )
         elif name == "alert":
             lines.append(f'- Station alert: "{payload.get("message", "?")}"')
-        elif name == "charge_rover":
+        elif name == "charge_agent":
             bef = payload.get("battery_before", 0)
             aft = payload.get("battery_after", 0)
-            lines.append(f"- Station charged a rover: battery {bef:.0%} → {aft:.0%}")
-        elif name in ("dig", "pickup", "analyze"):
+            agent_id = payload.get("agent_id", "agent")
+            lines.append(f"- Station charged {agent_id}: battery {bef:.0%} → {aft:.0%}")
+        elif name in ("dig", "analyze"):
             stone = payload.get("stone", {})
             pos = payload.get("position", [])
             lines.append(
@@ -175,19 +186,18 @@ def _build_narration_prompt(events: list[dict], world_summary: str) -> str:
                 f"{pos[1] if len(pos) > 1 else '?'})"
                 + (f" — stone type: {stone.get('type', '?')}" if stone else "")
             )
-        elif name == "analyze_ground":
-            conc = payload.get("concentration", 0)
-            lines.append(
-                f"- {source} analyzed ground concentration: {conc:.3f}"
-                + (" (hot spot!)" if conc > 0.5 else " (low reading)")
-            )
         elif name == "mission_success":
             lines.append("- MISSION SUCCESS! All target stones delivered to station!")
         elif name == "mission_failed":
             reason = payload.get("reason", "unknown")
             lines.append(f"- MISSION FAILED: {reason}")
         else:
-            lines.append(f"- {source}: {name} — {payload}")
+            # Voice command from the cockpit commander
+            if name in ("voice_command", "voice_transcription"):
+                text = payload.get("text", "")
+                lines.append(f'- ⚡ THE COMMANDER SPEAKS: "{text}" — React to this order!')
+            else:
+                lines.append(f"- {source}: {name} — {payload}")
 
     lines.append(f"\nCurrent world context:\n{world_summary}")
     lines.append(
@@ -430,10 +440,10 @@ class Narrator:
 
         try:
             # Build world summary for context
-            from .world import WORLD
+            from .world import world as _world
 
-            agents = WORLD.get("agents", {})
-            mission = WORLD.get("mission", {})
+            agents = _world.get_agents()
+            mission = _world.get_mission()
             summary_parts = [
                 f"Mission status: {mission.get('status', 'unknown')}",
                 f"Target: {mission.get('target_quantity', '?')} units of basalt "

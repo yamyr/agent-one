@@ -3,7 +3,7 @@ import unittest
 from unittest.mock import MagicMock
 
 from app.base_agent import BaseAgent
-from app.world import WORLD
+from app.world import world
 
 
 class _CountingAgent(BaseAgent):
@@ -18,7 +18,7 @@ class _CountingAgent(BaseAgent):
         self.tick_count += 1
         if self.tick_count >= self.max_ticks:
             # Force mission to "success" to stop the loop
-            WORLD["mission"]["status"] = "success"
+            world.get_mission()["status"] = "success"
 
 
 class _ErrorAgent(BaseAgent):
@@ -31,18 +31,18 @@ class _ErrorAgent(BaseAgent):
     async def tick(self, host):
         self.tick_count += 1
         if self.tick_count >= 2:
-            WORLD["mission"]["status"] = "success"
+            world.get_mission()["status"] = "success"
             return
         raise ValueError("boom")
 
 
 class TestBaseAgentRun(unittest.TestCase):
     def setUp(self):
-        self._original_status = WORLD["mission"]["status"]
-        WORLD["mission"]["status"] = "active"
+        self._original_status = world.get_mission()["status"]
+        world.get_mission()["status"] = "active"
 
     def tearDown(self):
-        WORLD["mission"]["status"] = self._original_status
+        world.get_mission()["status"] = self._original_status
 
     def test_run_stops_on_mission_success(self):
         agent = _CountingAgent(max_ticks=3)
@@ -52,7 +52,7 @@ class TestBaseAgentRun(unittest.TestCase):
         self.assertEqual(agent.tick_count, 3)
 
     def test_run_stops_on_mission_failed(self):
-        WORLD["mission"]["status"] = "failed"
+        world.get_mission()["status"] = "failed"
         agent = _CountingAgent(max_ticks=10)
         host = MagicMock()
         host.paused = False
@@ -91,7 +91,7 @@ class TestBaseAgentRun(unittest.TestCase):
 
     def test_run_continues_on_mission_aborted(self):
         """Aborted is NOT terminal — agents keep running to return to station."""
-        WORLD["mission"]["status"] = "aborted"
+        world.get_mission()["status"] = "aborted"
         agent = _CountingAgent(max_ticks=3)
         host = MagicMock()
         host.paused = False

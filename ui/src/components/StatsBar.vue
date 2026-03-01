@@ -51,39 +51,48 @@ const targetQty = computed(() => {
 </script>
 
 <template>
-  <div
-    v-if="worldState"
-    class="stats-bar"
-  >
-    <span class="stat">
-      <span class="stat-label">Tick</span>
-      <span class="stat-value">#{{ tick }}</span>
-    </span>
-    <span class="stat-sep" />
-    <span class="stat">
-      <span class="stat-label">Revealed</span>
-      <span class="stat-value">{{ tilesRevealed }} tiles</span>
-    </span>
-    <span class="stat-sep" />
-    <span class="stat">
-      <span class="stat-label">Agents</span>
-      <span class="stat-value">{{ mobileCount }}</span>
-    </span>
-    <span class="stat-sep" />
-    <span class="stat">
-      <span class="stat-label">Veins</span>
-      <span class="stat-value">{{ totalStones }}</span>
-    </span>
-    <span class="stat-sep" />
-    <span class="stat">
-      <span class="stat-label">Collected</span>
-      <span class="stat-value collected">{{ collectedQty }}<template v-if="targetQty"> / {{ targetQty }}</template></span>
-    </span>
-    <span class="stat-sep" />
-    <span class="stat">
-      <span class="stat-label">Events</span>
-      <span class="stat-value">{{ eventCount }}</span>
-    </span>
+  <div class="stats-bar">
+    <template v-if="worldState">
+      <span class="stat">
+        <span class="stat-label">Tick</span>
+        <span class="stat-value">#{{ tick }}</span>
+      </span>
+      <span class="stat-sep" />
+      <span class="stat">
+        <span class="stat-label">Revealed</span>
+        <span class="stat-value">{{ tilesRevealed }} tiles</span>
+      </span>
+      <span class="stat-sep" />
+      <span class="stat">
+        <span class="stat-label">Agents</span>
+        <span class="stat-value">{{ mobileCount }}</span>
+      </span>
+      <span class="stat-sep" />
+      <span class="stat">
+        <span class="stat-label">Veins</span>
+        <span class="stat-value">{{ totalStones }}</span>
+      </span>
+      <span class="stat-sep" />
+      <span class="stat">
+        <span class="stat-label">Collected</span>
+        <span class="stat-value collected">{{ collectedQty }}<template v-if="targetQty"> / {{ targetQty }}</template></span>
+      </span>
+      <span class="stat-sep" />
+      <span class="stat">
+        <span class="stat-label">Events</span>
+        <span class="stat-value">{{ eventCount }}</span>
+      </span>
+    </template>
+    <div
+      v-else
+      class="skeleton-stats"
+    >
+      <div
+        v-for="i in 6"
+        :key="i"
+        class="skeleton-item"
+      />
+    </div>
   </div>
 </template>
 
@@ -138,5 +147,25 @@ const targetQty = computed(() => {
   .stat-sep {
     display: none;
   }
+}
+
+.skeleton-stats {
+  display: flex;
+  gap: 1rem;
+  width: 100%;
+}
+
+.skeleton-item {
+  height: 10px;
+  background: var(--bg-elevated);
+  border-radius: var(--radius-sm);
+  flex: 1;
+  animation: pulse 1.5s infinite ease-in-out;
+}
+
+@keyframes pulse {
+  0% { opacity: 0.3; }
+  50% { opacity: 0.6; }
+  100% { opacity: 0.3; }
 }
 </style>

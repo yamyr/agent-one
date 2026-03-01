@@ -2,7 +2,7 @@ import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import FastAPI, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from rich.logging import RichHandler
@@ -11,11 +11,11 @@ from .agent import RoverMistralLoop, DroneMistralLoop
 from .broadcast import broadcaster
 from .config import settings
 from .db import init_db, close_db
-from .rag import init_rag
 from .host import Host
 from .narrator import Narrator
 from .views import router as views_router
-from .world import reset_world
+from .voice import VoiceCommander, VoiceCommandProcessor, SUPPORTED_AUDIO_TYPES
+from .world import reset_world, set_agent_model
 
 logging.basicConfig(
     level=logging.INFO,
@@ -28,15 +28,24 @@ logger = logging.getLogger(__name__)
 
 narrator = Narrator(broadcast_fn=broadcaster.send)
 host = Host(narrator=narrator)
+voice_commander = VoiceCommander(host=host)
+voice_processor = VoiceCommandProcessor()
 
 AGENT_MAP = {
-    "rover-mistral": lambda: RoverMistralLoop(interval=settings.llm_turn_interval_seconds),
+    "rover-mistral": lambda: RoverMistralLoop(
+        agent_id="rover-mistral", interval=settings.llm_turn_interval_seconds
+    ),
+    "rover-2": lambda: RoverMistralLoop(
+        agent_id="rover-2", interval=settings.llm_turn_interval_seconds
+    ),
     "drone-mistral": lambda: DroneMistralLoop(interval=2.0),
 }
 
 
 def _register_agents():
     """Construct and register agents from settings.active_agents."""
+    # Station model — set here so it survives reset_world()
+    set_agent_model("station", host._station.model)
     active = [a.strip() for a in settings.active_agents.split(",") if a.strip()]
     for name in active:
         factory = AGENT_MAP.get(name)
@@ -49,8 +58,6 @@ def _register_agents():
 @asynccontextmanager
 async def lifespan(app):
     init_db()
-    if settings.rag_enabled:
-        await init_rag()
     _register_agents()
     await host.start()
     yield
@@ -126,6 +133,83 @@ async def abort_mission(reason: str = "Manual abort from mission control"):
 @app.post("/rover/{rover_id}/recall")
 async def recall_rover(rover_id: str):
     return await host.recall_rover(rover_id)
+
+
+# ── Voice command endpoints ──────────────────────────────────────────────────
+
+
+@app.post("/voice/command")
+async def voice_command_cockpit(audio: UploadFile):
+    """Accept audio upload, transcribe via Voxtral, route command to agents."""
+    audio_bytes = await audio.read()
+    return await voice_commander.handle_voice_command(audio_bytes, audio.filename or "audio.webm")
+
+
+@app.post("/api/voice-command")
+async def voice_command_structured(audio: UploadFile):
+    """Accept audio upload, transcribe via Voxtral, parse command, and route."""
+    from .protocol import make_message
+
+    # Validate content type
+    content_type = audio.content_type or ""
+    if content_type and content_type not in SUPPORTED_AUDIO_TYPES:
+        return {
+            "ok": False,
+            "error": f"Unsupported audio format: {content_type}. "
+            f"Supported: {', '.join(sorted(SUPPORTED_AUDIO_TYPES))}",
+        }
+
+    # Read audio bytes
+    audio_bytes = await audio.read()
+    if not audio_bytes:
+        return {"ok": False, "error": "Empty audio file"}
+
+    # Process: transcribe + parse command
+    try:
+        result = await voice_processor.process(
+            audio_bytes=audio_bytes,
+            filename=audio.filename or "audio.wav",
+        )
+    except RuntimeError as exc:
+        return {"ok": False, "error": str(exc)}
+    except Exception:
+        logger.exception("Voice command processing failed")
+        return {"ok": False, "error": "Voice command processing failed"}
+
+    # Broadcast the voice command event to all WebSocket clients
+    msg = make_message(
+        source="human",
+        type="command",
+        name="voice_command",
+        payload={
+            "transcript": result["transcript"],
+            "command": result["command"],
+            "params": result["params"],
+            "confidence": result["confidence"],
+        },
+    )
+    await broadcaster.send(msg.to_dict())
+
+    # Route recognized commands through the Host
+    command = result["command"]
+    params = result["params"]
+
+    if command == "recall_rover":
+        rover_id = params.get("rover_id", "rover-mistral")
+        action_result = await host.recall_rover(rover_id)
+        result["action_result"] = action_result
+    elif command == "abort_mission":
+        reason = params.get("reason", "Voice command abort")
+        action_result = await host.abort_mission(reason)
+        result["action_result"] = action_result
+    elif command == "pause_simulation":
+        host.paused = True
+        result["action_result"] = {"ok": True, "paused": True}
+    elif command == "resume_simulation":
+        host.paused = False
+        result["action_result"] = {"ok": True, "paused": False}
+
+    return {"ok": True, **result}
 
 
 # Serve Vue static files (must be after all API routes)

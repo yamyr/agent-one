@@ -1,6 +1,7 @@
 <script setup>
 import { computed, ref, watch, onMounted, onUnmounted } from 'vue'
-import { TILE_SIZE, MAP_W, MAP_H, VIEWPORT_W, VIEWPORT_H, VEIN_COLORS, VEIN_SIZES, SOLAR_PANEL_COLOR, SOLAR_PANEL_DEPLETED_COLOR, agentColor, revealRadius } from '../constants.js'
+import { TILE_SIZE, VIEWPORT_W, VIEWPORT_H, VEIN_COLORS, VEIN_SIZES, SOLAR_PANEL_COLOR, SOLAR_PANEL_DEPLETED_COLOR, agentColor, revealRadius } from '../constants.js'
+import { usePreferences } from '../composables/usePreferences.js'
 
 const props = defineProps({
   worldState: {
@@ -26,19 +27,29 @@ const camY = ref(-Math.floor(VIEWPORT_H / 2))
 // Smooth camera: targets that camX/camY interpolate toward
 const targetCamX = ref(camX.value)
 const targetCamY = ref(camY.value)
-const LERP_SPEED = 0.15 // fraction per frame (higher = snappier)
 let rafId = null
-const zoom = ref(1)
+const { prefs } = usePreferences()
 const ZOOM_MIN = 0.7
 const ZOOM_MAX = 2.2
 const ZOOM_STEP = 0.1
 
+// Dynamic viewport dimensions: more tiles when zoomed out, fewer when zoomed in
+const visibleW = computed(() => Math.ceil(VIEWPORT_W / prefs.zoom))
+const visibleH = computed(() => Math.ceil(VIEWPORT_H / prefs.zoom))
+const dynamicMapW = computed(() => visibleW.value * TILE_SIZE)
+const dynamicMapH = computed(() => visibleH.value * TILE_SIZE)
+
 function cameraLoop() {
   const dx = targetCamX.value - camX.value
   const dy = targetCamY.value - camY.value
-  if (Math.abs(dx) > 0.01 || Math.abs(dy) > 0.01) {
-    camX.value += dx * LERP_SPEED
-    camY.value += dy * LERP_SPEED
+  const dist = Math.sqrt(dx * dx + dy * dy)
+
+  if (dist > 0.01) {
+    // Adaptive speed: slower start/end (0.1), faster when far (up to 0.3)
+    const speed = Math.min(0.3, 0.1 + dist * 0.02)
+    camX.value += dx * speed
+    camY.value += dy * speed
+
     // Snap when very close
     if (Math.abs(dx) < 0.05) camX.value = targetCamX.value
     if (Math.abs(dy) < 0.05) camY.value = targetCamY.value
@@ -58,17 +69,19 @@ watch([() => props.worldState, () => props.followAgent], () => {
   if (!props.worldState || !props.followAgent) return
   const a = props.worldState.agents?.[props.followAgent]
   if (a) {
-    targetCamX.value = a.position[0] - Math.floor(VIEWPORT_W / 2)
-    targetCamY.value = a.position[1] - Math.floor(VIEWPORT_H / 2)
+    targetCamX.value = a.position[0] - Math.floor(visibleW.value / 2)
+    targetCamY.value = a.position[1] - Math.floor(visibleH.value / 2)
   }
 }, { deep: true })
 
 const tiles = computed(() => {
   const arr = []
-  for (let dy = 0; dy < VIEWPORT_H; dy++) {
-    for (let dx = 0; dx < VIEWPORT_W; dx++) {
+  const vw = visibleW.value
+  const vh = visibleH.value
+  for (let dy = 0; dy < vh; dy++) {
+    for (let dx = 0; dx < vw; dx++) {
       const x = camX.value + dx
-      const y = camY.value + VIEWPORT_H - 1 - dy  // flip Y for SVG
+      const y = camY.value + vh - 1 - dy  // flip Y for SVG
       arr.push({ x, y, sx: dx * TILE_SIZE, sy: dy * TILE_SIZE, key: `${x}-${y}` })
     }
   }
@@ -149,7 +162,7 @@ function tileFill(t) {
 
 function worldToScreen(wx, wy) {
   const sx = (wx - camX.value) * TILE_SIZE + TILE_SIZE / 2
-  const sy = (VIEWPORT_H - 1 - (wy - camY.value)) * TILE_SIZE + TILE_SIZE / 2
+  const sy = (visibleH.value - 1 - (wy - camY.value)) * TILE_SIZE + TILE_SIZE / 2
   return { sx, sy }
 }
 
@@ -166,14 +179,14 @@ function isAgentVisible(id) {
   const a = props.worldState.agents[id]
   if (!a) return false
   const [wx, wy] = a.position
-  return wx >= camX.value && wx < camX.value + VIEWPORT_W &&
-         wy >= camY.value && wy < camY.value + VIEWPORT_H
+  return wx >= camX.value && wx < camX.value + visibleW.value &&
+         wy >= camY.value && wy < camY.value + visibleH.value
 }
 
 function isStoneVisible(s) {
   const [wx, wy] = s.position
-  return wx >= camX.value && wx < camX.value + VIEWPORT_W &&
-         wy >= camY.value && wy < camY.value + VIEWPORT_H
+  return wx >= camX.value && wx < camX.value + visibleW.value &&
+         wy >= camY.value && wy < camY.value + visibleH.value
 }
 
 function veinGrade(s) {
@@ -191,12 +204,12 @@ function stoneScreenX(s) {
 
 function stoneScreenY(s) {
   const half = veinSize(s) / 2
-  return (VIEWPORT_H - 1 - (s.position[1] - camY.value)) * TILE_SIZE + TILE_SIZE / 2 - half
+  return (visibleH.value - 1 - (s.position[1] - camY.value)) * TILE_SIZE + TILE_SIZE / 2 - half
 }
 
 function stoneRotateCenter(s) {
   const cx = (s.position[0] - camX.value) * TILE_SIZE + TILE_SIZE / 2
-  const cy = (VIEWPORT_H - 1 - (s.position[1] - camY.value)) * TILE_SIZE + TILE_SIZE / 2
+  const cy = (visibleH.value - 1 - (s.position[1] - camY.value)) * TILE_SIZE + TILE_SIZE / 2
   return `rotate(45, ${cx}, ${cy})`
 }
 
@@ -207,8 +220,8 @@ function veinHasGlow(s) {
 
 function isPanelVisible(p) {
   const [wx, wy] = p.position
-  return wx >= camX.value && wx < camX.value + VIEWPORT_W &&
-         wy >= camY.value && wy < camY.value + VIEWPORT_H
+  return wx >= camX.value && wx < camX.value + visibleW.value &&
+         wy >= camY.value && wy < camY.value + visibleH.value
 }
 
 function panelScreenX(p) {
@@ -216,7 +229,7 @@ function panelScreenX(p) {
 }
 
 function panelScreenY(p) {
-  return (VIEWPORT_H - 1 - (p.position[1] - camY.value)) * TILE_SIZE + 2
+  return (visibleH.value - 1 - (p.position[1] - camY.value)) * TILE_SIZE + 2
 }
 
 // Drag-to-pan
@@ -231,8 +244,8 @@ function onMouseMove(e) {
   const dy = e.clientY - dragStart.value.y
   const svg = e.currentTarget
   const rect = svg.getBoundingClientRect()
-  const tilePixelW = rect.width / VIEWPORT_W
-  const tilePixelH = rect.height / VIEWPORT_H
+  const tilePixelW = rect.width / visibleW.value
+  const tilePixelH = rect.height / visibleH.value
   if (Math.abs(dx) >= tilePixelW) {
     const tileDx = Math.round(dx / tilePixelW)
     // Drag is instant — move both target and camera directly
@@ -259,15 +272,15 @@ function clamp(v, min, max) {
 }
 
 function zoomIn() {
-  zoom.value = clamp(Number((zoom.value + ZOOM_STEP).toFixed(2)), ZOOM_MIN, ZOOM_MAX)
+  prefs.zoom = clamp(Number((prefs.zoom + ZOOM_STEP).toFixed(2)), ZOOM_MIN, ZOOM_MAX)
 }
 
 function zoomOut() {
-  zoom.value = clamp(Number((zoom.value - ZOOM_STEP).toFixed(2)), ZOOM_MIN, ZOOM_MAX)
+  prefs.zoom = clamp(Number((prefs.zoom - ZOOM_STEP).toFixed(2)), ZOOM_MIN, ZOOM_MAX)
 }
 
 function resetZoom() {
-  zoom.value = 1
+  prefs.zoom = 1
 }
 
 function onWheel(e) {
@@ -276,12 +289,22 @@ function onWheel(e) {
   else zoomOut()
 }
 
+// Re-center camera when zoom changes so the viewport expands/contracts around center
+watch(() => prefs.zoom, (newZ, oldZ) => {
+  const oldW = Math.ceil(VIEWPORT_W / oldZ)
+  const oldH = Math.ceil(VIEWPORT_H / oldZ)
+  const newW = Math.ceil(VIEWPORT_W / newZ)
+  const newH = Math.ceil(VIEWPORT_H / newZ)
+  const dx = Math.floor((oldW - newW) / 2)
+  const dy = Math.floor((oldH - newH) / 2)
+  targetCamX.value += dx
+  targetCamY.value += dy
+  camX.value = targetCamX.value
+  camY.value = targetCamY.value
+})
+
 const mapViewBox = computed(() => {
-  const vbW = MAP_W / zoom.value
-  const vbH = MAP_H / zoom.value
-  const x = (MAP_W - vbW) / 2
-  const y = (MAP_H - vbH) / 2
-  return `${x} ${y} ${vbW} ${vbH}`
+  return `0 0 ${dynamicMapW.value} ${dynamicMapH.value}`
 })
 
 // Agent trail data: last N visited positions per mobile agent
@@ -384,8 +407,15 @@ function panCamera(dx, dy) {
   targetCamY.value += dy
 }
 
-// Expose camera for minimap & keyboard shortcuts
-defineExpose({ camX, camY, panCamera })
+// Expose camera and dynamic viewport for minimap & keyboard shortcuts
+function navigateTo(x, y) {
+  targetCamX.value = x
+  targetCamY.value = y
+  camX.value = x
+  camY.value = y
+}
+
+defineExpose({ camX, camY, visibleW, visibleH, panCamera, navigateTo })
 </script>
 
 <template>
@@ -411,7 +441,7 @@ defineExpose({ camX, camY, panCamera })
       >
         −
       </button>
-      <span class="zoom-label">{{ Math.round(zoom * 100) }}%</span>
+      <span class="zoom-label">{{ Math.round(prefs.zoom * 100) }}%</span>
       <button
         class="zoom-btn"
         title="Zoom in"
@@ -497,8 +527,8 @@ defineExpose({ camX, camY, panCamera })
           <rect
             x="0"
             y="0"
-            :width="MAP_W"
-            :height="MAP_H"
+            :width="dynamicMapW"
+            :height="dynamicMapH"
             fill="white"
           />
           <circle
@@ -571,8 +601,8 @@ defineExpose({ camX, camY, panCamera })
       <rect
         x="0"
         y="0"
-        :width="MAP_W"
-        :height="MAP_H"
+        :width="dynamicMapW"
+        :height="dynamicMapH"
         fill="var(--bg-primary)"
         opacity="0.6"
         mask="url(#fog-mask)"
@@ -798,9 +828,18 @@ defineExpose({ camX, camY, panCamera })
     </svg>
     <div
       v-else
-      class="empty"
+      class="map-skeleton"
     >
-      Waiting for world state...
+      <div class="skeleton-grid">
+        <div
+          v-for="i in 100"
+          :key="i"
+          class="skeleton-tile"
+        />
+      </div>
+      <div class="skeleton-message">
+        Connecting to satellite feed...
+      </div>
     </div>
   </section>
 </template>
@@ -892,5 +931,52 @@ defineExpose({ camX, camY, panCamera })
 }
 .map-svg:active {
   cursor: grabbing;
+}
+
+.map-skeleton {
+  width: 100%;
+  aspect-ratio: 1;
+  background: var(--bg-primary);
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.skeleton-grid {
+  display: grid;
+  grid-template-columns: repeat(10, 1fr);
+  grid-template-rows: repeat(10, 1fr);
+  width: 100%;
+  height: 100%;
+  opacity: 0.1;
+}
+
+.skeleton-tile {
+  border: 1px solid var(--accent-blue);
+  animation: pulse-grid 2s infinite;
+}
+
+.skeleton-message {
+  position: absolute;
+  color: var(--accent-blue);
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  background: rgba(10, 10, 15, 0.8);
+  padding: 0.5rem 1rem;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--accent-blue);
+  animation: pulse-text 1.5s infinite alternate;
+}
+
+@keyframes pulse-grid {
+  0%, 100% { opacity: 0.1; }
+  50% { opacity: 0.3; }
+}
+
+@keyframes pulse-text {
+  from { opacity: 0.7; }
+  to { opacity: 1; }
 }
 </style>
