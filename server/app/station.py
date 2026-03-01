@@ -212,7 +212,7 @@ class StationAgent:
         except Exception as e:
             logger.exception("Station LLM API failed: %s", e)
             return {"thinking": None, "actions": [], "context_text": ctx_text}
-            
+
         from .training import collector
 
         collector.record_agent_interaction(

@@ -614,12 +614,16 @@ class TestNarratorHuggingFaceStreaming(unittest.IsolatedAsyncioTestCase):
         event1.data.choices = [MagicMock()]
         event1.data.choices[0].delta.content = "Hello"
 
-        mock_mistral.chat.stream.return_value = [event1]
+        # stream_async returns an awaitable that yields an async iterator
+        async def fake_stream():
+            yield event1
+
+        mock_mistral.chat.stream_async = AsyncMock(return_value=fake_stream())
 
         result = await narrator._generate_text_streaming("Test prompt")
 
         self.assertEqual(result, "Hello")
-        mock_mistral.chat.stream.assert_called_once()
+        mock_mistral.chat.stream_async.assert_called_once()
 
 
 # ── Main AGENT_MAP ──────────────────────────────────────────────────────────

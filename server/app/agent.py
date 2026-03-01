@@ -1432,6 +1432,8 @@ class DroneHuggingFaceLoop(DroneLoop):
         super().__init__(agent_id="drone-huggingface", interval=interval, world=world)
         self._reasoner = HuggingFaceDroneAgent(agent_id=self.agent_id, world=self._world)
         set_agent_model(self.agent_id, self._reasoner.model)
+
+
 # ── Station reactive loop ────────────────────────────────────────────────────────
 
 

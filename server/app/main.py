@@ -48,7 +48,9 @@ AGENT_MAP = {
     "rover-huggingface": lambda: RoverHuggingFaceLoop(
         agent_id="rover-huggingface", interval=settings.llm_turn_interval_seconds
     ),
-    "drone-huggingface": lambda: DroneHuggingFaceLoop(interval=settings.drone_turn_interval_seconds),
+    "drone-huggingface": lambda: DroneHuggingFaceLoop(
+        interval=settings.drone_turn_interval_seconds
+    ),
     "station-loop": lambda: StationLoop(interval=20.0),
 }
 
