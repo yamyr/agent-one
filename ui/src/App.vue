@@ -207,6 +207,7 @@ useKeyboard({
           :world-state="worldState"
           :agent-ids="agentIds"
           :follow-agent="followAgent"
+          :events="events"
           @select-agent="selectAgent"
           @unfollow="onUnfollow"
         />

@@ -80,8 +80,6 @@ function eventText(e) {
       tabindex="0"
       :aria-label="`View details for ${agentId}`"
       style="cursor:pointer"
-      tabindex="0"
-      role="button"
       @click="emit('select-agent', agentId)"
       @keydown.enter="emit('select-agent', agentId)"
       @keydown.space.prevent="emit('select-agent', agentId)"
