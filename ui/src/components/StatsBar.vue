@@ -1,5 +1,5 @@
 <script setup>
-import { computed } from 'vue'
+import { computed, ref, watch, onUnmounted } from 'vue'
 import { useRevealedSet } from '../composables/useRevealedSet.js'
 
 const props = defineProps({
@@ -14,6 +14,10 @@ const props = defineProps({
   eventCount: {
     type: Number,
     default: 0,
+  },
+  paused: {
+    type: Boolean,
+    default: false,
   },
 })
 
@@ -40,11 +44,70 @@ const targetQty = computed(() => {
   if (!props.worldState?.mission) return 0
   return props.worldState.mission.target_quantity || props.worldState.mission.target_count || 0
 })
+
+// ── Timer with smooth interpolation ──
+const displaySeconds = ref(0)
+let timerHandle = null
+let lastSyncTime = 0
+let lastSyncValue = 0
+
+watch(
+  () => props.worldState?.elapsed_seconds,
+  (serverVal) => {
+    if (serverVal != null) {
+      lastSyncTime = performance.now()
+      lastSyncValue = serverVal
+      displaySeconds.value = serverVal
+    }
+  },
+)
+
+function startTimer() {
+  if (timerHandle) return
+  timerHandle = setInterval(() => {
+    if (props.paused || !lastSyncTime) return
+    const elapsed = (performance.now() - lastSyncTime) / 1000
+    displaySeconds.value = lastSyncValue + elapsed
+  }, 200)
+}
+
+function stopTimer() {
+  if (timerHandle) {
+    clearInterval(timerHandle)
+    timerHandle = null
+  }
+}
+
+watch(() => props.paused, (isPaused) => {
+  if (isPaused) {
+    stopTimer()
+  } else {
+    lastSyncTime = performance.now()
+    lastSyncValue = displaySeconds.value
+    startTimer()
+  }
+})
+
+// Start timer on mount if not paused
+startTimer()
+onUnmounted(() => stopTimer())
+
+const timerDisplay = computed(() => {
+  const total = Math.floor(displaySeconds.value)
+  const mins = Math.floor(total / 60)
+  const secs = total % 60
+  return `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`
+})
 </script>
 
 <template>
   <div class="stats-bar">
     <template v-if="worldState">
+      <span class="stat">
+        <span class="stat-label">Time</span>
+        <span class="stat-value timer">{{ timerDisplay }}</span>
+      </span>
+      <span class="stat-sep" />
       <span class="stat">
         <span class="stat-label">Tick</span>
         <span class="stat-value">#{{ tick }}</span>
@@ -80,7 +143,7 @@ const targetQty = computed(() => {
       class="skeleton-stats"
     >
       <div
-        v-for="i in 6"
+        v-for="i in 7"
         :key="i"
         class="skeleton-item"
       />
@@ -121,6 +184,12 @@ const targetQty = computed(() => {
 
 .stat-value.collected {
   color: var(--accent-amber);
+}
+
+.stat-value.timer {
+  font-family: var(--font-mono, 'Courier New', monospace);
+  color: var(--accent-cyan, #00e5ff);
+  letter-spacing: 0.05em;
 }
 
 .stat-sep {
