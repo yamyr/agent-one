@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+* **voice:** add `/api/voice-command` endpoint — accepts audio uploads, transcribes via Mistral Voxtral, parses structured commands (recall_rover, abort_mission, pause/resume, etc.) via LLM, routes through Host, and broadcasts events via WebSocket
+* **voice:** new `VoiceCommandProcessor` class with lazy Mistral client, Mars domain context bias terms, and JSON command extraction
+* **voice:** add `voice_transcription_model` and `voice_command_model` settings to `config.py`
+* **deps:** add `python-multipart>=0.0.9` for `UploadFile` support
+* **tests:** 32 comprehensive tests for voice module (transcription, command parsing, pipeline, endpoint)
+
 ### Fixed
 
 * **ci:** apply ruff format to 7 unformatted files (agent.py, main.py, station.py, world.py, test_narrator.py, test_station.py, test_world.py) to fix server-lint CI failure

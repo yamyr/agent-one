@@ -9,6 +9,7 @@ dependencies = [
     "surrealdb>=1.0.7",
     "pydantic-settings>=2.0.0",
     "python-dotenv>=1.0.0",
+    "python-multipart>=0.0.9",
     "rich>=13.0.0",
     "mistralai>=1.0.0",
     "elevenlabs>=1.0.0",
