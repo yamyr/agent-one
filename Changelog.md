@@ -5,6 +5,7 @@
 
 ### Features
 
+* add landing page with i18n, Vue Router, and Three.js Mars globe ([#206](https://github.com/mhack-agent-one/agent-one/pull/206)) ([e174c49](https://github.com/mhack-agent-one/agent-one/commit/e174c49)) — 11 landing components, vue-i18n v11 (10 locales), lazy-loaded routes, useRevealOnScroll composable, scoped CSS tokens
 * add agent memory & learning system (Feature F) ([4b32a9d](https://github.com/mhack-agent-one/agent-one/commit/4b32a9d37512c00d98059f9eea22bb2b506a8ca7))
 * add agent reasoning transparency panel (Feature C) ([64f333b](https://github.com/mhack-agent-one/agent-one/commit/64f333b8439458f8ada0208c6a8b233041df8360))
 * add live inter-agent communication (Feature A) ([#150](https://github.com/mhack-agent-one/agent-one/issues/150)) ([cf0ba69](https://github.com/mhack-agent-one/agent-one/commit/cf0ba69dbad11743649b91e8c15dbb8ff25046bf))
@@ -71,6 +72,9 @@
 * WorldMap tileConcentration spatial hash — O(tiles+stones) ([bf64b8b](https://github.com/mhack-agent-one/agent-one/commit/bf64b8bc49c5c9500fc7c54c3262f061b6ab4d84))
 
 ## [Unreleased]
+
+### Fixed
+- **WebSocket reconnect (#72)**: Event log and simulation state are no longer reset on reconnect — only on initial page load. Simulation reset and event clearing now guarded by `isFirstConnect` flag in both `useWebSocket.js` and `App.vue`
 
 ### Added
 - **Agent Reasoning Transparency Panel (Feature C)**: Structured reasoning output from LLM agents with visual card display
