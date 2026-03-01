@@ -1000,6 +1000,8 @@ class TestMemory(unittest.TestCase):
     def test_record_memory_unknown_agent(self):
         # Should not raise
         record_memory("nonexistent", "noop")
+        # Verify no agent named "nonexistent" was added to world state
+        self.assertNotIn("nonexistent", world.state["agents"])
 
 
 class TestDirectionHint(unittest.TestCase):
