@@ -70,6 +70,11 @@ class TestToolLists(unittest.TestCase):
         self.assertIn("notify", names)
         self.assertNotIn("notify_base", names)
 
+    def test_ice_and_upgrade_tools_in_rover_tools(self):
+        names = self._tool_names(ROVER_TOOLS)
+        self.assertIn("gather_ice", names)
+        self.assertIn("upgrade_base", names)
+
 
 class TestTaskSeparatorParsing(unittest.TestCase):
     def test_no_separator(self):
@@ -144,6 +149,26 @@ class TestRoverContextDroneHotspot(unittest.TestCase):
         agent = MistralRoverReasoner()
         context = agent._build_context()
         self.assertNotIn("Drone Scan Hotspots", context)
+
+    def test_context_shows_ice_and_station_upgrade_status(self):
+        world.state["stones"] = [
+            {
+                "position": [0, 0],
+                "type": "ice",
+                "_true_type": "ice",
+                "grade": "n/a",
+                "quantity": 1,
+                "analyzed": True,
+            }
+        ]
+        world.state["station_upgrades"] = {"charge_bonus": 0.10, "upgrade_count": 2}
+        world.state["agents"]["rover-mistral"]["position"] = [0, 0]
+
+        agent = MistralRoverReasoner()
+        context = agent._build_context()
+
+        self.assertIn("ice deposit", context)
+        self.assertIn("Station upgrades: 2", context)
 
 
 class TestExecuteActionNoTaskUpdate(unittest.TestCase):

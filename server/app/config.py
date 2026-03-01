@@ -1,3 +1,4 @@
+import logging
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -16,8 +17,8 @@ class Settings(BaseSettings):
     surreal_url: str = "ws://localhost:4002/rpc"
     surreal_ns: str = "dev"
     surreal_db: str = "mars"
-    surreal_user: str = "root"
-    surreal_pass: str = "root"
+    surreal_user: str = "root"  # SECURITY: override via SURREAL_USER env var in production
+    surreal_pass: str = "root"  # SECURITY: override via SURREAL_PASS env var in production
 
     # CORS
     cors_origins: str = "http://localhost:4089,https://agent-one-production-f066.up.railway.app"
@@ -36,12 +37,13 @@ class Settings(BaseSettings):
     agent_turn_interval_seconds: float = Field(default=0.5, gt=0)
     llm_turn_interval_seconds: float = Field(default=4.0, gt=0)
     drone_turn_interval_seconds: float = Field(default=3.5, gt=0)
+    hauler_turn_interval_seconds: float = Field(default=5.0, gt=0)
 
     # World generation seed (empty = random)
     world_seed: str = ""
 
     # Active agents (comma-separated)
-    active_agents: str = "rover-mistral,rover-2,drone-mistral,station-loop,rover-large,rover-medium,rover-codestral,rover-ministral,rover-magistral"
+    active_agents: str = "rover-mistral,rover-2,drone-mistral,station-loop,hauler-mistral,rover-large,rover-medium,rover-codestral,rover-ministral,rover-magistral"
 
     # ElevenLabs narration
     elevenlabs_api_key: str = ""
@@ -67,3 +69,11 @@ class Settings(BaseSettings):
 
 
 settings = Settings()
+
+# Warn about default SurrealDB credentials in non-dev environments
+_cfg_logger = logging.getLogger(__name__)
+if settings.env != "dev" and settings.surreal_pass == "root":
+    _cfg_logger.warning(
+        "SECURITY: SurrealDB is using default credentials (root/root). "
+        "Set SURREAL_USER and SURREAL_PASS environment variables for production."
+    )
