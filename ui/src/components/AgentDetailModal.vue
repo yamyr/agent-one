@@ -65,7 +65,7 @@ function batteryPct() {
             Mission
           </div>
           <div class="modal-value">
-            {{ agent.mission.objective }}
+            {{ agent.mission?.objective ?? 'None' }}
           </div>
         </div>
         <div
@@ -100,7 +100,7 @@ function batteryPct() {
             Tiles visited
           </div>
           <div class="modal-value">
-            {{ agent.visited.length }}
+            {{ (agent.visited || []).length }}
           </div>
         </div>
         <div
