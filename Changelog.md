@@ -2,6 +2,26 @@
 
 ## [Unreleased]
 
+### Features
+
+* **world:** add environmental hazards — ice mountains (impassable terrain) and air geysers (cyclical eruptions) ([#106](https://github.com/mhack-agent-one/agent-one/pull/106))
+  - Mountains block agent movement; deterministic per-chunk generation (~0.8% per tile)
+  - Geysers cycle through idle → warning → erupting states; eruptions drain 10% battery from agents on the tile
+  - Origin area (|x|≤1, |y|≤1) kept clear of obstacles for safe agent spawning
+  - Fog-of-war filtering: obstacles only visible on revealed tiles
+  - `observe_rover()` includes nearby obstacles for LLM decision-making
+  - `is_obstacle_at()` public API for O(1) obstacle lookups via spatial index
+* **agent:** add hazard awareness to rover AI
+  - System prompt includes HAZARDS section explaining mountain/geyser rules
+  - `_build_context()` adds `== Hazards ==` section listing nearby obstacles with distance and state
+  - `_fallback_turn()` skips mountain-blocked directions when choosing random moves
+  - Geyser eruption events broadcast via WebSocket for real-time UI updates
+* **models:** add `ObstacleInfo` pydantic model and `nearby_obstacles` field on `RoverComputed`
+
+### Tests
+
+* **world:** add 15 obstacle tests covering generation, mountain blocking, geyser state machine, battery drain, snapshot filtering, origin protection, and deterministic seeding
+
 ### Bug Fixes
 
 * **production:** fix Dockerfile to respect Railway `$PORT` env var — hardcoded `--port 4009` prevented Railway from routing traffic to the container

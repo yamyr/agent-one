@@ -57,6 +57,14 @@ class PendingCommand(BaseModel):
     id: str = ""
 
 
+class ObstacleInfo(BaseModel):
+    """An environmental obstacle visible to the agent."""
+
+    position: list[int]
+    kind: str  # "mountain" or "geyser"
+    state: str = "idle"  # mountains: always "idle"; geysers: "idle" | "warning" | "erupting"
+
+
 class RoverComputed(BaseModel):
     """Derived fields for decision-making."""
 
@@ -65,6 +73,7 @@ class RoverComputed(BaseModel):
     stone_here: StoneInfo | None = None
     visible_stones: list[str] = []
     pending_commands: list[PendingCommand] = []
+    nearby_obstacles: list[ObstacleInfo] = []
 
 
 class RoverContext(BaseModel):
