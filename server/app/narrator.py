@@ -34,7 +34,7 @@ INTERESTING_EVENTS = {
     # Station events
     "assign_mission": 3,  # mission assigned to rover
     "alert": 3,  # station broadcast alert
-    "charge_agent": 2,  # rover being charged
+    "charge_agent": 2,  # agent being charged
     # Agent internal
     "thinking": 1,  # agent reasoning (narrate sparingly)
     # Mission-level

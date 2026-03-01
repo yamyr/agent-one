@@ -297,3 +297,5 @@ class TestHostStationLoop(unittest.TestCase):
         self.assertIn("dig", StationLoop.INTERESTING_EVENTS)
         self.assertIn("scan", StationLoop.INTERESTING_EVENTS)
         self.assertNotIn("move", StationLoop.INTERESTING_EVENTS)
+        self.assertIn("charge_agent", StationLoop.INTERESTING_EVENTS)
+        self.assertNotIn("charge_rover", StationLoop.INTERESTING_EVENTS)

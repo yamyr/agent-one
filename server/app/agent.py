@@ -1277,7 +1277,7 @@ class StationLoop(BaseAgent):
             "mission_success",
             "mission_failed",
             "mission_aborted",
-            "charge_rover",
+            "charge_agent",
             "deploy_solar_panel",
             "use_solar_battery",
         }

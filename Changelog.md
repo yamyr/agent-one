@@ -76,6 +76,7 @@
 - **Agent Reasoning Transparency Panel (Feature C)**: Structured reasoning output from LLM agents with visual card display
 
 ### Fixed
+- **Charge event naming (#68)**: Fix remaining `charge_rover` reference in StationLoop.INTERESTING_EVENTS to `charge_agent`; fix narrator comment
 - **Broadcaster safety guards (#100)**: Guard `disconnect()` against double-disconnect `ValueError`, iterate copy in `send()` to prevent mutation-during-iteration, guard dead connection cleanup with membership check. 6 new unit tests.
 - **Infinite loop guard in `_random_free_pos` (#118)**: Replace unbounded `while True` with bounded random attempts (`CHUNK_SIZE²×2`), deterministic linear scan fallback, and last-resort origin return with warning log. Added 6 unit tests.
 - **Logging hygiene (#134, #135)**: Replace f-string formatting in `broadcast.py` logger calls with lazy `%s` formatting; replace bare `print()` in `db.py` with proper `logger.info()`/`logger.warning()` using lazy formatting
