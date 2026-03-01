@@ -2,7 +2,7 @@ import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import FastAPI, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from rich.logging import RichHandler
@@ -14,6 +14,7 @@ from .db import init_db, close_db
 from .host import Host
 from .narrator import Narrator
 from .views import router as views_router
+from .voice import VoiceCommandProcessor, SUPPORTED_AUDIO_TYPES
 from .world import reset_world, set_agent_model
 
 logging.basicConfig(
@@ -27,6 +28,7 @@ logger = logging.getLogger(__name__)
 
 narrator = Narrator(broadcast_fn=broadcaster.send)
 host = Host(narrator=narrator)
+voice_processor = VoiceCommandProcessor()
 
 AGENT_MAP = {
     "rover-mistral": lambda: RoverMistralLoop(
@@ -130,6 +132,76 @@ async def abort_mission(reason: str = "Manual abort from mission control"):
 @app.post("/rover/{rover_id}/recall")
 async def recall_rover(rover_id: str):
     return await host.recall_rover(rover_id)
+
+
+# ── Voice command endpoint ──────────────────────────────────────────────────
+
+
+@app.post("/api/voice-command")
+async def voice_command(audio: UploadFile):
+    """Accept audio upload, transcribe via Voxtral, parse command, and route."""
+    from .protocol import make_message
+
+    # Validate content type
+    content_type = audio.content_type or ""
+    if content_type and content_type not in SUPPORTED_AUDIO_TYPES:
+        return {
+            "ok": False,
+            "error": f"Unsupported audio format: {content_type}. "
+            f"Supported: {', '.join(sorted(SUPPORTED_AUDIO_TYPES))}",
+        }
+
+    # Read audio bytes
+    audio_bytes = await audio.read()
+    if not audio_bytes:
+        return {"ok": False, "error": "Empty audio file"}
+
+    # Process: transcribe + parse command
+    try:
+        result = await voice_processor.process(
+            audio_bytes=audio_bytes,
+            filename=audio.filename or "audio.wav",
+        )
+    except RuntimeError as exc:
+        return {"ok": False, "error": str(exc)}
+    except Exception:
+        logger.exception("Voice command processing failed")
+        return {"ok": False, "error": "Voice command processing failed"}
+
+    # Broadcast the voice command event to all WebSocket clients
+    msg = make_message(
+        source="human",
+        type="command",
+        name="voice_command",
+        payload={
+            "transcript": result["transcript"],
+            "command": result["command"],
+            "params": result["params"],
+            "confidence": result["confidence"],
+        },
+    )
+    await broadcaster.send(msg.to_dict())
+
+    # Route recognized commands through the Host
+    command = result["command"]
+    params = result["params"]
+
+    if command == "recall_rover":
+        rover_id = params.get("rover_id", "rover-mistral")
+        action_result = await host.recall_rover(rover_id)
+        result["action_result"] = action_result
+    elif command == "abort_mission":
+        reason = params.get("reason", "Voice command abort")
+        action_result = await host.abort_mission(reason)
+        result["action_result"] = action_result
+    elif command == "pause_simulation":
+        host.paused = True
+        result["action_result"] = {"ok": True, "paused": True}
+    elif command == "resume_simulation":
+        host.paused = False
+        result["action_result"] = {"ok": True, "paused": False}
+
+    return {"ok": True, **result}
 
 
 # Serve Vue static files (must be after all API routes)

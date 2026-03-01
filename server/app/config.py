@@ -42,5 +42,9 @@ class Settings(BaseSettings):
     narration_model: str = "mistral-medium-latest"
     narration_min_interval_seconds: float = 5.0
 
+    # Voice command (Voxtral transcription)
+    voice_transcription_model: str = "voxtral-mini-latest"
+    voice_command_model: str = "mistral-small-latest"
+
 
 settings = Settings()
