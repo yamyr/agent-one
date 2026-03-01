@@ -6,6 +6,7 @@
 - **Agent Reasoning Transparency Panel (Feature C)**: Structured reasoning output from LLM agents with visual card display
 
 ### Fixed
+- **WebSocket reconnect (#72)**: Event log and simulation state are no longer reset on reconnect — only on initial page load. Simulation reset and event clearing now guarded by `isFirstConnect` flag in both `useWebSocket.js` and `App.vue`
 - **Logging hygiene (#134, #135)**: Replace f-string formatting in `broadcast.py` logger calls with lazy `%s` formatting; replace bare `print()` in `db.py` with proper `logger.info()`/`logger.warning()` using lazy formatting
   - Compressed `STRUCTURED_REASONING_PROMPT` appended to rover and drone `_build_context()` — agents output SITUATION/OPTIONS/DECISION/RISK fields
   - `_parse_structured_thinking()` parser extracts structured fields with graceful fallback defaults
