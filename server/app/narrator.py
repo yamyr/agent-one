@@ -586,19 +586,6 @@ class Narrator:
         appears progressively.  Returns the full accumulated text when done.
         """
         try:
-            if settings.llm_provider == "huggingface":
-                client = self._get_huggingface()
-                stream = client.chat_completion(
-                    model=settings.huggingface_narration_model,
-                    messages=[
-                        {"role": "system", "content": NARRATOR_SYSTEM_PROMPT},
-                        {"role": "user", "content": prompt},
-                    ],
-                    max_tokens=350,
-                    temperature=0.9,
-                    stream=True,
-                )
-
             full_text = ""
             if settings.llm_provider == "huggingface":
                 client = self._get_huggingface()
@@ -612,7 +599,7 @@ class Narrator:
                     temperature=settings.narration_temperature,
                     stream=True,
                 )
-                
+
                 for chunk_event in stream:
                     chunk = chunk_event.choices[0].delta.content
                     if chunk:
@@ -628,8 +615,9 @@ class Narrator:
                             }
                         )
             else:
+                client = self._get_mistral()
                 effective_model = settings.fine_tuned_narration_model or settings.narration_model
-    
+
                 stream = await client.chat.stream_async(
                     model=effective_model,
                     messages=[
@@ -639,7 +627,7 @@ class Narrator:
                     max_tokens=settings.narration_max_tokens,
                     temperature=settings.narration_temperature,
                 )
-    
+
                 async for event in stream:
                     if not event.data.choices:
                         continue

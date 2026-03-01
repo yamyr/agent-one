@@ -22,7 +22,7 @@ from .narrator import Narrator
 from .views import router as views_router
 from .voice import VoiceCommandProcessor, SUPPORTED_AUDIO_TYPES
 from .world import reset_world, set_agent_model
-from .training_logger import training_logger
+from .training import collector
 
 logging.basicConfig(
     level=logging.INFO,
@@ -48,7 +48,9 @@ AGENT_MAP = {
     "rover-huggingface": lambda: RoverHuggingFaceLoop(
         agent_id="rover-huggingface", interval=settings.llm_turn_interval_seconds
     ),
-    "drone-huggingface": lambda: DroneHuggingFaceLoop(interval=settings.drone_turn_interval_seconds),
+    "drone-huggingface": lambda: DroneHuggingFaceLoop(
+        interval=settings.drone_turn_interval_seconds
+    ),
     "station-loop": lambda: StationLoop(interval=20.0),
 }
 
@@ -69,7 +71,7 @@ def _register_agents():
 @asynccontextmanager
 async def lifespan(app):
     init_db()
-    training_logger.init_schema()
+    collector.get_stats()  # verify training module loads
     _register_agents()
     await host.start()
     yield

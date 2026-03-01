@@ -1,5 +1,19 @@
 # Changelog
 
+## [Unreleased]
+
+### Bug Fixes
+
+* **ci:** fix 3 CI failures blocking all branches — remove broken `training_logger` import, fix `client` variable scoping in narrator streaming, apply `ruff format` to 5 unformatted files
+* **narrator:** fix `UnboundLocalError` in `_generate_text_streaming()` — remove dead duplicate code block, add proper `client = self._get_mistral()` in Mistral branch
+* **tests:** fix `test_generate_text_streaming_mistral_by_default` mock to use `AsyncMock` with `stream_async`
+
+### Lessons Learned
+
+* Never merge PRs that import modules from unmerged feature branches
+* Always run `ruff format` before committing — enforce via pre-commit hook
+* Review HuggingFace provider additions carefully for duplicate code blocks and proper if/else scoping
+
 ## [0.4.0](https://github.com/mhack-agent-one/agent-one/compare/v0.3.0...v0.4.0) (2026-03-01)
 
 
