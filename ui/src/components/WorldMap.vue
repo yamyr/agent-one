@@ -1,7 +1,6 @@
 <script setup>
 import { computed, ref, watch, onMounted, onUnmounted } from 'vue'
-import { TILE_SIZE, VIEWPORT_W, VIEWPORT_H, VEIN_COLORS, VEIN_SIZES, SOLAR_PANEL_COLOR, SOLAR_PANEL_DEPLETED_COLOR, STRUCTURE_COLORS, STRUCTURE_LABELS, agentColor, revealRadius } from '../constants.js'
-import { TILE_SIZE, VIEWPORT_W, VIEWPORT_H, VEIN_COLORS, VEIN_SIZES, SOLAR_PANEL_COLOR, SOLAR_PANEL_DEPLETED_COLOR, OBSTACLE_COLORS, agentColor, revealRadius } from '../constants.js'
+import { TILE_SIZE, VIEWPORT_W, VIEWPORT_H, VEIN_COLORS, VEIN_SIZES, SOLAR_PANEL_COLOR, SOLAR_PANEL_DEPLETED_COLOR, STRUCTURE_COLORS, STRUCTURE_LABELS, OBSTACLE_COLORS, agentColor, revealRadius } from '../constants.js'
 import { usePreferences } from '../composables/usePreferences.js'
 import { useRevealedSet } from '../composables/useRevealedSet.js'
 
@@ -793,6 +792,7 @@ defineExpose({ camX, camY, visibleW, visibleH, panCamera, navigateTo })
             font-family="monospace"
           >?</text>
         </g>
+      </template>
       <!-- obstacles (mountains + geysers) -->
       <template
         v-for="(o, i) in visibleObstacles"
