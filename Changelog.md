@@ -8,6 +8,18 @@
 * **narrator:** fix `UnboundLocalError` in `_generate_text_streaming()` — remove dead duplicate code block, add proper `client = self._get_mistral()` in Mistral branch
 * **tests:** fix `test_generate_text_streaming_mistral_by_default` mock to use `AsyncMock` with `stream_async`
 
+### Documentation
+
+* **roadmap:** update ROADMAP.md milestone checkboxes to reflect current implementation state ([#74](https://github.com/mhack-agent-one/agent-one/issues/74))
+  - M0: mark protocol types and BaseAgent as done
+  - M2: split station tools (charge_agent ✅, broadcast_alert ✅, allocate_power ❌), fix tool names
+  - M3: mark all Drone items as done, correct tool names (`scan`, `move`, `notify`)
+  - M4: mark voice commands as done (Voxtral STT)
+  - M5: mark pre-seeded world, UI polish, LLM fallback, cancel as done
+  - Stretch Voice: mark all three items done (TTS, STT, narrator voices)
+  - Stretch Visual UI: add reasoning panel, comm visualization, landing page
+  - Dependencies: update Python 3.12+ → 3.14+, pip → uv, add Node.js 24+, ElevenLabs, SurrealDB
+
 ### Lessons Learned
 
 * Never merge PRs that import modules from unmerged feature branches
