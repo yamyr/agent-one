@@ -37,9 +37,11 @@ const mobileAgents = computed(() => {
 })
 
 
-async function onWsConnect() {
+async function onWsConnect(isFirst) {
   paused.value = false
-  fetch('/api/simulation/reset', { method: 'POST' }).catch(() => {})
+  if (isFirst) {
+    fetch('/api/simulation/reset', { method: 'POST' }).catch(() => {})
+  }
   try {
     const res = await fetch('/api/narration/status')
     if (res.ok) {

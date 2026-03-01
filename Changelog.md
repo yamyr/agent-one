@@ -74,7 +74,7 @@
 ## [Unreleased]
 
 ### Fixed
-- **WebSocket reconnect (#72)**: Event log and simulation state are no longer reset on reconnect — only on initial page load. Simulation reset and event clearing now guarded by `isFirstConnect` flag in both `useWebSocket.js` and `App.vue`
+- **WebSocket reconnect (#72)**: Event log and simulation state are no longer reset on reconnect — only on initial page load. Simulation reset and event clearing now guarded by `isFirstConnect` flag in `useWebSocket.js` and `SimulationPage.vue`
 
 ### Added
 - **Agent Reasoning Transparency Panel (Feature C)**: Structured reasoning output from LLM agents with visual card display
