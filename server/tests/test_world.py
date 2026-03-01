@@ -817,12 +817,15 @@ class TestMissionCompletion(unittest.TestCase):
         world.state["agents"]["rover-mistral"]["visited"] = [[5, 5]]
         self._original_stones = world.state.get("stones", [])
         self._original_mission = world.state["mission"].copy()
+        self._original_delivered = world.state.get("delivered_items", [])
         world.state["mission"]["status"] = "running"
         world.state["mission"]["collected_quantity"] = 0
+        world.state["delivered_items"] = []
 
     def tearDown(self):
         world.state["stones"] = self._original_stones
         world.state["mission"] = self._original_mission
+        world.state["delivered_items"] = self._original_delivered
 
     def test_mission_in_world(self):
         self.assertIn("mission", world.state)
@@ -940,6 +943,61 @@ class TestMissionCompletion(unittest.TestCase):
         execute_action("rover-mistral", "dig", {})
         self.assertEqual(world.state["mission"]["status"], "running")
         self.assertEqual(world.state["mission"]["collected_quantity"], 100)
+
+    def test_auto_delivery_clears_inventory(self):
+        """Rover at station has inventory auto-delivered and cleared."""
+        world.state["mission"]["target_quantity"] = 500
+        world.state["agents"]["rover-mistral"]["position"] = [0, 0]
+        world.state["agents"]["station"]["position"] = [0, 0]
+        world.state["agents"]["rover-mistral"]["inventory"] = [
+            {"type": "basalt_vein", "grade": "high", "quantity": 200},
+            {"type": "basalt_vein", "grade": "medium", "quantity": 100},
+        ]
+        result = check_mission_status()
+        # Inventory should be cleared after auto-delivery
+        self.assertEqual(world.state["agents"]["rover-mistral"]["inventory"], [])
+        # Items should be in delivered_items
+        self.assertEqual(len(world.state["delivered_items"]), 2)
+        # Mission should reflect delivered total
+        self.assertEqual(world.state["mission"]["collected_quantity"], 300)
+        # Delivery event returned
+        self.assertIsNotNone(result)
+        self.assertEqual(result["status"], "running")
+        self.assertEqual(len(result["deliveries"]), 1)
+        self.assertEqual(result["deliveries"][0]["items_deposited"], 2)
+
+    def test_auto_delivery_accumulates(self):
+        """Multiple deliveries accumulate in delivered_items."""
+        world.state["mission"]["target_quantity"] = 500
+        world.state["agents"]["rover-mistral"]["position"] = [0, 0]
+        world.state["agents"]["station"]["position"] = [0, 0]
+        # First delivery
+        world.state["agents"]["rover-mistral"]["inventory"] = [
+            {"type": "basalt_vein", "grade": "high", "quantity": 150},
+        ]
+        check_mission_status()
+        self.assertEqual(world.state["mission"]["collected_quantity"], 150)
+        # Second delivery
+        world.state["agents"]["rover-mistral"]["inventory"] = [
+            {"type": "basalt_vein", "grade": "medium", "quantity": 200},
+        ]
+        check_mission_status()
+        self.assertEqual(world.state["mission"]["collected_quantity"], 350)
+        self.assertEqual(len(world.state["delivered_items"]), 2)
+
+    def test_rover_away_from_station_no_auto_deliver(self):
+        """Rover not at station should not auto-deliver."""
+        world.state["agents"]["rover-mistral"]["position"] = [5, 5]
+        world.state["agents"]["station"]["position"] = [0, 0]
+        world.state["agents"]["rover-mistral"]["inventory"] = [
+            {"type": "basalt_vein", "grade": "high", "quantity": 200},
+        ]
+        check_mission_status()
+        # Inventory should remain
+        self.assertEqual(len(world.state["agents"]["rover-mistral"]["inventory"]), 1)
+        # in_transit_quantity should reflect carried basalt
+        self.assertEqual(world.state["mission"]["in_transit_quantity"], 200)
+        self.assertEqual(world.state["mission"]["collected_quantity"], 0)
 
 
 class TestMemory(unittest.TestCase):

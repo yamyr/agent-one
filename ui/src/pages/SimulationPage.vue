@@ -110,6 +110,9 @@ function onSimEvent(event) {
       if (event.payload?.stone)
         addToast(`${event.source}: found ${event.payload.stone.grade} vein`, { type: 'info' })
       break
+    case 'deposit':
+      addToast(`${event.source}: deposited ${event.payload?.items_deposited ?? '?'} items at station`, { type: 'success', duration: 4000 })
+      break
     case 'storm_warning':
       addToast('\u26a0 Dust storm approaching!', { type: 'warning', duration: 5000 })
       break

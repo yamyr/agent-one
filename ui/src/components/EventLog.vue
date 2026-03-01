@@ -120,6 +120,7 @@ function eventNameClass(event) {
       return 'event-name-error'
     case 'analyze':
     case 'dig':
+    case 'deposit':
       return 'event-name-resource'
     case 'move':
     case 'scan':
@@ -156,6 +157,9 @@ function formatPayload(event) {
     case 'dig':
       if (p.stone)
         result = `dug ${p.stone.grade} qty=${p.stone.quantity} at (${p.position[0]},${p.position[1]})  inv=${p.inventory_count}`
+      break
+    case 'deposit':
+      result = `📦 deposited ${p.items_deposited} item${p.items_deposited !== 1 ? 's' : ''} at station  (total delivered: ${p.delivered_total})`
       break
     case 'scan':
       result = `peak ${p.peak} at (${p.position[0]},${p.position[1]})`
