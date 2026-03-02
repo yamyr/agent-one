@@ -22,25 +22,11 @@ package = true
 [tool.setuptools.packages.find]
 include = ["app*"]
 
-[tool.rut]
-coverage_source = ["app", "tests"]
-
 [tool.ruff]
 line-length = 100
 
 [dependency-groups]
 dev = [
     "ruff>=0.8.0",
-    "rut",
-    "import-deps>=0.5.1",
     "pytest>=9.0.2",
 ]
-
-[tool.uv.sources]
-rut = { git = "https://github.com/schettino72/rut", branch = "main" }
-import-deps = { git = "https://github.com/schettino72/import-deps", branch = "master" }
-
-[[tool.uv.dependency-metadata]]
-name = "rut"
-version = "0.4.0.dev0"
-requires-dist = ["coverage", "import-deps>=0.5.1", "rich>=14.0.0"]

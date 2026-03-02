@@ -158,6 +158,7 @@ class TestExecuteAction(unittest.TestCase):
         self._orig_battery = agent["battery"]
         self._orig_mission = dict(agent["mission"])
         self._orig_visited = list(agent["visited"])
+        self._orig_upgrades = dict(world.state.get("station_upgrades", {}))
         agent["position"] = [2, 10]
         agent["battery"] = 1.0
         agent["mission"] = {
@@ -165,6 +166,7 @@ class TestExecuteAction(unittest.TestCase):
             "plan": [],
         }
         agent["visited"] = [[2, 10]]
+        world.state["station_upgrades"] = {}
 
     def tearDown(self):
         agent = world.state["agents"]["rover-mistral"]
@@ -172,6 +174,7 @@ class TestExecuteAction(unittest.TestCase):
         agent["battery"] = self._orig_battery
         agent["mission"] = self._orig_mission
         agent["visited"] = self._orig_visited
+        world.state["station_upgrades"] = self._orig_upgrades
 
     def test_execute_move_east(self):
         result = execute_action("rover-mistral", "move", {"direction": "east"})
@@ -397,8 +400,11 @@ class TestCheckGround(unittest.TestCase):
     def test_check_ground_finds_stone(self):
         world.state["stones"] = [_make_vein([10, 10])]
         result = check_ground("rover-mistral")
-        self.assertEqual(result["stone"]["type"], "unknown")
-        self.assertEqual(result["stone"]["grade"], "unknown")
+        self.assertIsNotNone(result["stone"])
+        assert result["stone"] is not None
+        stone = result["stone"]
+        self.assertEqual(stone["type"], "unknown")
+        self.assertEqual(stone["grade"], "unknown")
 
     def test_check_ground_no_stone(self):
         world.state["stones"] = [_make_vein([5, 5])]
@@ -464,10 +470,13 @@ class TestAnalyze(unittest.TestCase):
         world.state["agents"]["rover-mistral"]["visited"] = [[5, 5]]
         world.state["agents"]["rover-mistral"]["memory"] = []
         self._original_stones = world.state.get("stones", [])
+        self._orig_upgrades = dict(world.state.get("station_upgrades", {}))
+        world.state["station_upgrades"] = {}
         world.state["stones"] = [_make_vein([5, 5], grade="rich", quantity=500)]
 
     def tearDown(self):
         world.state["stones"] = self._original_stones
+        world.state["station_upgrades"] = self._orig_upgrades
 
     def test_analyze_reveals_type_grade_quantity(self):
         result = execute_action("rover-mistral", "analyze", {})
@@ -526,10 +535,13 @@ class TestDig(unittest.TestCase):
         world.state["agents"]["rover-mistral"]["inventory"] = []
         world.state["agents"]["rover-mistral"]["visited"] = [[5, 5]]
         self._original_stones = world.state.get("stones", [])
+        self._orig_upgrades = dict(world.state.get("station_upgrades", {}))
+        world.state["station_upgrades"] = {}
         world.state["stones"] = [_make_vein([5, 5], grade="high", quantity=200, analyzed=True)]
 
     def tearDown(self):
         world.state["stones"] = self._original_stones
+        world.state["station_upgrades"] = self._orig_upgrades
 
     def test_dig_collects_stone(self):
         result = execute_action("rover-mistral", "dig", {})
@@ -652,12 +664,14 @@ class TestCharge(unittest.TestCase):
         self._orig_visited = list(rover["visited"])
         self._orig_memory = list(rover.get("memory", []))
         self._orig_station_pos = list(world.state["agents"]["station"]["position"])
+        self._orig_upgrades = dict(world.state.get("station_upgrades", {}))
         rover["position"] = [0, 0]
         rover["battery"] = 0.5
         rover["inventory"] = []
         rover["visited"] = [[0, 0]]
         rover["memory"] = []
         world.state["agents"]["station"]["position"] = [0, 0]
+        world.state["station_upgrades"] = {}
 
     def tearDown(self):
         rover = world.state["agents"]["rover-mistral"]
@@ -667,6 +681,7 @@ class TestCharge(unittest.TestCase):
         rover["visited"] = self._orig_visited
         rover["memory"] = self._orig_memory
         world.state["agents"]["station"]["position"] = self._orig_station_pos
+        world.state["station_upgrades"] = self._orig_upgrades
 
     def test_charge_rover_success(self):
         result = charge_rover("rover-mistral")
@@ -836,14 +851,17 @@ class TestMissionCompletion(unittest.TestCase):
         self._original_stones = world.state.get("stones", [])
         self._original_mission = world.state["mission"].copy()
         self._original_delivered = world.state.get("delivered_items", [])
+        self._orig_upgrades = dict(world.state.get("station_upgrades", {}))
         world.state["mission"]["status"] = "running"
         world.state["mission"]["collected_quantity"] = 0
         world.state["delivered_items"] = []
+        world.state["station_upgrades"] = {}
 
     def tearDown(self):
         world.state["stones"] = self._original_stones
         world.state["mission"] = self._original_mission
         world.state["delivered_items"] = self._original_delivered
+        world.state["station_upgrades"] = self._orig_upgrades
 
     def test_mission_in_world(self):
         self.assertIn("mission", world.state)
@@ -980,9 +998,13 @@ class TestMissionCompletion(unittest.TestCase):
         self.assertEqual(world.state["mission"]["collected_quantity"], 300)
         # Delivery event returned
         self.assertIsNotNone(result)
+        assert result is not None
         self.assertEqual(result["status"], "running")
         self.assertEqual(len(result["deliveries"]), 1)
-        self.assertEqual(result["deliveries"][0]["items_deposited"], 2)
+        delivery = result["deliveries"][0]
+        self.assertIsInstance(delivery, dict)
+        if isinstance(delivery, dict):
+            self.assertEqual(delivery.get("items_deposited"), 2)
 
     def test_auto_delivery_accumulates(self):
         """Multiple deliveries accumulate in delivered_items."""
@@ -1544,6 +1566,7 @@ class TestAbortMission(unittest.TestCase):
         world.state["mission"]["status"] = "running"
         result = abort_mission("test reason")
         self.assertIsNotNone(result)
+        assert result is not None
         self.assertEqual(result["status"], "aborted")
         self.assertEqual(result["reason"], "test reason")
         self.assertEqual(world.state["mission"]["status"], "aborted")
@@ -1566,6 +1589,8 @@ class TestAbortMission(unittest.TestCase):
     def test_abort_default_reason(self):
         world.state["mission"]["status"] = "running"
         result = abort_mission()
+        self.assertIsNotNone(result)
+        assert result is not None
         self.assertIn("Manual abort", result["reason"])
 
     def test_abort_updates_agent_objectives(self):
@@ -1591,11 +1616,29 @@ class TestChargeAgent(unittest.TestCase):
 
     def setUp(self):
         self.drone = world.state["agents"].get("drone-mistral")
+        self._orig_station_pos = list(world.state["agents"]["station"]["position"])
+        self._orig_upgrades = dict(world.state.get("station_upgrades", {}))
+        self._orig_drone = None
+        if self.drone:
+            self._orig_drone = {
+                "position": list(self.drone.get("position", [0, 0])),
+                "battery": self.drone.get("battery", 0.0),
+                "memory": list(self.drone.get("memory", [])),
+            }
         if self.drone:
             self.drone["position"] = [0, 0]
             self.drone["battery"] = 0.5
             self.drone["memory"] = []
         world.state["agents"]["station"]["position"] = [0, 0]
+        world.state["station_upgrades"] = {}
+
+    def tearDown(self):
+        world.state["agents"]["station"]["position"] = self._orig_station_pos
+        world.state["station_upgrades"] = self._orig_upgrades
+        if self.drone and self._orig_drone is not None:
+            self.drone["position"] = self._orig_drone["position"]
+            self.drone["battery"] = self._orig_drone["battery"]
+            self.drone["memory"] = self._orig_drone["memory"]
 
     def test_charge_drone(self):
         result = charge_agent("drone-mistral")
@@ -2165,12 +2208,16 @@ class TestIceAndBaseUpgrades(unittest.TestCase):
         self._orig_battery = rover["battery"]
         self._orig_inventory = rover.get("inventory", [])[:]
         self._orig_stones = world.state.get("stones", [])[:]
+        self._orig_station_resources = dict(
+            world.state.get("station_resources", {"water": 0, "gas": 0, "parts": []})
+        )
         self._orig_upgrades = dict(world.state.get("station_upgrades", {}))
 
         rover["position"] = [5, 5]
         rover["battery"] = 1.0
         rover["inventory"] = []
-        world.state.setdefault("station_upgrades", {"charge_bonus": 0.0, "upgrade_count": 0})
+        world.state["station_resources"] = {"water": 0, "gas": 0, "parts": []}
+        world.state["station_upgrades"] = {}
 
     def tearDown(self):
         rover = world.state["agents"]["rover-mistral"]
@@ -2178,6 +2225,7 @@ class TestIceAndBaseUpgrades(unittest.TestCase):
         rover["battery"] = self._orig_battery
         rover["inventory"] = self._orig_inventory
         world.state["stones"] = self._orig_stones
+        world.state["station_resources"] = self._orig_station_resources
         world.state["station_upgrades"] = self._orig_upgrades
 
     def test_gather_ice_collects_and_consumes_battery(self):
@@ -2212,8 +2260,10 @@ class TestIceAndBaseUpgrades(unittest.TestCase):
         result = execute_action("rover-mistral", "upgrade_base", {"upgrade": "charge_mk2"})
 
         self.assertTrue(result["ok"])
-        self.assertEqual(result["upgrade"], "charge_mk2")
-        self.assertEqual(world.state["station_upgrades"].get("charge_mk2"), 1)
+        self.assertEqual(result["new_level"], 1)
+        self.assertEqual(world.state["station_upgrades"]["charge_mk2"], 1)
+        self.assertEqual(world.state["station_resources"]["water"], 50)
+        self.assertEqual(world.state["station_resources"]["gas"], 80)
 
 
 class TestStructurePassiveEffects(unittest.TestCase):
@@ -2350,6 +2400,7 @@ class TestStructureHelpers(unittest.TestCase):
         world.state["structures"] = [_make_structure("refinery", pos=(3, 4))]
         result = _find_structure_at(3, 4)
         self.assertIsNotNone(result)
+        assert result is not None
         self.assertEqual(result["type"], "refinery")
 
     def test_find_structure_at_missing(self):
@@ -2384,6 +2435,7 @@ class TestBestDroneHotspot(unittest.TestCase):
         ]
         result = best_drone_hotspot(0, 0, set())
         self.assertIsNotNone(result)
+        assert result is not None
         self.assertEqual(result[0], 6)
         self.assertEqual(result[1], 5)
         self.assertAlmostEqual(result[2], 0.8)
@@ -2395,6 +2447,7 @@ class TestBestDroneHotspot(unittest.TestCase):
         revealed = {(6, 5)}
         result = best_drone_hotspot(0, 0, revealed)
         self.assertIsNotNone(result)
+        assert result is not None
         self.assertEqual(result[0], 7)
         self.assertEqual(result[1], 5)
 
@@ -2430,6 +2483,7 @@ class TestStrategicMemory(unittest.TestCase):
         rover["memory"] = [f"memory_{i}" for i in range(8)]
         result = summarize_memories("rover-mistral")
         self.assertIsNotNone(result)
+        assert result is not None
         self.assertIn("Summarize", result)
         self.assertIn("memory_7", result)
 
@@ -2704,37 +2758,34 @@ class TestWaterAndGasMechanics(unittest.TestCase):
         rover["inventory"] = [{"type": "ice", "grade": "n/a", "quantity": 3}]
         world.state["structures"] = [
             {
-                "type": "water_recycler",
+                "type": "water_processor",
                 "category": "building",
                 "position": [5, 6],
                 "explored": True,
                 "active": True,
-                "description": "test recycler",
-                "contents": {"conversion_rate": 3},
+                "description": "test processor",
             }
         ]
 
         result = execute_action("rover-mistral", "recycle_ice", {})
 
         self.assertTrue(result["ok"])
-        # 3 ice * conversion_rate 3 = 9 water
-        self.assertEqual(result["water_quantity"], 9)
+        self.assertEqual(result["water_quantity"], 6)
         water_items = [i for i in rover["inventory"] if i.get("type") == "water"]
         self.assertEqual(len(water_items), 1)
-        self.assertEqual(water_items[0]["quantity"], 9)
+        self.assertEqual(water_items[0]["quantity"], 6)
 
     def test_recycle_ice_not_enough_ice(self):
         rover = world.state["agents"]["rover-mistral"]
         rover["inventory"] = []  # No ice at all
         world.state["structures"] = [
             {
-                "type": "water_recycler",
+                "type": "water_processor",
                 "category": "building",
                 "position": [5, 6],
                 "explored": True,
                 "active": True,
-                "description": "test recycler",
-                "contents": {"conversion_rate": 3},
+                "description": "test processor",
             }
         ]
 
@@ -2742,13 +2793,13 @@ class TestWaterAndGasMechanics(unittest.TestCase):
         self.assertFalse(result["ok"])
         self.assertIn("ice", result["error"].lower())
 
-    def test_recycle_ice_without_recycler(self):
+    def test_recycle_ice_without_processor(self):
         rover = world.state["agents"]["rover-mistral"]
         rover["inventory"] = [{"type": "ice", "grade": "n/a", "quantity": 3}]
 
         result = execute_action("rover-mistral", "recycle_ice", {})
         self.assertFalse(result["ok"])
-        self.assertIn("recycler", result["error"].lower())
+        self.assertIn("processor", result["error"].lower())
 
     def test_build_gas_plant_success(self):
         world.state["station_resources"]["water"] = 10
@@ -2980,6 +3031,7 @@ class TestObstacles(unittest.TestCase):
             o = obstacles[0]
             result = is_obstacle_at(o["position"][0], o["position"][1])
             self.assertIsNotNone(result)
+            assert result is not None
             self.assertEqual(result["kind"], o["kind"])
         # Empty tile returns None
         self.assertIsNone(is_obstacle_at(0, 0))

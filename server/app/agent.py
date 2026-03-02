@@ -264,7 +264,7 @@ BUILD_GAS_PLANT_TOOL = {
     "type": "function",
     "function": {
         "name": "build_gas_plant",
-        "description": "Build a gas plant on your tile while on/adjacent to an idle geyser. The plant captures eruptions to produce gas. Costs 8 fuel units.",
+        "description": "Build a gas plant on an adjacent geyser (1 tile away). Requires 5 station water and costs 8 fuel units.",
         "parameters": {"type": "object", "properties": {}},
     },
 }
@@ -646,6 +646,35 @@ class MistralRoverReasoner:
             parts.append("Visible veins nearby:")
             for vs in visible_stones:
                 parts.append(f"  - {vs}")
+
+        nearby_ice = []
+        for deposit in self._world.state.get("ice_deposits", []):
+            pos = deposit.get("position", [])
+            if len(pos) != 2:
+                continue
+            ix, iy = int(pos[0]), int(pos[1])
+            if (ix, iy) not in revealed_set:
+                continue
+            if [ix, iy] == [x, y]:
+                continue
+            qty = int(deposit.get("quantity", 0))
+            if qty <= 0 or deposit.get("gathered"):
+                continue
+            dist = abs(ix - x) + abs(iy - y)
+            hint = direction_hint(ix - x, iy - y)
+            nearby_ice.append(f"ice deposit qty={qty} at ({ix},{iy}) - {hint}, {dist} tiles")
+
+        parts.append("\n== ICE & RESOURCES ==")
+        parts.append(f"Station resources: water={station_water}, gas={station_gas}")
+        if nearby_ice:
+            parts.append("Nearby ice deposits:")
+            for ice_line in nearby_ice[:8]:
+                parts.append(f"  - {ice_line}")
+        else:
+            parts.append("Nearby ice deposits: none visible")
+        parts.append(
+            "Gather ice when found, deliver to station for water. Build gas plants on geysers when you have water. Collect gas from gas plants."
+        )
 
         # Nearby hazards from world state
         ctx = observe_rover(self.agent_id)
