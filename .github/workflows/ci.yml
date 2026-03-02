@@ -73,7 +73,7 @@ jobs:
           curl -sSf https://install.surrealdb.com | sh -s -- --version v2.2.1
           echo "$HOME/.surrealdb" >> $GITHUB_PATH
       - run: uv sync --frozen --all-groups
-      - run: uv run rut tests/
+      - run: uv run pytest tests/
 
   ui-lint-build:
     needs: changes

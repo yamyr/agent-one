@@ -59,9 +59,7 @@ class StoneInfo(BaseModel):
 
 class IceDepositInfo(BaseModel):
     position: list[int]
-    grade: str = "unknown"
     quantity: int = 0
-    analyzed: bool = False
 
 
 class StructureInfo(BaseModel):
@@ -103,9 +101,8 @@ class IceDeposit(BaseModel):
 
 class GasPlantInfo(BaseModel):
     position: list[int]
-    geyser_position: list[int]
-    active: bool = True
-    gas_stored: float = 0.0
+    gas_stored: int = 0
+    max_gas: int = 100
     built_by: str = ""
 
 
@@ -138,7 +135,7 @@ class ResourceStorage(BaseModel):
 class StationResources(BaseModel):
     water: int = 0
     gas: int = 0
-    refined_basalt: int = 0
+    parts: list[str] = []
 
 
 # ── Rover Context (3 clear sections) ──
@@ -166,6 +163,8 @@ class RoverWorldView(BaseModel):
     target_type: str = "basalt_vein"
     target_quantity: int = 100
     collected_quantity: int = 0
+    station_water: int = 0
+    station_gas: int = 0
     water_collected: int = 0
     gas_collected: int = 0
 

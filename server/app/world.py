@@ -128,7 +128,6 @@ GAS_PER_ERUPTION = 5
 GAS_PRODUCTION_RATE = GAS_PER_ERUPTION
 BATTERY_COST_BUILD_GAS_PLANT = 8 / FUEL_CAPACITY_ROVER
 BATTERY_COST_COLLECT_GAS = 2 / FUEL_CAPACITY_ROVER
-BATTERY_COST_PROCESS_ICE = 3 / FUEL_CAPACITY_ROVER
 MAX_GAS_STORAGE = 100.0
 BATTERY_COST_LOAD = 2 / FUEL_CAPACITY_HAULER
 BATTERY_COST_UNLOAD = 1 / FUEL_CAPACITY_HAULER
@@ -169,13 +168,11 @@ UPGRADES = {
 }
 UPGRADE_MAX_LEVEL = 3
 
-BATTERY_COST_HARVEST_ICE = BATTERY_COST_GATHER_ICE
-ICE_GATHER_BATTERY_COST = BATTERY_COST_GATHER_ICE
+ICE_GATHER_BATTERY_COST = 4 / FUEL_CAPACITY_ROVER
 BATTERY_COST_RECYCLE_ICE = BATTERY_COST_RECYCLE
-BATTERY_COST_PROCESS_ICE = BATTERY_COST_RECYCLE_ICE
-WATER_RECYCLE_BATTERY_COST = BATTERY_COST_RECYCLE
-GAS_PLANT_BUILD_COST = BATTERY_COST_BUILD_GAS_PLANT
-GAS_COLLECT_BATTERY_COST = BATTERY_COST_COLLECT_GAS
+WATER_RECYCLE_BATTERY_COST = 3 / FUEL_CAPACITY_ROVER
+GAS_PLANT_BUILD_COST = 8 / FUEL_CAPACITY_ROVER
+GAS_COLLECT_BATTERY_COST = 2 / FUEL_CAPACITY_ROVER
 GAS_PRODUCTION_PER_ERUPTION = GAS_PER_ERUPTION
 BATTERY_COST_UPGRADE_BASE = BATTERY_COST_UPGRADE
 MAX_UPGRADE_LEVEL = UPGRADE_MAX_LEVEL
@@ -212,8 +209,8 @@ STRUCTURE_TYPES = [
     {
         "type": "water_recycler",
         "category": "building",
-        "description": "Converts 3 ice into 1 unit of potable water",
-        "contents": {"conversion_rate": 3},
+        "description": "Converts ice into purified water for the mission",
+        "contents": {"conversion_rate": 2},
         "abandoned_spawn": False,
     },
     {
@@ -246,7 +243,6 @@ STRUCTURE_TYPES = [
 STRUCTURE_SPAWN_RADIUS = 10  # max Manhattan distance from base (0,0)
 BATTERY_COST_INVESTIGATE = 2 / FUEL_CAPACITY_ROVER  # 2 fuel units
 BATTERY_COST_USE_REFINERY = 5 / FUEL_CAPACITY_ROVER  # 5 fuel units
-BATTERY_COST_RECYCLE_ICE = 3 / FUEL_CAPACITY_ROVER  # 3 fuel units
 
 # --- Obstacle generation ---
 MOUNTAIN_PROBABILITY = 0.004  # ~0.4% per tile (halved to reduce agent confusion)
@@ -489,17 +485,14 @@ def _ensure_chunk(cx, cy):
                     continue
                 if (ix, iy) in occupied:
                     continue
-                if rng.random() >= ICE_DEPOSIT_PROBABILITY:
+                if rng.random() >= ICE_PROBABILITY:
                     continue
-                grade = rng.choices(ICE_GRADES, weights=ICE_WEIGHTS, k=1)[0]
-                q_lo, q_hi = ICE_QUANTITY_RANGES[grade]
                 occupied.add((ix, iy))
                 ice_deposits.append(
                     {
                         "position": [ix, iy],
                         "type": "ice_deposit",
-                        "grade": grade,
-                        "quantity": rng.randint(q_lo, q_hi),
+                        "quantity": rng.randint(ICE_QUANTITY_RANGE[0], ICE_QUANTITY_RANGE[1]),
                         "gathered": False,
                     }
                 )
@@ -1040,38 +1033,28 @@ def update_geysers():
             if obs["state"] != "erupting":
                 # Transition to erupting
                 gx, gy = obs["position"]
-                # Check gas_plant on geyser object or in structures list
-                gas_plant = obs.get("gas_plant")
-                struct_plant = _find_structure_at(gx, gy)
-                has_plant = (
-                    obs.get("has_gas_plant")
-                    or gas_plant
-                    or (
-                        struct_plant
-                        and struct_plant.get("type") == "gas_plant"
-                        and struct_plant.get("active")
+                plant = _find_gas_plant_at(gx, gy)
+                if plant is not None:
+                    contents = plant.setdefault("contents", {})
+                    gas_stored = int(contents.get("gas_stored", 0))
+                    new_gas = gas_stored + GAS_PER_ERUPTION
+                    contents["gas_stored"] = new_gas
+                    contents["produced_total"] = (
+                        int(contents.get("produced_total", 0)) + GAS_PER_ERUPTION
                     )
-                )
-                if has_plant:
                     station_resources = WORLD.setdefault(
                         "station_resources", {"water": 0, "gas": 0, "parts": []}
                     )
-                    station_resources["gas"] = int(station_resources.get("gas", 0)) + int(
-                        GAS_PRODUCTION_PER_ERUPTION
+                    station_resources.setdefault("parts", [])
+                    station_resources["gas"] = (
+                        int(station_resources.get("gas", 0)) + GAS_PER_ERUPTION
                     )
-                    # Track produced_total on the structure if present
-                    target = struct_plant if struct_plant else gas_plant
-                    if target and isinstance(target, dict):
-                        contents = target.setdefault("contents", {})
-                        contents["produced_total"] = int(contents.get("produced_total", 0)) + int(
-                            GAS_PRODUCTION_PER_ERUPTION
-                        )
                     events.append(
                         {
                             "type": "gas_produced",
                             "position": [gx, gy],
-                            "amount": int(GAS_PRODUCTION_PER_ERUPTION),
-                            "station_gas": station_resources["gas"],
+                            "amount": GAS_PER_ERUPTION,
+                            "gas_stored": new_gas,
                         }
                     )
                 else:
@@ -1445,6 +1428,15 @@ def _find_ice_at(x, y):
     return deposit
 
 
+def _find_gas_plant_at(x, y):
+    for structure in WORLD.get("structures", []):
+        if structure.get("type") != "gas_plant":
+            continue
+        if structure.get("position") == [x, y] and structure.get("active", True):
+            return structure
+    return None
+
+
 def _execute_drop_item(agent_id, agent, params):
     inventory = agent.get("inventory", [])
     if not inventory:
@@ -1662,20 +1654,40 @@ def _execute_gather_ice(agent_id, agent):
         return {"ok": False, "error": "Not enough battery to gather ice"}
 
     x, y = agent["position"]
-    stone = _find_stone_at(x, y)
-    if stone is None or stone.get("type") != "ice":
-        return {"ok": False, "error": f"No ice deposit at ({x}, {y})"}
+    deposit = _find_ice_at(x, y)
+    if deposit is None:
+        legacy_stone = _find_stone_at(x, y)
+        if legacy_stone is None or legacy_stone.get("type") != "ice":
+            return {"ok": False, "error": f"No ice deposit at ({x}, {y})"}
+
+        agent["battery"] = max(0.0, agent["battery"] - cost)
+        inventory = agent.setdefault("inventory", [])
+        inventory.append({"type": "ice", "grade": "n/a", "quantity": 1})
+        WORLD["stones"].remove(legacy_stone)
+        _unindex_stone(legacy_stone)
+        return {
+            "ok": True,
+            "position": [x, y],
+            "stone": {"type": "ice", "grade": "n/a", "quantity": 1},
+            "ice_remaining": 0,
+            "inventory_count": len(inventory),
+        }
 
     agent["battery"] = max(0.0, agent["battery"] - cost)
+    deposit["quantity"] = int(deposit.get("quantity", 0)) - 1
+    if deposit["quantity"] <= 0:
+        deposit["quantity"] = 0
+        deposit["gathered"] = True
+        _unindex_ice(deposit)
+
     inventory = agent.setdefault("inventory", [])
     inventory.append({"type": "ice", "grade": "n/a", "quantity": 1})
-    WORLD["stones"].remove(stone)
-    _unindex_stone(stone)
 
     return {
         "ok": True,
         "position": [x, y],
         "stone": {"type": "ice", "grade": "n/a", "quantity": 1},
+        "ice_remaining": deposit["quantity"],
         "inventory_count": len(inventory),
     }
 
@@ -1693,7 +1705,7 @@ def _execute_process_ice(agent_id, agent):
     x, y = agent["position"]
     recycler = None
     for structure in WORLD.get("structures", []):
-        if structure.get("type") not in ("water_recycler", "water_processor"):
+        if structure.get("type") != "water_processor":
             continue
         sx, sy = structure["position"]
         if abs(sx - x) + abs(sy - y) <= 1 and structure.get("active"):
@@ -1703,7 +1715,7 @@ def _execute_process_ice(agent_id, agent):
     if recycler is None:
         return {
             "ok": False,
-            "error": "No active water recycler within reach (must investigate first and be adjacent)",
+            "error": "No active water processor within reach (must be adjacent)",
         }
 
     inventory = agent.get("inventory", [])
@@ -1712,8 +1724,7 @@ def _execute_process_ice(agent_id, agent):
         return {"ok": False, "error": "No ice in inventory to recycle"}
 
     ice_item = inventory.pop(ice_index)
-    conversion_rate = int(recycler.get("contents", {}).get("conversion_rate", ICE_TO_WATER_RATIO))
-    water_quantity = int(ice_item.get("quantity", 0)) * conversion_rate
+    water_quantity = int(ice_item.get("quantity", 0)) * ICE_TO_WATER_RATIO
     inventory.append({"type": "water", "quantity": water_quantity})
     agent["battery"] = max(0.0, agent["battery"] - cost)
 
@@ -1725,9 +1736,8 @@ def _execute_process_ice(agent_id, agent):
 
 
 def _execute_build_gas_plant(agent_id, agent, params=None):
-    del params
     storm_mult = storm_mod.get_battery_multiplier(WORLD)
-    cost = GAS_PLANT_BUILD_COST * storm_mult
+    cost = BATTERY_COST_BUILD_GAS_PLANT * storm_mult
     if agent["battery"] < cost:
         return {"ok": False, "error": "Not enough battery to build gas plant"}
 
@@ -1745,30 +1755,19 @@ def _execute_build_gas_plant(agent_id, agent, params=None):
         return {"ok": False, "error": "No adjacent geyser within reach"}
 
     geyser_pos = list(geyser["position"])
-
-    # Check for existing gas plant (both on geyser object and in structures)
-    if geyser.get("gas_plant") or geyser.get("has_gas_plant"):
-        return {"ok": False, "error": "Gas plant already exists on this geyser"}
-    if any(
-        s.get("type") == "gas_plant" and s.get("position") == geyser_pos
-        for s in WORLD.get("structures", [])
-    ):
+    if _find_gas_plant_at(geyser_pos[0], geyser_pos[1]) is not None:
         return {"ok": False, "error": "Gas plant already exists on this geyser"}
 
-    # Check station water requirement
     station_resources = WORLD.setdefault("station_resources", {"water": 0, "gas": 0, "parts": []})
-    if int(station_resources.get("water", 0)) < 5:
-        return {"ok": False, "error": "Not enough station water (need 5)"}
+    station_resources.setdefault("parts", [])
+    water_available = int(station_resources.get("water", 0))
+    if water_available < 5:
+        return {"ok": False, "error": "Not enough station water to build gas plant (need 5)"}
 
-    station_resources["water"] = int(station_resources.get("water", 0)) - 5
     agent["battery"] = max(0.0, agent["battery"] - cost)
+    station_resources["water"] = water_available - 5
 
-    # Store gas plant on geyser object AND in structures list
-    gas_plant_info = {"gas_stored": 0, "max_gas": 100, "built_by": agent_id}
-    geyser["gas_plant"] = gas_plant_info
-    geyser["has_gas_plant"] = True
-
-    gas_plant_structure = {
+    structure = {
         "type": "gas_plant",
         "category": "building",
         "position": geyser_pos,
@@ -1778,13 +1777,19 @@ def _execute_build_gas_plant(agent_id, agent, params=None):
         "contents": {"gas_stored": 0, "geyser_ref": geyser_pos},
         "built_by": agent_id,
     }
-    WORLD.setdefault("structures", []).append(gas_plant_structure)
+    WORLD.setdefault("structures", []).append(structure)
+    geyser["has_gas_plant"] = True
+    geyser["gas_plant"] = {
+        "gas_stored": 0,
+        "built_by": agent_id,
+        "geyser_ref": geyser_pos,
+    }
 
     return {
         "ok": True,
         "position": geyser_pos,
         "geyser_position": geyser_pos,
-        "gas_plant": {"geyser_position": geyser_pos, **gas_plant_info},
+        "gas_plant": structure,
         "station_water": station_resources["water"],
     }
 
@@ -1870,8 +1875,9 @@ def _execute_charge(agent_id, agent):
         return {"ok": False, "error": "Battery already full"}
 
     old_battery = agent["battery"]
-    upgrades = WORLD.setdefault("station_upgrades", {"charge_bonus": 0.0, "upgrade_count": 0})
-    charge_rate = CHARGE_RATE * (1.0 + float(upgrades.get("charge_bonus", 0.0)))
+    base_charge_rate = CHARGE_RATE * (2 if _get_upgrade_level("charge_mk2") > 0 else 1)
+    effects = WORLD.get("base_effects", {})
+    charge_rate = base_charge_rate + float(effects.get("charge_speed_bonus", 0.0))
     agent["battery"] = min(1.0, agent["battery"] + charge_rate)
     logger.info(
         "Agent %s charged %.0f%% -> %.0f%%", agent_id, old_battery * 100, agent["battery"] * 100
@@ -1978,7 +1984,7 @@ def check_mission_status():
                 elif stone.get("type") == "ice":
                     delivered_ice += int(stone.get("quantity", 0))
 
-            water_gained = delivered_ice // 2
+            water_gained = delivered_ice // ICE_TO_WATER_RATIO
             if water_gained > 0 or gas_gained > 0:
                 station_resources = WORLD.setdefault(
                     "station_resources", {"water": 0, "gas": 0, "parts": []}
@@ -2452,21 +2458,22 @@ def _execute_collect_gas(agent_id, agent):
     x, y = agent["position"]
     target = None
     for structure in WORLD.get("structures", []):
-        if structure.get("type") != "gas_plant" or not structure.get("active"):
+        if structure.get("type") != "gas_plant" or not structure.get("active", True):
             continue
         px, py = structure["position"]
-        if abs(px - x) + abs(py - y) <= 1:
+        if abs(px - x) + abs(py - y) == 1:
             target = structure
             break
 
     if target is None:
         return {"ok": False, "error": "No adjacent gas plant within reach"}
 
-    gas_qty = int(target.get("contents", {}).get("gas_stored", 0))
+    contents = target.setdefault("contents", {})
+    gas_qty = int(contents.get("gas_stored", 0))
     if gas_qty <= 0:
         return {"ok": False, "error": "Gas plant has no stored gas to collect"}
 
-    target.setdefault("contents", {})["gas_stored"] = 0
+    contents["gas_stored"] = 0
     agent["battery"] = max(0.0, agent["battery"] - cost)
     inventory = agent.setdefault("inventory", [])
     inventory.append({"type": "gas", "quantity": gas_qty})
@@ -3045,10 +3052,9 @@ def observe_rover(agent_id):
         if dp in revealed_set and list(dp) != [x, y]:
             dist = abs(dp[0] - x) + abs(dp[1] - y)
             hint = direction_hint(dp[0] - x, dp[1] - y)
-            grade = deposit.get("grade", "unknown")
             qty = int(deposit.get("quantity", 0))
             visible_ice_deposits.append(
-                f"ice {grade} qty={qty} at ({dp[0]},{dp[1]}) — {hint}, {dist} tiles"
+                f"ice deposit qty={qty} at ({dp[0]},{dp[1]}) — {hint}, {dist} tiles"
             )
 
     # Visible structures on revealed tiles
@@ -3070,6 +3076,7 @@ def observe_rover(agent_id):
 
     # Mission info
     world_mission = WORLD.get("mission", {})
+    station_resources = WORLD.get("station_resources", {"water": 0, "gas": 0, "parts": []})
     available_upgrades = [
         {
             "name": upgrade_name,
@@ -3116,6 +3123,8 @@ def observe_rover(agent_id):
             target_type=world_mission.get("target_type", "basalt_vein"),
             target_quantity=world_mission.get("target_quantity", TARGET_QUANTITY),
             collected_quantity=world_mission.get("collected_quantity", 0),
+            station_water=int(station_resources.get("water", 0)),
+            station_gas=int(station_resources.get("gas", 0)),
             available_upgrades=available_upgrades,
         ),
         computed=RoverComputed(
@@ -3275,11 +3284,28 @@ def get_snapshot():
     snap["structures"] = visible_structures
     # Filter obstacles by fog-of-war (same revealed set)
     visible_obstacles = []
+    visible_gas_plants = []
     for o in snap.get("obstacles", []):
         if tuple(o["position"]) in revealed:
             cleaned = {k: v for k, v in o.items() if not k.startswith("_")}
             visible_obstacles.append(cleaned)
+    for s in snap.get("structures", []):
+        if s.get("type") != "gas_plant":
+            continue
+        if tuple(s.get("position", [])) not in revealed:
+            continue
+        contents = s.get("contents", {})
+        geyser_ref = contents.get("geyser_ref", s.get("position", []))
+        visible_gas_plants.append(
+            {
+                "position": list(s.get("position", [])),
+                "geyser_position": list(geyser_ref),
+                "gas_stored": int(contents.get("gas_stored", 0)),
+                "built_by": s.get("built_by", ""),
+            }
+        )
     snap["obstacles"] = visible_obstacles
+    snap["gas_plants"] = visible_gas_plants
     visible_ground_items = []
     for item in snap.get("ground_items", []):
         if tuple(item.get("position", [])) in revealed:

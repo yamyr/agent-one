@@ -172,7 +172,7 @@ class TestRoverContextDroneHotspot(unittest.TestCase):
         context = agent._build_context()
 
         self.assertIn("ice deposit", context)
-        self.assertIn("charge_mk2: level 1/1", context)
+        self.assertIn("charge_mk2 1/1", context)
 
 
 class TestExecuteActionNoTaskUpdate(unittest.TestCase):

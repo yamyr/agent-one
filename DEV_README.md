@@ -25,9 +25,9 @@ MISTRAL_API_KEY=your-key-here
 
 ```bash
 cd server
-rut tests/                                                    # all tests
-rut tests/test_health.py                                      # single file
-rut tests/test_health.py::TestHealth::test_health_returns_ok  # single test
+uv run pytest tests/                                                     # all tests
+uv run pytest tests/test_health.py                                       # single file
+uv run pytest tests/test_health.py::TestHealth::test_health_returns_ok   # single test
 ```
 
 Tests spawn an in-memory SurrealDB instance automatically (port 8009).
