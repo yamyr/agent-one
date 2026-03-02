@@ -218,6 +218,22 @@ class Host:
                     },
                 )
 
+            # Route recall command to target agent inbox
+            if action["name"] == "recall_agent" and action_result.get("ok"):
+                target_id = action["params"]["agent_id"]
+                self.send_command(
+                    target_id,
+                    {
+                        "name": "recall",
+                        "payload": {
+                            "reason": action["params"].get(
+                                "reason", "Emergency recall from station"
+                            ),
+                        },
+                        "id": correlation_id or "",
+                    },
+                )
+
             # Broadcast to UI
             if action["name"] == "broadcast_alert":
                 msg = make_message(

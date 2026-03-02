@@ -148,6 +148,35 @@ class TestHostStationRouting(unittest.TestCase):
                 # Verify broadcast was called
                 mock_bc.send.assert_called()
 
+    def test_route_station_actions_recall_agent(self):
+        host = _make_host()
+        host.register(_dummy("rover-mock"))
+
+        result = {
+            "thinking": None,
+            "actions": [
+                {
+                    "name": "recall_agent",
+                    "params": {"agent_id": "rover-mock", "reason": "Storm incoming"},
+                },
+            ],
+        }
+
+        with patch("app.host.station_execute_action") as mock_exec:
+            mock_exec.return_value = {
+                "ok": True,
+                "agent_id": "rover-mock",
+                "reason": "Storm incoming",
+            }
+            with patch("app.host.broadcaster") as mock_bc:
+                mock_bc.send = AsyncMock()
+                asyncio.run(host.route_station_actions(result))
+
+        commands = host.drain_inbox("rover-mock")
+        self.assertEqual(len(commands), 1)
+        self.assertEqual(commands[0]["name"], "recall")
+        self.assertEqual(commands[0]["payload"]["reason"], "Storm incoming")
+
 
 class TestHostAbortMission(unittest.TestCase):
     def setUp(self):

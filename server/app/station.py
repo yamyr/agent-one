@@ -70,7 +70,29 @@ CHARGE_AGENT_TOOL = {
     },
 }
 
-STATION_TOOLS = [ASSIGN_MISSION_TOOL, BROADCAST_ALERT_TOOL, CHARGE_AGENT_TOOL]
+RECALL_AGENT_TOOL = {
+    "type": "function",
+    "function": {
+        "name": "recall_agent",
+        "description": "Issue an emergency recall command so an agent returns to station immediately.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "agent_id": {
+                    "type": "string",
+                    "description": "The agent to recall (e.g. 'rover-mistral', 'drone-mistral', 'hauler-mistral').",
+                },
+                "reason": {
+                    "type": "string",
+                    "description": "Short reason for the recall command.",
+                },
+            },
+            "required": ["agent_id"],
+        },
+    },
+}
+
+STATION_TOOLS = [ASSIGN_MISSION_TOOL, BROADCAST_ALERT_TOOL, CHARGE_AGENT_TOOL, RECALL_AGENT_TOOL]
 
 SYSTEM_PROMPT = (
     "You are the Mars base station. You coordinate the Mars mission.\n"
@@ -95,6 +117,7 @@ SYSTEM_PROMPT = (
     "Keep responses short (1-2 sentences of reasoning, then act).\n"
     "Always assign missions to all available agents when defining the initial mission.\n"
     "When an agent arrives at the station with low battery, charge it.\n"
+    "If an agent is critically low, stuck, or in danger, issue a recall command.\n"
     "\n"
     "DRONE COORDINATION:\n"
     "- When you have multiple drones, send each to a DIFFERENT sector of the map.\n"
@@ -160,6 +183,8 @@ def _parse_tool_calls(tool_calls):
             actions.append({"name": "broadcast_alert", "params": args})
         elif name == "charge_agent":
             actions.append({"name": "charge_agent", "params": args})
+        elif name == "recall_agent":
+            actions.append({"name": "recall_agent", "params": args})
     return actions
 
 
@@ -173,6 +198,12 @@ def execute_action(action):
         return charge_agent(params["agent_id"])
     elif name == "broadcast_alert":
         return {"ok": True, "message": params["message"]}
+    elif name == "recall_agent":
+        return {
+            "ok": True,
+            "agent_id": params["agent_id"],
+            "reason": params.get("reason", "Emergency recall from station"),
+        }
     return {"ok": False, "error": f"Unknown station action: {name}"}
 
 

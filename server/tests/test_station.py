@@ -250,6 +250,14 @@ class TestParseToolCalls(unittest.TestCase):
         self.assertEqual(actions[0]["name"], "charge_agent")
         self.assertEqual(actions[0]["params"]["agent_id"], "rover-mistral")
 
+    def test_recall_agent_parsed(self):
+        tool_calls = [_mock_tool_call("recall_agent", {"agent_id": "rover-mistral", "reason": "Storm"})]
+        actions = _parse_tool_calls(tool_calls)
+
+        self.assertEqual(len(actions), 1)
+        self.assertEqual(actions[0]["name"], "recall_agent")
+        self.assertEqual(actions[0]["params"]["agent_id"], "rover-mistral")
+
     def test_multiple_tool_calls_parsed(self):
         tool_calls = [
             _mock_tool_call("assign_mission", {"agent_id": "rover-mistral", "objective": "Go"}),
@@ -292,6 +300,16 @@ class TestExecuteAction(unittest.TestCase):
             }
         )
         self.assertTrue(result["ok"])
+
+    def test_recall_agent(self):
+        result = execute_action(
+            {
+                "name": "recall_agent",
+                "params": {"agent_id": "rover-mistral", "reason": "Battery critical"},
+            }
+        )
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["agent_id"], "rover-mistral")
 
     def test_unknown_action(self):
         result = execute_action(
