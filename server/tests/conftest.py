@@ -74,6 +74,16 @@ async def rut_session_teardown():
         _surreal_log_file = None
 
 
+def pytest_sessionstart(session):
+    """Pytest hook: start test SurrealDB once per test session."""
+    asyncio.run(rut_session_setup())
+
+
+def pytest_sessionfinish(session, exitstatus):
+    """Pytest hook: stop test SurrealDB once per test session."""
+    asyncio.run(rut_session_teardown())
+
+
 class CaseWithDB(unittest.IsolatedAsyncioTestCase):
     """Base test case with real SurrealDB, calling handlers directly."""
 
