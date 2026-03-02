@@ -1,6 +1,13 @@
 # Changelog
 
 
+## [0.7.1](https://github.com/yamyr/agent-one/compare/v0.7.0...v0.7.1) (2026-03-02)
+
+
+### Bug Fixes
+
+* **ci:** start/stop SurrealDB in pytest session hooks ([#240](https://github.com/yamyr/agent-one/issues/240)) ([3585f15](https://github.com/yamyr/agent-one/commit/3585f15422a4a25550a14a0d3148b28032a43339))
+
 ## [Unreleased]
 
 ### Tests
