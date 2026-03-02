@@ -251,7 +251,9 @@ class TestParseToolCalls(unittest.TestCase):
         self.assertEqual(actions[0]["params"]["agent_id"], "rover-mistral")
 
     def test_recall_agent_parsed(self):
-        tool_calls = [_mock_tool_call("recall_agent", {"agent_id": "rover-mistral", "reason": "Storm"})]
+        tool_calls = [
+            _mock_tool_call("recall_agent", {"agent_id": "rover-mistral", "reason": "Storm"})
+        ]
         actions = _parse_tool_calls(tool_calls)
 
         self.assertEqual(len(actions), 1)
