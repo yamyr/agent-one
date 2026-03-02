@@ -1,6 +1,19 @@
 # Changelog
 
 
+## [0.8.0](https://github.com/yamyr/agent-one/compare/v0.7.1...v0.8.0) (2026-03-02)
+
+
+### Features
+
+* **station:** add recall command tool and host routing ([#244](https://github.com/yamyr/agent-one/issues/244)) ([8ee1819](https://github.com/yamyr/agent-one/commit/8ee18192b8b3113ed02ff81dd39deb846937215b))
+
+
+### Bug Fixes
+
+* **ci:** format station tests with ruff ([#245](https://github.com/yamyr/agent-one/issues/245)) ([2bef539](https://github.com/yamyr/agent-one/commit/2bef539906e084d3f0df4ad9737e2a4a75f74d84))
+* **deps:** patch vulnerable glob transitive dependency ([#242](https://github.com/yamyr/agent-one/issues/242)) ([5359497](https://github.com/yamyr/agent-one/commit/5359497f13c1be56eaf5afbd16c8df1f921281fa))
+
 ## [0.7.1](https://github.com/yamyr/agent-one/compare/v0.7.0...v0.7.1) (2026-03-02)
 
 
