@@ -31,3 +31,31 @@ test_surrealdb.log
 
 # Training data
 training_data/
+
+# Coverage
+.coverage
+.coverage.*
+htmlcov/
+
+# Tool caches
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.rut_cache/
+
+# Local tool state
+.sisyphus/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Editor swap files
+*.swp
+*.swo
+
+# Vite cache
+.vite/
+
+# Local artifacts
+save_progress.diff
