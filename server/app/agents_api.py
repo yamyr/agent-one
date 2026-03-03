@@ -10,9 +10,16 @@ import random
 
 from mistralai import Mistral
 
-from .agent import ROVER_TOOLS, DRONE_TOOLS, STRUCTURED_REASONING_PROMPT
+from .agent import (
+    ROVER_TOOLS,
+    DRONE_TOOLS,
+    STRUCTURED_REASONING_PROMPT,
+    RoverLoop,
+    DroneLoop,
+    StationLoop,
+)
 from .config import settings
-from .world import World, world as default_world
+from .world import World, world as default_world, set_agent_model
 from .world import (
     BATTERY_COST_MOVE_DRONE,
     BATTERY_COST_SCAN,
@@ -926,3 +933,32 @@ class AgentsApiStationReasoner:
     def _fallback_actions(self) -> dict:
         """Return empty actions when API is unavailable."""
         return {"thinking": "Fallback: no API key", "actions": [], "context_text": ""}
+
+
+class RoverAgentsApiLoop(RoverLoop):
+    """Rover loop wired to AgentsApiRoverReasoner."""
+
+    def __init__(
+        self, agent_id: str = "rover-agents-api", interval: float = 3.0, world: World | None = None
+    ):
+        super().__init__(agent_id=agent_id, interval=interval, world=world)
+        self._reasoner = AgentsApiRoverReasoner(agent_id=self.agent_id, world=self._world)
+        set_agent_model(self.agent_id, "agents-api")
+
+
+class DroneAgentsApiLoop(DroneLoop):
+    """Drone loop wired to AgentsApiDroneReasoner."""
+
+    def __init__(self, interval: float = 2.0, world: World | None = None):
+        super().__init__(agent_id="drone-agents-api", interval=interval, world=world)
+        self._reasoner = AgentsApiDroneReasoner(agent_id=self.agent_id, world=self._world)
+        set_agent_model(self.agent_id, "agents-api")
+
+
+class StationAgentsApiLoop(StationLoop):
+    """Station loop wired to AgentsApiStationReasoner."""
+
+    def __init__(self, interval: float = 20.0, world: World | None = None):
+        super().__init__(interval=interval, world=world)
+        # Override the station agent with the Agents API version
+        self._station = AgentsApiStationReasoner()
