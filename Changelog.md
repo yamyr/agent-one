@@ -1,5 +1,19 @@
 # Changelog
 
+## [Unreleased]
+
+### CI/CD
+
+* **ci:** add `ci-pass` gate job — single required check for branch protection, handles skipped/cancelled states correctly
+* **ci:** add `pytest-cov` coverage reporting with 50% `fail_under` threshold on server tests
+* **ci:** add `import-deps` reimport validation in server-lint job
+* **ci:** document quick formatting command in CLAUDE.md
+
+### Dependencies
+
+* **deps:** add `pytest-cov>=6.0.0` and `import-deps>=0.5.1` to server dev dependencies
+* **deps:** add `[tool.coverage.run]` and `[tool.coverage.report]` config sections to pyproject.toml
+
 
 ## [0.8.0](https://github.com/yamyr/agent-one/compare/v0.7.1...v0.8.0) (2026-03-02)
 

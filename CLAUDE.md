@@ -34,6 +34,14 @@ rut tests/test_health.py       # run single test file
 rut tests/test_health.py::TestHealth::test_health_returns_ok  # single test
 ```
 
+### Quick Formatting
+
+```bash
+cd server && uv run ruff format app/ tests/ && uv run ruff check --fix app/ tests/
+```
+
+Run `ruff format` and `ruff check --fix` before pushing to avoid CI format check failures.
+
 Key modules:
 - `app/main.py` — FastAPI app, lifespan (DB init/close), CORS, health endpoint, agent loop
 - `app/config.py` — pydantic-settings (`Settings`), reads `.env`
