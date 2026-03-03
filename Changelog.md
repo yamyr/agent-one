@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+### Features
+
+* **agents-api:** add Mistral Agents API as switchable backend (`AGENT_BACKEND=agents_api`) with parallel rover, drone, and station reasoners in new `agents_api.py` module
+* **config:** add `agent_backend` config toggle (`chat_completions` default, `agents_api` option) and tighten `mistralai` SDK constraint to `>=1.12.0,<2.0.0`
+
+### Tests
+
+* **agents-api:** add 15 unit tests for Agents API reasoners, config, and AGENT_MAP registration
+
 ### CI/CD
 
 * **ci:** add `ci-pass` gate job — single required check for branch protection, handles skipped/cancelled states correctly

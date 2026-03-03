@@ -21,6 +21,7 @@ from .agent import (
     RoverMinistralLoop,
     RoverMagistralLoop,
 )
+from .agents_api import RoverAgentsApiLoop, DroneAgentsApiLoop, StationAgentsApiLoop
 from .broadcast import broadcaster
 from .config import settings
 from .db import init_db, close_db
@@ -77,6 +78,11 @@ AGENT_MAP = {
     "rover-magistral": lambda: RoverMagistralLoop(
         agent_id="rover-magistral", interval=settings.llm_turn_interval_seconds
     ),
+    "rover-agents-api": lambda: RoverAgentsApiLoop(
+        agent_id="rover-agents-api", interval=settings.llm_turn_interval_seconds
+    ),
+    "drone-agents-api": lambda: DroneAgentsApiLoop(interval=settings.drone_turn_interval_seconds),
+    "station-agents-api": lambda: StationAgentsApiLoop(interval=20.0),
 }
 
 
@@ -85,6 +91,16 @@ def _register_agents():
     # Station model — set here so it survives reset_world()
     set_agent_model("station", host._station.model)
     active = [a.strip() for a in settings.active_agents.split(",") if a.strip()]
+
+    # If backend is agents_api, swap default chat_completions agents for agents_api equivalents
+    if settings.agent_backend == "agents_api":
+        swap_map = {
+            "rover-mistral": "rover-agents-api",
+            "drone-mistral": "drone-agents-api",
+            "station-loop": "station-agents-api",
+        }
+        active = [swap_map.get(a, a) for a in active]
+
     for name in active:
         factory = AGENT_MAP.get(name)
         if factory:
