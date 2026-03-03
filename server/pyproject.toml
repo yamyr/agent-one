@@ -29,4 +29,14 @@ line-length = 100
 dev = [
     "ruff>=0.8.0",
     "pytest>=9.0.2",
+    "pytest-cov>=6.0.0",
+    "import-deps>=0.5.1",
 ]
+
+[tool.coverage.run]
+source = ["app"]
+omit = ["tests/*"]
+
+[tool.coverage.report]
+fail_under = 50
+show_missing = true

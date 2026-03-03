@@ -53,6 +53,7 @@ jobs:
       - run: uv sync --frozen --all-groups
       - run: uv run ruff check app/ tests/
       - run: uv run ruff format --check app/ tests/
+      - run: uv run python -m import_deps --check=reimports app/
 
   server-test:
     needs: changes
@@ -73,7 +74,7 @@ jobs:
           curl -sSf https://install.surrealdb.com | sh -s -- --version v2.2.1
           echo "$HOME/.surrealdb" >> $GITHUB_PATH
       - run: uv sync --frozen --all-groups
-      - run: uv run pytest tests/
+      - run: uv run pytest --cov=app tests/
 
   ui-lint-build:
     needs: changes
@@ -103,3 +104,25 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: docker build -t agent-one-ci .
+
+  ci-pass:
+    needs: [server-lint, server-test, ui-lint-build, docker-build]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Decide
+        run: |
+          echo "server-lint: ${{ needs.server-lint.result }}"
+          echo "server-test: ${{ needs.server-test.result }}"
+          echo "ui-lint-build: ${{ needs.ui-lint-build.result }}"
+          echo "docker-build: ${{ needs.docker-build.result }}"
+          if [[ "${{ needs.server-lint.result }}" =~ ^(success|skipped)$ ]] && \
+             [[ "${{ needs.server-test.result }}" =~ ^(success|skipped)$ ]] && \
+             [[ "${{ needs.ui-lint-build.result }}" =~ ^(success|skipped)$ ]] && \
+             [[ "${{ needs.docker-build.result }}" =~ ^(success|skipped)$ ]]; then
+            echo "All checks passed or were skipped"
+          else
+            echo "Some checks failed"
+            exit 1
+          fi
