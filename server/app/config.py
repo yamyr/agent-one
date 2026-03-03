@@ -25,6 +25,8 @@ class Settings(BaseSettings):
 
     # Mistral
     mistral_api_key: str = ""
+    # Agent backend: "chat_completions" (default) or "agents_api"
+    agent_backend: str = "chat_completions"
 
     # HuggingFace
     hugging_face_read: str = ""
