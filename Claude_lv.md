@@ -29,9 +29,9 @@ Uses FastAPI with SurrealDB and pydantic-settings. Managed with `uv`.
 cd server
 uv sync                        # install deps
 ./run                          # uvicorn on :4009 with --reload
-rut tests/                     # run all tests
-rut tests/test_health.py       # run single test file
-rut tests/test_health.py::TestHealth::test_health_returns_ok  # single test
+uv run pytest tests/            # run all tests
+uv run pytest tests/test_health.py  # run single test file
+uv run pytest tests/test_health.py::TestHealth::test_health_returns_ok  # single test
 ```
 
 Key modules:
@@ -41,7 +41,7 @@ Key modules:
 - `app/broadcast.py` — `Broadcaster` singleton for WebSocket fan-out
 - `app/views.py` — REST endpoints + `/ws` WebSocket endpoint
 
-Tests use `rut` (unittest runner) with in-memory SurrealDB spawned in `conftest.py` (`rut_session_setup`/`rut_session_teardown`). Base class `CaseWithDB` provides per-test DB isolation.
+Tests use `pytest` with in-memory SurrealDB spawned in `conftest.py` (via `pytest_sessionstart`/`pytest_sessionfinish` hooks). Base class `CaseWithDB` provides per-test DB isolation.
 
 ## UI
 
