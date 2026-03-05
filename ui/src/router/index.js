@@ -19,7 +19,7 @@ const router = createRouter({
       component: () => import('../pages/ReplayPage.vue'),
     },
   ],
-  scrollBehavior(to, from, savedPosition) {
+  scrollBehavior(_to, _from, savedPosition) {
     if (savedPosition) return savedPosition
     return { top: 0 }
   },
