@@ -13,6 +13,11 @@ const router = createRouter({
       name: 'simulation',
       component: () => import('../pages/SimulationPage.vue'),
     },
+    {
+      path: '/replay',
+      name: 'replay',
+      component: () => import('../pages/ReplayPage.vue'),
+    },
   ],
   scrollBehavior(to, from, savedPosition) {
     if (savedPosition) return savedPosition

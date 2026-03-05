@@ -22,10 +22,15 @@
 * **presets:** add multi-scenario simulation presets — 5 built-in presets (`default`, `storm_survival`, `resource_race`, `exploration`, `cooperative`) with world and agent overrides
 * **presets:** add `GET /api/presets` and `POST /api/presets/{name}/apply` REST endpoints — list available presets and apply them with full world reset
 * **presets:** add `preset` config field to Settings — supports `PRESET=storm_survival` env var for startup scenario selection
+* **replay-ui:** add `/replay` route with `ReplayPage.vue` -- session picker, world map rendering from stored snapshots, playback controls (play/pause, speed 1x/2x/5x/10x, step forward/back), progress bar with click-to-seek, and event timeline panel
+* **replay-ui:** add "Replay" navigation link to landing page NavBar (desktop + mobile) with i18n translations for all 10 locales
+* **replay-ui:** reuse existing `WorldMap` and `MiniMap` components for snapshot rendering with follow-agent and free camera support
+* **replay-ui:** responsive design for tablet (768px) and mobile (480px) breakpoints
 
 ### Tests
 
 * **presets:** add 36 tests in `test_presets.py` (6 preset definitions, 4 default preset, 5 storm survival, 2 unknown preset, 3 resource race, 3 exploration, 2 cooperative, 5 pattern matching, 3 list_presets, 3 config field)
+* **replay-ui:** add 15 tests in `test_replay_api.py` -- session list (4), session detail (2), snapshots (4), events (4), end-to-end workflow (1)
 
 * **peer-messaging:** add `notify_peer(target_id, message)` rover tool — enables direct rover-to-rover messaging via existing `send_agent_message()` infrastructure with battery cost validation
 * **peer-messaging:** add PEER COMMUNICATION section to rover system prompt — lists active peer rover IDs and guides LLM on coordination scenarios (share discoveries, warn about hazards, coordinate exploration)

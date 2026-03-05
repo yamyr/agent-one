@@ -4,7 +4,8 @@
     "agents": "Agenten",
     "features": "Funktionen",
     "tech": "Technologie",
-    "launch": "Mission starten"
+    "launch": "Mission starten",
+    "replay": "Wiedergabe"
   },
   "hero": {
     "badge": "Multi-Agenten Mars-Simulation",

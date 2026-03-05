@@ -4,7 +4,8 @@
     "agents": "Agents",
     "features": "Fonctionnalités",
     "tech": "Technologies",
-    "launch": "Lancer la mission"
+    "launch": "Lancer la mission",
+    "replay": "Relecture"
   },
   "hero": {
     "badge": "Simulation martienne multi-agents",
