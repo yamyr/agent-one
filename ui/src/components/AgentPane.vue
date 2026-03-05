@@ -2,6 +2,7 @@
 import { computed } from 'vue'
 import BatteryBar from './BatteryBar.vue'
 import ConfidenceBar from './ConfidenceBar.vue'
+import PowerBudgetBar from './PowerBudgetBar.vue'
 import ReasoningCard from './ReasoningCard.vue'
 
 const props = defineProps({
@@ -48,6 +49,10 @@ const props = defineProps({
   goalConfidence: {
     type: Number,
     default: 0,
+  },
+  powerBudget: {
+    type: Number,
+    default: null,
   },
 })
 
@@ -116,6 +121,9 @@ function eventText(e) {
         &middot; <BatteryBar :level="batteryLevel" />
         <template v-if="goalConfidence > 0">
           &middot; <ConfidenceBar :level="goalConfidence" />
+        </template>
+        <template v-if="powerBudget != null">
+          &middot; <PowerBudgetBar :level="powerBudget" />
         </template>
       </div>
     </div>

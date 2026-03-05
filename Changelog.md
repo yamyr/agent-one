@@ -4,6 +4,17 @@
 
 ### Features
 
+* **power-allocation:** add `allocate_power(agent_id, amount)` tool to station agent — sets minimum battery threshold per agent, stored in `WORLD["power_budgets"]`
+* **power-allocation:** add `check_power_budgets()` tick-loop monitor — emits `PowerBudgetWarning` events when agent battery drops below allocated threshold (3-tick debounce)
+* **power-allocation:** add `EmergencyModeActivated`/`EmergencyModeDeactivated` events when total power demand exceeds `STATION_POWER_CAPACITY`
+* **power-allocation:** update station system prompt with POWER MANAGEMENT section — guides LLM on budget allocation strategy and event responses
+* **power-allocation:** add `PowerBudgetBar.vue` component (blue inline bar) and integrate in `AgentPane.vue` — conditionally displayed when budget is set
+* **power-allocation:** expose `power_budgets` and `emergency_mode` in `StationContext`, world snapshot, and `_build_world_summary()`
+
+### Tests
+
+* **power-allocation:** add 35 tests in `test_power_budget.py` (9 allocate_power, 8 warnings, 6 emergency mode, 12 context/prompt)
+
 * **goal-confidence:** add `goal_confidence` (float 0.0-1.0) to all agent states — initialized at 0.5 on mission assignment, updated deterministically after each action (+0.05 success, -0.05 failure, -0.08 fallback/hazard, +0.10 delivery), clamped to [0.0, 1.0], resets on mission reassignment
 * **goal-confidence:** expose `goal_confidence` in observation contexts (`observe_rover`, `observe_hauler`, `observe_station`) so LLM agents can introspect on their own confidence
 * **goal-confidence:** add `goal_confidence` to `RoverSummary` so station agent sees confidence of all field agents

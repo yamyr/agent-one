@@ -73,6 +73,13 @@ function goalConfidence(id) {
   return a ? (a.goal_confidence ?? 0) : 0
 }
 
+function powerBudget(id) {
+  if (!props.worldState) return null
+  const budgets = props.worldState.power_budgets
+  if (!budgets) return null
+  return budgets[id] ?? null
+}
+
 </script>
 
 <template>
@@ -105,6 +112,7 @@ function goalConfidence(id) {
         :color="agentColor(id)"
         :message-count="messageCount(id)"
         :goal-confidence="goalConfidence(id)"
+        :power-budget="powerBudget(id)"
         @select-agent="emit('select-agent', $event)"
       />
     </template>

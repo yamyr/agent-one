@@ -51,6 +51,7 @@ from .world import (
     update_tasks,
 )
 from .world import check_storm_tick, get_storm_info, update_goal_confidence
+from .world import record_memory
 from .world import is_obstacle_at
 from .station import StationAgent
 from .training_logger import training_logger
@@ -1919,7 +1920,7 @@ class RoverLoop(BaseAgent):
         t0 = time.monotonic()
         turn = await asyncio.to_thread(self._reasoner.run_turn)
         llm_ms = int((time.monotonic() - t0) * 1000)
-        next_tick()
+        _tick, _power_events = next_tick()
 
         # Advance storm lifecycle and broadcast any storm events
         storm_events = check_storm_tick()
@@ -1931,6 +1932,26 @@ class RoverLoop(BaseAgent):
                 payload=sevt["payload"],
             )
             await host.broadcast(storm_msg.to_dict())
+
+        # Broadcast power budget events (warnings + emergency mode transitions)
+        for pevt in _power_events:
+            ename = pevt["type"]
+            payload = {k: v for k, v in pevt.items() if k != "type"}
+            power_msg = make_message(source="world", type="event", name=ename, payload=payload)
+            await host.broadcast(power_msg.to_dict())
+            # Record warnings in station memory so station LLM sees them
+            if ename == "power_budget_warning":
+                record_memory(
+                    "station",
+                    f"PowerBudgetWarning: {pevt['agent_id']} battery {pevt['battery']:.0%} "
+                    f"below budget {pevt['budget']:.0%}",
+                )
+            elif ename == "emergency_mode_activated":
+                record_memory(
+                    "station", "EMERGENCY MODE ACTIVATED — total power demand exceeds capacity"
+                )
+            elif ename == "emergency_mode_deactivated":
+                record_memory("station", "Emergency mode deactivated — power demand normalized")
 
         geyser_events = update_geysers()
         messages = []
@@ -2274,7 +2295,7 @@ class DroneLoop(BaseAgent):
         _llm_ms = int((time.monotonic() - _t0) * 1000)
         _action_result = {}
         _action_ok = False
-        next_tick()
+        _tick, _power_events = next_tick()
         messages = []
 
         if turn["thinking"]:
@@ -2460,7 +2481,7 @@ class HaulerLoop(BaseAgent):
             return
 
         turn = await asyncio.to_thread(self._reasoner.run_turn)
-        next_tick()
+        _tick, _power_events = next_tick()
 
         messages = []
         if turn["thinking"]:

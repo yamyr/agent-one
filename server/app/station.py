@@ -8,7 +8,7 @@ from mistralai import Mistral
 
 from .config import settings
 from .models import StationContext
-from .world import assign_mission, charge_agent
+from .world import allocate_power, assign_mission, charge_agent
 
 logger = logging.getLogger(__name__)
 
@@ -92,7 +92,35 @@ RECALL_AGENT_TOOL = {
     },
 }
 
-STATION_TOOLS = [ASSIGN_MISSION_TOOL, BROADCAST_ALERT_TOOL, CHARGE_AGENT_TOOL, RECALL_AGENT_TOOL]
+ALLOCATE_POWER_TOOL = {
+    "type": "function",
+    "function": {
+        "name": "allocate_power",
+        "description": "Set a power budget for an agent. Defines the minimum battery threshold to maintain. A PowerBudgetWarning event fires when the agent's battery drops below this level.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "agent_id": {
+                    "type": "string",
+                    "description": "The agent to set a power budget for (e.g. 'rover-mistral', 'drone-mistral').",
+                },
+                "amount": {
+                    "type": "number",
+                    "description": "Minimum battery threshold (0.0-1.0). Agent receives warnings below this level.",
+                },
+            },
+            "required": ["agent_id", "amount"],
+        },
+    },
+}
+
+STATION_TOOLS = [
+    ASSIGN_MISSION_TOOL,
+    BROADCAST_ALERT_TOOL,
+    CHARGE_AGENT_TOOL,
+    RECALL_AGENT_TOOL,
+    ALLOCATE_POWER_TOOL,
+]
 
 SYSTEM_PROMPT = (
     "You are the Mars base station. You coordinate the Mars mission.\n"
@@ -128,6 +156,13 @@ SYSTEM_PROMPT = (
     "- Assign haulers to patrol near rovers that are furthest from station.\n"
     "- When a rover's inventory is full (3 items), direct the hauler to collect from it.\n"
     "- This keeps rovers exploring instead of returning to station to deliver.\n"
+    "\n"
+    "POWER MANAGEMENT:\n"
+    "- Use allocate_power to set minimum battery thresholds for agents.\n"
+    "- Set budgets at mission start: 0.2-0.3 for rovers, 0.3-0.4 for drones.\n"
+    "- When you receive a PowerBudgetWarning, recall the affected agent or prioritize charging.\n"
+    "- When EmergencyModeActivated fires, recall all low-battery agents immediately.\n"
+    "- Adjust budgets based on mission progress and distance from station.\n"
 )
 
 
@@ -158,6 +193,13 @@ def _build_world_summary(context: StationContext):
             f"  {rover.id} ({label}): pos=({x},{y}) battery={rover.battery:.0%} "
             f'mission="{rover.mission.objective}" visited={rover.visited_count}'
         )
+    # Power budgets
+    power_budgets = getattr(context, "power_budgets", {})
+    if power_budgets:
+        budget_parts = [f"{aid}={bud:.0%}" for aid, bud in power_budgets.items()]
+        lines.append(f"Power budgets: {', '.join(budget_parts)}")
+    if getattr(context, "emergency_mode", False):
+        lines.append("*** EMERGENCY MODE ACTIVE — total power demand exceeds station capacity ***")
     lines.append(f"Veins on map: {len(context.stones)}")
     for s in context.stones:
         grade_str = f" grade={s.grade}" if s.grade != "unknown" else ""
@@ -185,6 +227,8 @@ def _parse_tool_calls(tool_calls):
             actions.append({"name": "charge_agent", "params": args})
         elif name == "recall_agent":
             actions.append({"name": "recall_agent", "params": args})
+        elif name == "allocate_power":
+            actions.append({"name": "allocate_power", "params": args})
     return actions
 
 
@@ -204,6 +248,8 @@ def execute_action(action):
             "agent_id": params["agent_id"],
             "reason": params.get("reason", "Emergency recall from station"),
         }
+    elif name == "allocate_power":
+        return allocate_power(params["agent_id"], params["amount"])
     return {"ok": False, "error": f"Unknown station action: {name}"}
 
 
