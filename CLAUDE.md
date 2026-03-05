@@ -189,6 +189,8 @@ Every PR description **must** follow the template in `.github/PULL_REQUEST_TEMPL
 - Python 3.14+ (server), JavaScript/Vue 3 (UI) + FastAPI, Pydantic v2, Mistral AI SDK (server); Vue 3, Vite (UI) (183-human-in-the-loop)
 - Python 3.14+ + FastAPI, mistralai 1.12.4 (SDK), pydantic-settings (184-agents-api-threads)
 - In-memory (conversation_id on reasoner instance, cleared on simulation reset) (184-agents-api-threads)
+- Python 3.14+ (server), JavaScript/Vue 3 (UI) + FastAPI, mistralai SDK, Vue 3, Vite (185-rover-peer-messaging)
+- In-memory (AGENT_MESSAGES global list in world.py) (185-rover-peer-messaging)
 
 ## Recent Changes
 - 181-goal-confidence-tracking: Added Python 3.14+ (server), JavaScript/Vue 3 (UI) + FastAPI, Pydantic, Mistral AI SDK (server); Vue 3, Vite (UI)
