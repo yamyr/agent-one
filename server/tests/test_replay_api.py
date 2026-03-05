@@ -4,7 +4,6 @@ Verifies that training session, snapshot, and event retrieval endpoints
 work correctly for the replay UI feature.
 """
 
-
 from tests.conftest import CaseWithDB
 
 from app.training_logger import TrainingLogger
