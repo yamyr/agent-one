@@ -2,6 +2,16 @@
 
 ## [Unreleased]
 
+### Tests
+
+* **coverage-expansion:** add 34 tests in `test_coverage_expansion.py` covering previously untested code paths:
+  - 8 tests for `collect_gas` action (success, battery deduction, no adjacent plant, empty plant, low battery, inactive plant, drone/hauler blocked)
+  - 4 tests for station `recall_agent` (success, default reason, hauler recall, unknown action)
+  - 9 tests for `upgrade_base` edge cases (wrong position, max level, unknown upgrade, insufficient water/gas, all upgrade types, resource deduction, drone/hauler blocked)
+  - 4 tests for `HaulerLoop.tick()` integration (executes action, broadcasts events, goal confidence update, auto-charge at station)
+  - 3 tests for resource lifecycle (full dig->drop->pickup->unload chain, unanalyzed stone rejection, analyze->dig chain)
+  - 6 tests for storm battery effects (clear multiplier, active multiplier, move cost increase, collect_gas cost increase, max intensity, lifecycle phases)
+
 ### Features
 
 * **presets:** add multi-scenario simulation presets — 5 built-in presets (`default`, `storm_survival`, `resource_race`, `exploration`, `cooperative`) with world and agent overrides
