@@ -150,7 +150,7 @@ async function handleConfirm(requestId, confirmed) {
   pendingConfirm.value = null
 }
 
-function handleConfirmTimeout(requestId) {
+function handleConfirmTimeout() {
   pendingConfirm.value = null
 }
 
