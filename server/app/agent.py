@@ -219,6 +219,28 @@ NOTIFY_TOOL = {
     },
 }
 
+NOTIFY_PEER_TOOL = {
+    "type": "function",
+    "function": {
+        "name": "notify_peer",
+        "description": f"Send a direct message to another rover. Costs {BATTERY_COST_NOTIFY:.0%} battery. Use to share discoveries, coordinate, or warn peers.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "target_id": {
+                    "type": "string",
+                    "description": "The agent ID of the rover to message (e.g., 'rover-2', 'rover-large').",
+                },
+                "message": {
+                    "type": "string",
+                    "description": "The message to send to the peer rover.",
+                },
+            },
+            "required": ["target_id", "message"],
+        },
+    },
+}
+
 INVESTIGATE_STRUCTURE_TOOL = {
     "type": "function",
     "function": {
@@ -364,6 +386,7 @@ ROVER_TOOLS = [
     DEPLOY_SOLAR_PANEL_TOOL,
     USE_SOLAR_BATTERY_TOOL,
     NOTIFY_TOOL,
+    NOTIFY_PEER_TOOL,
     INVESTIGATE_STRUCTURE_TOOL,
     USE_REFINERY_TOOL,
     GATHER_ICE_TOOL,
@@ -808,6 +831,23 @@ class MistralRoverReasoner:
                 )
             parts.append("Consider moving toward high-concentration sites.")
 
+        # Peer rover IDs for notify_peer
+        peer_rovers = [
+            aid
+            for aid, a in self._world.get_agents().items()
+            if aid != self.agent_id and a.get("type") not in ("station", "drone")
+        ]
+        if peer_rovers:
+            parts.append(
+                "\nPEER COMMUNICATION (notify_peer tool):\n"
+                f"- Costs {BATTERY_COST_NOTIFY:.0%} battery (same as station radio).\n"
+                f"- Available peers: {', '.join(peer_rovers)}\n"
+                "- Share rich/pristine vein locations with nearby rovers.\n"
+                "- Warn peers about hazards (erupting geysers, storms) in your area.\n"
+                "- Coordinate exploration: tell peers which direction you're heading to avoid overlap.\n"
+                "- Do NOT spam peers — only message when you have genuinely useful intel."
+            )
+
         # Incoming messages from other agents
         incoming = get_unread_messages(self.agent_id)
         if incoming:
@@ -868,6 +908,7 @@ class MistralRoverReasoner:
                     "deploy_solar_panel",
                     "use_solar_battery",
                     "notify",
+                    "notify_peer",
                     "investigate_structure",
                     "use_refinery",
                     "gather_ice",
@@ -1372,6 +1413,7 @@ class HuggingFaceRoverReasoner(MistralRoverReasoner):
                     "deploy_solar_panel",
                     "use_solar_battery",
                     "notify",
+                    "notify_peer",
                     "gather_ice",
                     "harvest_ice",
                     "recycle_ice",
@@ -2116,6 +2158,20 @@ class RoverLoop(BaseAgent):
                         },
                     )
                     messages.append(station_log)
+
+                # Broadcast peer message event for UI visualization
+                if turn["action"]["name"] == "notify_peer" and result.get("ok"):
+                    peer_msg = make_message(
+                        source=self.agent_id,
+                        type="event",
+                        name="peer_message",
+                        payload={
+                            "target": result["target"],
+                            "message": result["message"],
+                            "position": result["position"],
+                        },
+                    )
+                    messages.append(peer_msg)
 
                 # Don't check mission success/failure during abort
                 if mission_status != "aborted":

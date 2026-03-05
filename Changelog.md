@@ -4,6 +4,14 @@
 
 ### Features
 
+* **peer-messaging:** add `notify_peer(target_id, message)` rover tool — enables direct rover-to-rover messaging via existing `send_agent_message()` infrastructure with battery cost validation
+* **peer-messaging:** add PEER COMMUNICATION section to rover system prompt — lists active peer rover IDs and guides LLM on coordination scenarios (share discoveries, warn about hazards, coordinate exploration)
+* **peer-messaging:** add magenta (#cc44cc) communication lines on WorldMap for `peer_message` events — leverages existing `addCommLine()` animation system
+
+### Tests
+
+* **peer-messaging:** add 19 tests in `test_peer_messaging.py` (3 tool schema, 9 execution/validation, 3 message delivery, 4 prompt integration)
+
 * **agents-api-threads:** add persistent conversation threads — store `_conversation_id` per reasoner, use `conversations.append()` on subsequent turns instead of `conversations.start()` for cross-turn memory continuity
 * **agents-api-threads:** add `agents_api_persist_threads` config toggle (default `True`) — when False, every turn starts a fresh conversation for debugging/cost control
 * **agents-api-threads:** verify and confirm training logger integration via Loop class inheritance — remove misleading `# TODO` comment

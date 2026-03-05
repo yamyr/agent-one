@@ -46,6 +46,7 @@ const COMM_COLORS = {
   command: '#cc8844',
   alert: '#cc4444',
   notify: '#4488cc',
+  peer: '#cc44cc',
 }
 let commRafId = null
 let lastEventCount = 0
@@ -127,6 +128,8 @@ watch(() => props.events.length, (newLen) => {
       addCommLine(ev.source, 'station', 'notify')
     } else if (ev.name === 'alert') {
       addCommLine(ev.source || 'station', null, 'alert')
+    } else if (ev.name === 'peer_message') {
+      addCommLine(ev.source, ev.payload?.target, 'peer')
     }
   }
 })

@@ -1341,6 +1341,10 @@ def execute_action(agent_id, action_name, params):
         result = _execute_notify(agent_id, agent, params)
         if result["ok"]:
             record_memory(agent_id, f"Notified station: {result['message']}")
+    elif action_name == "notify_peer":
+        result = _execute_notify_peer(agent_id, agent, params)
+        if result["ok"]:
+            record_memory(agent_id, f"Sent peer message to {result['target']}: {result['message']}")
     elif action_name == "drop_item":
         if is_drone:
             return {"ok": False, "error": "Drones cannot drop inventory items"}
@@ -1870,6 +1874,38 @@ def _execute_notify(agent_id, agent, params):
         "ok": True,
         "position": list(agent["position"]),
         "message": message,
+    }
+
+
+def _execute_notify_peer(agent_id, agent, params):
+    """Send a direct message to another rover. Costs 2 fuel (same as notify)."""
+    storm_mult = storm_mod.get_battery_multiplier(WORLD)
+    cost = BATTERY_COST_NOTIFY * storm_mult
+    if agent["battery"] < cost:
+        return {"ok": False, "error": "Not enough battery to send peer message"}
+    target_id = params.get("target_id", "")
+    message = params.get("message", "")
+    if not message:
+        return {"ok": False, "error": "Empty message"}
+    if not target_id:
+        return {"ok": False, "error": "No target_id specified"}
+    if target_id == agent_id:
+        return {"ok": False, "error": "Cannot send message to yourself"}
+    target = WORLD["agents"].get(target_id)
+    if target is None:
+        return {"ok": False, "error": f"Unknown agent: {target_id}"}
+    target_type = target.get("type", "")
+    if target_type == "station":
+        return {"ok": False, "error": "Use notify to message station, not notify_peer"}
+    if target_type == "drone":
+        return {"ok": False, "error": "Cannot send peer messages to drones"}
+    agent["battery"] = max(0.0, agent["battery"] - cost)
+    send_agent_message(agent_id, target_id, message)
+    return {
+        "ok": True,
+        "target": target_id,
+        "message": message,
+        "position": list(agent["position"]),
     }
 
 
