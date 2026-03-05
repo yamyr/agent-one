@@ -15,9 +15,11 @@ import NarrationPlayer from '../components/NarrationPlayer.vue'
 import StatsBar from '../components/StatsBar.vue'
 import ToastOverlay from '../components/ToastOverlay.vue'
 import HelpModal from '../components/HelpModal.vue'
+import ConfirmModal from '../components/ConfirmModal.vue'
 
 const selectedAgent = ref(null)
 const helpVisible = ref(false)
+const pendingConfirm = ref(null)
 const paused = ref(false)
 const narrationEnabled = ref(false)
 const worldMapRef = ref(null)
@@ -96,6 +98,14 @@ async function resetSimulation() {
 const { toasts, addToast, dismiss: dismissToast } = useToasts()
 
 function onSimEvent(event) {
+  if (event.name === 'confirm_request') {
+    pendingConfirm.value = event.payload
+    return
+  }
+  if (event.name === 'confirm_response' || event.name === 'confirm_timeout') {
+    pendingConfirm.value = null
+    return
+  }
   switch (event.name) {
     case 'mission_success':
       addToast(`Mission complete — ${event.payload?.collected_quantity ?? '?'} collected`, { type: 'success', duration: 6000 })
@@ -125,6 +135,23 @@ function onSimEvent(event) {
     default:
       break
   }
+}
+
+async function handleConfirm(requestId, confirmed) {
+  try {
+    await fetch('/api/confirm', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ request_id: requestId, confirmed })
+    })
+  } catch (e) {
+    console.error('Confirm failed:', e)
+  }
+  pendingConfirm.value = null
+}
+
+function handleConfirmTimeout(requestId) {
+  pendingConfirm.value = null
 }
 
 const { events, connected, worldState, agentIds, agentEvents, narration, narrationChunk } = useWebSocket({ onConnect: onWsConnect, onEvent: onSimEvent })
@@ -277,6 +304,15 @@ useKeyboard({
       :toasts="toasts"
       @dismiss="dismissToast"
     />
+
+    <Transition name="modal">
+      <ConfirmModal
+        v-if="pendingConfirm"
+        :request="pendingConfirm"
+        @respond="handleConfirm"
+        @timeout="handleConfirmTimeout"
+      />
+    </Transition>
 
     <HelpModal
       :visible="helpVisible"

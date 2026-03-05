@@ -186,6 +186,7 @@ Every PR description **must** follow the template in `.github/PULL_REQUEST_TEMPL
 - SurrealDB on port 4002 (unchanged by this refactor) (182-pydantic-refactor)
 - Python 3.14+ (server), JavaScript/Vue 3 (UI) + FastAPI, Pydantic v2, mistralai SDK, Vue 3, Vite (182-pydantic-refactor)
 - In-memory WORLD dict (simulation state), SurrealDB on port 4002 (unchanged) (182-pydantic-refactor)
+- Python 3.14+ (server), JavaScript/Vue 3 (UI) + FastAPI, Pydantic v2, Mistral AI SDK (server); Vue 3, Vite (UI) (183-human-in-the-loop)
 
 ## Recent Changes
 - 181-goal-confidence-tracking: Added Python 3.14+ (server), JavaScript/Vue 3 (UI) + FastAPI, Pydantic, Mistral AI SDK (server); Vue 3, Vite (UI)

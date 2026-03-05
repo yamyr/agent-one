@@ -329,6 +329,33 @@ DROP_ITEM_TOOL = {
     },
 }
 
+REQUEST_CONFIRM_TOOL = {
+    "type": "function",
+    "function": {
+        "name": "request_confirm",
+        "description": (
+            "Request human confirmation before a high-risk action. "
+            "Your loop pauses until the human confirms or denies (or timeout). "
+            "Use before entering storm zones, crossing hazard tiles, "
+            "or moving with very low battery. Do NOT use for routine moves."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "question": {
+                    "type": "string",
+                    "description": "Clear question for the human operator (e.g., 'Cross hazard zone during active storm? Battery at 35%.').",
+                },
+                "timeout": {
+                    "type": "integer",
+                    "description": "Seconds to wait for response (default 30, max 120).",
+                },
+            },
+            "required": ["question"],
+        },
+    },
+}
+
 
 ROVER_TOOLS = [
     MOVE_TOOL,
@@ -346,6 +373,7 @@ ROVER_TOOLS = [
     UPGRADE_BASE_TOOL,
     UPGRADE_BUILDING_TOOL,
     DROP_ITEM_TOOL,
+    REQUEST_CONFIRM_TOOL,
 ]
 
 HAULER_MOVE_TOOL = {
@@ -732,6 +760,21 @@ class MistralRoverReasoner:
                     "CAUTION: Moves may randomly fail. Battery drains faster. "
                     "Consider returning to station if battery is below 80%."
                 )
+
+        # Human confirmation guidance
+        parts.append(
+            "\n== HUMAN CONFIRMATION ==\n"
+            "You have a request_confirm tool to ask the human operator before risky actions.\n"
+            "WHEN TO USE:\n"
+            "- Before entering tiles near an active dust storm\n"
+            "- Before crossing hazard tiles (erupting geysers, unstable terrain)\n"
+            "- Before moving when battery is below 15%\n"
+            "WHEN NOT TO USE:\n"
+            "- Do NOT use for routine moves in safe areas\n"
+            "- Do NOT use every turn — only for genuinely dangerous situations\n"
+            "Example: request_confirm(question='Cross hazard zone during active storm? Battery at 35%.')"
+        )
+
         # --- Strategic Insights ---
         sm = agent.get("strategic_memory", [])
         if sm:
@@ -1978,7 +2021,59 @@ class RoverLoop(BaseAgent):
             )
             messages.append(msg)
 
-        if turn["action"]:
+        # ── Human confirmation handling ──
+        _confirm_result = None
+        if turn["action"] and turn["action"]["name"] == "request_confirm":
+            from .host import CONFIRM_DEFAULT_TIMEOUT
+
+            q = turn["action"]["params"].get("question", "Confirm action?")
+            t = turn["action"]["params"].get("timeout", CONFIRM_DEFAULT_TIMEOUT)
+            t = max(5, min(120, t))
+            request_id = host.create_confirm(self.agent_id, q, t)
+            # Build context for UI
+            rover_state = self._world.get_agents().get(self.agent_id, {})
+            storm_info_ctx = get_storm_info()
+            confirm_ctx = {
+                "position": rover_state.get("position", [0, 0]),
+                "battery": rover_state.get("battery", 0),
+                "storm_phase": storm_info_ctx.get("phase"),
+                "storm_intensity": storm_info_ctx.get("intensity"),
+            }
+            confirm_msg = make_message(
+                source=self.agent_id,
+                type="event",
+                name="confirm_request",
+                payload={
+                    "request_id": request_id,
+                    "agent_id": self.agent_id,
+                    "question": q,
+                    "timeout": t,
+                    "context": confirm_ctx,
+                },
+            )
+            await host.broadcast(confirm_msg.to_dict())
+
+            confirmed = False
+            try:
+                entry = host.get_pending_confirm(request_id)
+                await asyncio.wait_for(entry["event"].wait(), timeout=t)
+                confirmed = entry["response"] is True
+            except asyncio.TimeoutError:
+                timeout_msg = make_message(
+                    source="world",
+                    type="event",
+                    name="confirm_timeout",
+                    payload={"request_id": request_id, "agent_id": self.agent_id},
+                )
+                await host.broadcast(timeout_msg.to_dict())
+            finally:
+                host.cleanup_confirm(request_id)
+
+            status = "approved" if confirmed else "denied"
+            record_memory(self.agent_id, f"Confirmation {status}: {q}")
+            _confirm_result = {"ok": True, "confirmed": confirmed, "question": q}
+
+        if turn["action"] and turn["action"]["name"] != "request_confirm":
             result = execute_action(
                 self.agent_id,
                 turn["action"]["name"],
@@ -2048,6 +2143,15 @@ class RoverLoop(BaseAgent):
                                 payload=mission_event,
                             )
                             messages.append(mission_msg)
+
+        if _confirm_result is not None:
+            action_msg = make_message(
+                source=self.agent_id,
+                type="action",
+                name="request_confirm",
+                payload=_confirm_result,
+            )
+            messages.append(action_msg)
 
         # LLM-owned task: update agent tasks from LLM output
         llm_task = turn.get("task")

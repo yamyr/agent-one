@@ -4,6 +4,12 @@
 
 ### Features
 
+* **human-in-the-loop:** add `request_confirm` rover tool — pauses agent loop and emits `confirm_request` WebSocket event for human approval of high-risk actions
+* **human-in-the-loop:** add `POST /api/confirm` endpoint — accepts `{request_id, confirmed}` from UI, unblocks rover via `asyncio.Event`, broadcasts `confirm_response` event
+* **human-in-the-loop:** add `ConfirmModal.vue` component — fixed overlay with agent context, countdown timer, Confirm/Deny buttons, auto-dismiss on timeout
+* **human-in-the-loop:** add Host confirmation management — `create_confirm()`, `resolve_confirm()`, `cleanup_confirm()` with one-per-agent limit and `CONFIRM_DEFAULT_TIMEOUT = 30`
+* **human-in-the-loop:** add HUMAN CONFIRMATION section to rover system prompt — guides LLM on when to use `request_confirm` (storm zones, hazard tiles, low battery)
+
 * **power-allocation:** add `allocate_power(agent_id, amount)` tool to station agent — sets minimum battery threshold per agent, stored in `WORLD["power_budgets"]`
 * **power-allocation:** add `check_power_budgets()` tick-loop monitor — emits `PowerBudgetWarning` events when agent battery drops below allocated threshold (3-tick debounce)
 * **power-allocation:** add `EmergencyModeActivated`/`EmergencyModeDeactivated` events when total power demand exceeds `STATION_POWER_CAPACITY`
@@ -13,6 +19,7 @@
 
 ### Tests
 
+* **human-in-the-loop:** add 20 tests in `test_confirm.py` (9 host confirmation, 3 tool schema, 4 endpoint, 4 prompt)
 * **power-allocation:** add 35 tests in `test_power_budget.py` (9 allocate_power, 8 warnings, 6 emergency mode, 12 context/prompt)
 
 * **goal-confidence:** add `goal_confidence` (float 0.0-1.0) to all agent states — initialized at 0.5 on mission assignment, updated deterministically after each action (+0.05 success, -0.05 failure, -0.08 fallback/hazard, +0.10 delivery), clamped to [0.0, 1.0], resets on mission reassignment

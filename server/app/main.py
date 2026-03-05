@@ -190,6 +190,33 @@ async def recall_rover(rover_id: str):
     return await host.recall_rover(rover_id)
 
 
+@app.post("/api/confirm")
+async def confirm_action(body: dict):
+    """Accept human confirmation response for a pending rover action."""
+    from .protocol import make_message
+
+    request_id = body.get("request_id")
+    confirmed = body.get("confirmed")
+
+    if request_id is None or confirmed is None:
+        return {"ok": False, "error": "Missing required fields: request_id, confirmed"}
+
+    resolved = host.resolve_confirm(request_id, bool(confirmed))
+    if not resolved:
+        return {"ok": False, "error": "No pending confirmation with this request_id"}
+
+    # Broadcast confirm_response event so UI can dismiss modal
+    msg = make_message(
+        source="human",
+        type="command",
+        name="confirm_response",
+        payload={"request_id": request_id, "confirmed": bool(confirmed)},
+    )
+    await broadcaster.send(msg.to_dict())
+
+    return {"ok": True, "request_id": request_id, "confirmed": bool(confirmed)}
+
+
 # ── Voice command endpoint ──────────────────────────────────────────────────
 
 
