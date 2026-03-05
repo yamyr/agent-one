@@ -4,7 +4,8 @@
     "agents": "智能体",
     "features": "功能",
     "tech": "技术栈",
-    "launch": "启动任务"
+    "launch": "启动任务",
+    "replay": "回放"
   },
   "hero": {
     "badge": "多智能体火星模拟",

@@ -166,6 +166,11 @@ onUnmounted(() => {
           </Transition>
         </div>
 
+        <!-- Replay link -->
+        <router-link to="/replay" class="navbar__replay">
+          {{ t('nav.replay') }}
+        </router-link>
+
         <!-- Launch CTA -->
         <router-link to="/app" class="navbar__cta">
           {{ t('nav.launch') }}
@@ -221,6 +226,10 @@ onUnmounted(() => {
             {{ loc.flag }} {{ loc.name }}
           </button>
         </div>
+
+        <router-link to="/replay" class="navbar__replay navbar__replay--mobile" @click="closeMobile">
+          {{ t('nav.replay') }}
+        </router-link>
 
         <router-link to="/app" class="navbar__cta navbar__cta--mobile" @click="closeMobile">
           {{ t('nav.launch') }}
@@ -419,6 +428,35 @@ onUnmounted(() => {
 
 .locale-switcher__name {
   flex: 1;
+}
+
+/* ─── Replay Link ─── */
+.navbar__replay {
+  display: inline-flex;
+  align-items: center;
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  text-decoration: none;
+  padding: 0.5rem 1rem;
+  border: 1px solid var(--glass-border);
+  border-radius: 6px;
+  transition: border-color 0.3s ease, color 0.3s ease;
+}
+
+.navbar__replay:hover {
+  border-color: var(--mars-ochre);
+  color: var(--mars-ochre);
+}
+
+.navbar__replay--mobile {
+  width: 100%;
+  justify-content: center;
+  padding: 0.7rem 1.5rem;
+  font-size: 0.85rem;
 }
 
 /* ─── Launch CTA ─── */

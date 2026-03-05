@@ -4,7 +4,8 @@
     "agents": "Agentes",
     "features": "Recursos",
     "tech": "Tecnologia",
-    "launch": "Iniciar missão"
+    "launch": "Iniciar missão",
+    "replay": "Replay"
   },
   "hero": {
     "badge": "Simulação marciana multiagente",

@@ -4,7 +4,8 @@
     "agents": "Agents",
     "features": "Features",
     "tech": "Tech Stack",
-    "launch": "Launch Mission"
+    "launch": "Launch Mission",
+    "replay": "Replay"
   },
   "hero": {
     "badge": "Multi-Agent Mars Simulation",

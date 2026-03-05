@@ -4,7 +4,8 @@
     "agents": "에이전트",
     "features": "기능",
     "tech": "기술 스택",
-    "launch": "미션 시작"
+    "launch": "미션 시작",
+    "replay": "리플레이"
   },
   "hero": {
     "badge": "멀티 에이전트 화성 시뮬레이션",
