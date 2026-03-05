@@ -152,6 +152,7 @@ class RoverAgentState(BaseModel):
     tasks: list[str] = []
     visited: list[list[int]] = []
     visited_count: int = 0
+    goal_confidence: float = 0.5
 
 
 class RoverWorldView(BaseModel):
@@ -198,6 +199,7 @@ class RoverSummary(BaseModel):
     battery: float
     mission: AgentMission
     visited_count: int = 0
+    goal_confidence: float = 0.5
 
 
 class StationContext(BaseModel):
@@ -229,6 +231,7 @@ class HaulerAgentState(BaseModel):
     tasks: list[str] = []
     visited: list[list[int]] = []
     visited_count: int = 0
+    goal_confidence: float = 0.5
 
 
 class HaulerWorldView(BaseModel):

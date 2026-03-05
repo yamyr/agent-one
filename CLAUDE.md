@@ -180,3 +180,8 @@ Every PR description **must** follow the template in `.github/PULL_REQUEST_TEMPL
 ## Active Technologies
 - Python 3.14+ (server), JavaScript/Vue 3 (UI) + FastAPI, Vue 3, Vite, Mistral AI SDK, ElevenLabs SDK
 - Node 24 LTS, uv package manager
+- Python 3.14+ (server), JavaScript/Vue 3 (UI) + FastAPI, Pydantic, Mistral AI SDK (server); Vue 3, Vite (UI) (181-goal-confidence-tracking)
+- SurrealDB (runtime), in-memory WORLD dict (simulation state) (181-goal-confidence-tracking)
+
+## Recent Changes
+- 181-goal-confidence-tracking: Added Python 3.14+ (server), JavaScript/Vue 3 (UI) + FastAPI, Pydantic, Mistral AI SDK (server); Vue 3, Vite (UI)

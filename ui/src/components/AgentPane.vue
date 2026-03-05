@@ -1,6 +1,7 @@
 <script setup>
 import { computed } from 'vue'
 import BatteryBar from './BatteryBar.vue'
+import ConfidenceBar from './ConfidenceBar.vue'
 import ReasoningCard from './ReasoningCard.vue'
 
 const props = defineProps({
@@ -41,6 +42,10 @@ const props = defineProps({
     default: '',
   },
   messageCount: {
+    type: Number,
+    default: 0,
+  },
+  goalConfidence: {
     type: Number,
     default: 0,
   },
@@ -109,6 +114,9 @@ function eventText(e) {
           class="agent-inv"
         >&middot; {{ inventorySummary }}</span>
         &middot; <BatteryBar :level="batteryLevel" />
+        <template v-if="goalConfidence > 0">
+          &middot; <ConfidenceBar :level="goalConfidence" />
+        </template>
       </div>
     </div>
     <div

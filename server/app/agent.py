@@ -50,7 +50,7 @@ from .world import (
     update_geysers,
     update_tasks,
 )
-from .world import check_storm_tick, get_storm_info
+from .world import check_storm_tick, get_storm_info, update_goal_confidence
 from .world import is_obstacle_at
 from .station import StationAgent
 from .training_logger import training_logger
@@ -97,6 +97,9 @@ def _build_turn_snapshot(agent_state: dict, world) -> TurnWorldSnapshot:
         collected_quantity=mission.get("collected", 0) if isinstance(mission, dict) else 0,
         target_quantity=mission.get("target_quantity", 100) if isinstance(mission, dict) else 100,
         distance_to_station=dist,
+        goal_confidence=agent_state.get("goal_confidence", 0.5)
+        if isinstance(agent_state.get("goal_confidence"), (int, float))
+        else 0.5,
     )
 
 
@@ -1908,6 +1911,7 @@ class RoverLoop(BaseAgent):
         pre_rover = self._world.get_agents().get(self.agent_id) or {}
         pre_position = list(pre_rover.get("position", [0, 0]))
         pre_battery = pre_rover.get("battery", 1.0)
+        pre_confidence = pre_rover.get("goal_confidence", 0.5)
         world_snap = (
             _build_turn_snapshot(pre_rover, self._world) if pre_rover else TurnWorldSnapshot()
         )
@@ -2039,6 +2043,30 @@ class RoverLoop(BaseAgent):
                 )
                 messages.append(task_msg)
 
+        # ── Goal confidence update ──
+        _action_ok_for_confidence = False
+        _action_name_for_confidence = ""
+        if turn["action"]:
+            _action_name_for_confidence = turn["action"]["name"]
+            for m in messages:
+                md = m.to_dict() if hasattr(m, "to_dict") else m
+                if md.get("type") == "action" and md.get("name") == _action_name_for_confidence:
+                    _action_ok_for_confidence = md.get("payload", {}).get("ok", False)
+                    break
+        _is_fallback = "fallback" in (turn.get("thinking") or "").lower()
+        if turn["action"]:
+            if _action_ok_for_confidence:
+                if _action_name_for_confidence == "deliver":
+                    update_goal_confidence(self.agent_id, 0.10)
+                else:
+                    update_goal_confidence(self.agent_id, 0.05)
+            else:
+                update_goal_confidence(self.agent_id, -0.05)
+        if _is_fallback:
+            update_goal_confidence(self.agent_id, -0.08)
+        if storm_events:
+            update_goal_confidence(self.agent_id, -0.08)
+
         for msg in messages:
             await host.broadcast(msg.to_dict())
 
@@ -2052,7 +2080,6 @@ class RoverLoop(BaseAgent):
         if turn["action"]:
             action_name = turn["action"]["name"]
             action_params = turn["action"]["params"]
-            # Find the result from the execute_action call above
             for m in messages:
                 md = m.to_dict() if hasattr(m, "to_dict") else m
                 if md.get("type") == "action" and md.get("name") == action_name:
@@ -2060,7 +2087,7 @@ class RoverLoop(BaseAgent):
                     action_ok = action_result_data.get("ok", False)
                     break
         post_rover = self._world.get_agents().get(self.agent_id) or {}
-        is_fallback = "fallback" in (turn.get("thinking") or "").lower()
+        is_fallback = _is_fallback
         current_tick = self._world.get_tick()
         training_turn = TrainingTurn(
             tick=current_tick,
@@ -2077,6 +2104,8 @@ class RoverLoop(BaseAgent):
             battery_after=post_rover.get("battery", 1.0),
             position_before=pre_position,
             position_after=list(post_rover.get("position", [0, 0])),
+            goal_confidence_before=pre_confidence,
+            goal_confidence_after=post_rover.get("goal_confidence", 0.5),
             model=getattr(self._reasoner, "model", ""),
             is_fallback=is_fallback,
             llm_duration_ms=llm_ms,
@@ -2239,6 +2268,7 @@ class DroneLoop(BaseAgent):
         _drone_state = self._world.get_agents().get(self.agent_id, {})
         _pre_position = list(_drone_state.get("position", [0, 0]))
         _pre_battery = _drone_state.get("battery", 1.0)
+        _pre_confidence = _drone_state.get("goal_confidence", 0.5)
         _t0 = time.monotonic()
         turn = await asyncio.to_thread(self._reasoner.run_turn)
         _llm_ms = int((time.monotonic() - _t0) * 1000)
@@ -2329,6 +2359,15 @@ class DroneLoop(BaseAgent):
                 )
                 messages.append(task_msg)
 
+        # ── Goal confidence update (drone) ──
+        if turn["action"]:
+            if _action_ok:
+                update_goal_confidence(self.agent_id, 0.05)
+            else:
+                update_goal_confidence(self.agent_id, -0.05)
+        if turn.get("is_fallback", False):
+            update_goal_confidence(self.agent_id, -0.08)
+
         for msg in messages:
             await host.broadcast(msg.to_dict())
 
@@ -2353,6 +2392,8 @@ class DroneLoop(BaseAgent):
                 battery_after=_post_drone.get("battery", 1.0),
                 position_before=_pre_position,
                 position_after=list(_post_drone.get("position", [0, 0])),
+                goal_confidence_before=_pre_confidence,
+                goal_confidence_after=_post_drone.get("goal_confidence", 0.5),
                 model=getattr(self._reasoner, "model", ""),
                 is_fallback=turn.get("is_fallback", False),
                 llm_duration_ms=_llm_ms,
@@ -2460,6 +2501,20 @@ class HaulerLoop(BaseAgent):
                             f"Radio from {self.agent_id} at ({pos[0]},{pos[1]}): {result['message']}"
                         )
 
+        # ── Goal confidence update (hauler) ──
+        if turn["action"]:
+            _h_result_ok = any(
+                (m.to_dict() if hasattr(m, "to_dict") else m).get("type") == "action"
+                for m in messages
+            )
+            if _h_result_ok:
+                if turn["action"]["name"] == "deliver":
+                    update_goal_confidence(self.agent_id, 0.10)
+                else:
+                    update_goal_confidence(self.agent_id, 0.05)
+            else:
+                update_goal_confidence(self.agent_id, -0.05)
+
         for msg in messages:
             await host.broadcast(msg.to_dict())
 
@@ -2561,6 +2616,9 @@ class StationLoop(BaseAgent):
             )
         except Exception:
             station_state, pre_position, pre_battery = {}, [0, 0], 1.0
+        pre_confidence = (
+            station_state.get("goal_confidence", 0.5) if isinstance(station_state, dict) else 0.5
+        )
         context_text = str(context) if context else ""
         t0 = time.monotonic()
         result = await asyncio.to_thread(
@@ -2580,6 +2638,11 @@ class StationLoop(BaseAgent):
 
         # Execute actions through Host routing (ensures world-effect)
         await host.route_station_actions(result)
+
+        # ── Goal confidence update (station) ──
+        _station_actions = result.get("actions", [])
+        if _station_actions:
+            update_goal_confidence("station", 0.05)
 
         # ── Training: log station turn ──
         try:
@@ -2617,6 +2680,10 @@ class StationLoop(BaseAgent):
                 else "",
                 is_fallback=False,
                 llm_duration_ms=llm_ms,
+                goal_confidence_before=pre_confidence,
+                goal_confidence_after=post_station.get("goal_confidence", 0.5)
+                if isinstance(post_station, dict)
+                else 0.5,
             )
             training_logger.log_turn(training_turn)
             training_logger.log_world_snapshot(current_tick, get_snapshot())
