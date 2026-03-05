@@ -45,6 +45,7 @@ htmlcov/
 
 # Local tool state
 .sisyphus/
+.claude/
 
 # OS files
 .DS_Store
