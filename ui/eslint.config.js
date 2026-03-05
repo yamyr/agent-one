@@ -7,4 +7,9 @@ export default [
   { languageOptions: { globals: globals.browser } },
   js.configs.recommended,
   ...pluginVue.configs['flat/recommended'],
+  {
+    rules: {
+      'no-unused-vars': ['error', { argsIgnorePattern: '^_' }],
+    },
+  },
 ]
