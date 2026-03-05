@@ -8,6 +8,7 @@ The Host has NO domain knowledge — agents own their loops via BaseAgent.run().
 import asyncio
 import logging
 import time
+import uuid
 
 from .base_agent import BaseAgent
 from .broadcast import broadcaster
@@ -24,6 +25,8 @@ from .training_models import SessionConfig, SessionResult
 
 logger = logging.getLogger(__name__)
 
+CONFIRM_DEFAULT_TIMEOUT = 30
+
 
 class Host:
     """Central message router. Manages agent inboxes, loops, and station routing."""
@@ -39,6 +42,7 @@ class Host:
         self._session_start_time: float = 0.0
         self._total_paused_duration: float = 0.0
         self._pause_start_time: float | None = None
+        self._pending_confirms: dict[str, dict] = {}
 
     @property
     def paused(self) -> bool:
@@ -63,6 +67,53 @@ class Host:
         if self._paused and self._pause_start_time is not None:
             paused_so_far += time.monotonic() - self._pause_start_time
         return max(0.0, raw - paused_so_far)
+
+    # ── Confirmation management ──
+
+    def create_confirm(self, agent_id: str, question: str, timeout: int) -> str:
+        """Create a pending confirmation request. Returns request_id (UUID)."""
+        # Enforce one-per-agent: clean up any existing confirm for this agent
+        existing = self.get_agent_pending_confirm(agent_id)
+        if existing:
+            for rid, entry in list(self._pending_confirms.items()):
+                if entry["agent_id"] == agent_id:
+                    self.cleanup_confirm(rid)
+                    break
+
+        request_id = str(uuid.uuid4())
+        self._pending_confirms[request_id] = {
+            "agent_id": agent_id,
+            "question": question,
+            "timeout": timeout,
+            "event": asyncio.Event(),
+            "response": None,
+            "tick": 0,
+        }
+        return request_id
+
+    def resolve_confirm(self, request_id: str, confirmed: bool) -> bool:
+        """Set response and signal the waiting agent. Returns True if found."""
+        entry = self._pending_confirms.get(request_id)
+        if entry is None:
+            return False
+        entry["response"] = confirmed
+        entry["event"].set()
+        return True
+
+    def get_pending_confirm(self, request_id: str) -> dict | None:
+        """Get a pending confirmation by request_id."""
+        return self._pending_confirms.get(request_id)
+
+    def get_agent_pending_confirm(self, agent_id: str) -> dict | None:
+        """Get the pending confirmation for a specific agent (if any)."""
+        for entry in self._pending_confirms.values():
+            if entry["agent_id"] == agent_id:
+                return entry
+        return None
+
+    def cleanup_confirm(self, request_id: str):
+        """Remove a resolved or timed-out confirmation."""
+        self._pending_confirms.pop(request_id, None)
 
     # ── Agent registration ──
 
