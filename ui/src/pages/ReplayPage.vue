@@ -1,11 +1,8 @@
 <script setup>
-import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
-import { useRouter } from 'vue-router'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import WorldMap from '../components/WorldMap.vue'
 import MiniMap from '../components/MiniMap.vue'
 import { VIEWPORT_W, VIEWPORT_H, agentColor } from '../constants.js'
-
-const router = useRouter()
 
 // ── Session picker state ──
 const sessions = ref([])
