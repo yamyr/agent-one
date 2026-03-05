@@ -182,6 +182,10 @@ Every PR description **must** follow the template in `.github/PULL_REQUEST_TEMPL
 - Node 24 LTS, uv package manager
 - Python 3.14+ (server), JavaScript/Vue 3 (UI) + FastAPI, Pydantic, Mistral AI SDK (server); Vue 3, Vite (UI) (181-goal-confidence-tracking)
 - SurrealDB (runtime), in-memory WORLD dict (simulation state) (181-goal-confidence-tracking)
+- Python 3.14+ + Pydantic v2 (BaseModel, Field, Literal, field_validator, TypeAdapter), FastAPI, mistralai (182-pydantic-refactor)
+- SurrealDB on port 4002 (unchanged by this refactor) (182-pydantic-refactor)
+- Python 3.14+ (server), JavaScript/Vue 3 (UI) + FastAPI, Pydantic v2, mistralai SDK, Vue 3, Vite (182-pydantic-refactor)
+- In-memory WORLD dict (simulation state), SurrealDB on port 4002 (unchanged) (182-pydantic-refactor)
 
 ## Recent Changes
 - 181-goal-confidence-tracking: Added Python 3.14+ (server), JavaScript/Vue 3 (UI) + FastAPI, Pydantic, Mistral AI SDK (server); Vue 3, Vite (UI)

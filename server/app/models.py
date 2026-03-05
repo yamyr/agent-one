@@ -215,6 +215,8 @@ class StationContext(BaseModel):
     water_collected: int = 0
     gas_collected: int = 0
     station_resources: StationResources | None = None
+    power_budgets: dict[str, float] = {}
+    emergency_mode: bool = False
 
 
 # ── Hauler Context ──

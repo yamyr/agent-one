@@ -78,6 +78,8 @@ BATTERY_COST_ANALYZE = 3 / FUEL_CAPACITY_ROVER  # 3 fuel units
 BATTERY_COST_SCAN = 2 / FUEL_CAPACITY_DRONE  # 2 fuel units
 BATTERY_COST_NOTIFY = 2 / FUEL_CAPACITY_ROVER  # 2 fuel units (radio notification)
 CHARGE_RATE = 0.20
+STATION_POWER_CAPACITY = 1.0  # max aggregate power deficit the station can service per cycle
+POWER_WARN_COOLDOWN = 3  # ticks between repeated warnings for the same agent
 MAX_MOVE_DISTANCE = 3
 MAX_MOVE_DISTANCE_DRONE = 6
 MAX_MOVE_DISTANCE_HAULER = 2
@@ -749,6 +751,9 @@ def _build_initial_world():
             "gas_collected": 0,
         },
         "storm": storm_mod.make_storm_state(),
+        "power_budgets": {},
+        "emergency_mode": False,
+        "_power_warn_ticks": {},
     }
     return world
 
@@ -1010,10 +1015,12 @@ def reset_world():
 
 
 def next_tick():
-    """Increment and return the current tick number."""
+    """Increment and return the current tick number and any power budget events."""
     WORLD["tick"] += 1
     apply_structure_passive_effects()
-    return WORLD["tick"]
+    tick = WORLD["tick"]
+    power_events = check_power_budgets(tick)
+    return tick, power_events
 
 
 def update_geysers():
@@ -1911,8 +1918,113 @@ def charge_agent(agent_id):
     return result
 
 
+def _execute_allocate_power(agent_id, amount):
+    """Set a power budget (minimum battery threshold) for an agent."""
+    agent = WORLD["agents"].get(agent_id)
+    if agent is None:
+        return {"ok": False, "error": f"Unknown agent: {agent_id}"}
+    if agent.get("type") == "station":
+        return {"ok": False, "error": "Cannot set power budget for station"}
+    amount = max(0.0, min(1.0, amount))
+    previous = WORLD["power_budgets"].get(agent_id)
+    WORLD["power_budgets"][agent_id] = amount
+    logger.info("Power budget for %s set to %.0f%%", agent_id, amount * 100)
+    return {
+        "ok": True,
+        "agent_id": agent_id,
+        "amount": amount,
+        "previous": previous,
+    }
+
+
+def allocate_power(agent_id, amount):
+    """Station-initiated power budget allocation."""
+    result = _execute_allocate_power(agent_id, amount)
+    if result["ok"]:
+        record_memory("station", f"Set power budget for {agent_id} to {result['amount']:.0%}")
+    return result
+
+
 # Backward-compat alias
 charge_rover = charge_agent
+
+
+def check_power_budgets(tick):
+    """Check all power budgets and return event dicts for warnings/emergency transitions."""
+    events = []
+    budgets = WORLD.get("power_budgets", {})
+    if not budgets:
+        # If no budgets set but emergency mode was on, deactivate
+        if WORLD.get("emergency_mode"):
+            WORLD["emergency_mode"] = False
+            events.append(
+                {
+                    "type": "emergency_mode_deactivated",
+                    "total_demand": 0.0,
+                    "capacity": STATION_POWER_CAPACITY,
+                }
+            )
+        return events
+
+    warn_ticks = WORLD.setdefault("_power_warn_ticks", {})
+    total_demand = 0.0
+    agents_in_deficit = []
+
+    for agent_id, budget in budgets.items():
+        agent = WORLD["agents"].get(agent_id)
+        if agent is None:
+            continue
+        battery = agent.get("battery", 0.0)
+        deficit = max(0.0, budget - battery)
+        if deficit > 0:
+            total_demand += deficit
+            agents_in_deficit.append(
+                {
+                    "agent_id": agent_id,
+                    "battery": round(battery, 3),
+                    "budget": budget,
+                    "deficit": round(deficit, 3),
+                }
+            )
+            # Debounce: emit warning only if cooldown expired
+            last_warn = warn_ticks.get(agent_id, -POWER_WARN_COOLDOWN)
+            if tick - last_warn >= POWER_WARN_COOLDOWN:
+                warn_ticks[agent_id] = tick
+                events.append(
+                    {
+                        "type": "power_budget_warning",
+                        "agent_id": agent_id,
+                        "battery": round(battery, 3),
+                        "budget": budget,
+                        "deficit": round(deficit, 3),
+                    }
+                )
+
+    # Emergency mode transitions
+    was_emergency = WORLD.get("emergency_mode", False)
+    is_emergency = total_demand > STATION_POWER_CAPACITY
+
+    if is_emergency and not was_emergency:
+        WORLD["emergency_mode"] = True
+        events.append(
+            {
+                "type": "emergency_mode_activated",
+                "total_demand": round(total_demand, 3),
+                "capacity": STATION_POWER_CAPACITY,
+                "agents_in_deficit": agents_in_deficit,
+            }
+        )
+    elif not is_emergency and was_emergency:
+        WORLD["emergency_mode"] = False
+        events.append(
+            {
+                "type": "emergency_mode_deactivated",
+                "total_demand": round(total_demand, 3),
+                "capacity": STATION_POWER_CAPACITY,
+            }
+        )
+
+    return events
 
 
 # --- Agent setters (seal direct WORLD writes from other modules) ---
@@ -3255,6 +3367,8 @@ def observe_station():
         collected_quantity=mission.get("collected_quantity", 0),
         target_quantity=mission.get("target_quantity", TARGET_QUANTITY),
         station_resources=station_resources,
+        power_budgets=WORLD.get("power_budgets", {}),
+        emergency_mode=WORLD.get("emergency_mode", False),
     )
 
 
@@ -3330,6 +3444,8 @@ def get_snapshot():
         if tuple(item.get("position", [])) in revealed:
             visible_ground_items.append(item)
     snap["ground_items"] = visible_ground_items
+    # Strip internal power budget tracking (not for UI)
+    snap.pop("_power_warn_ticks", None)
     # Include agent messages for UI visibility
     snap["agent_messages"] = copy.deepcopy(AGENT_MESSAGES)
     # Ensure bounds are present

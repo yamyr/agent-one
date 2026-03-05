@@ -448,3 +448,88 @@ class TestStationContextFields(unittest.TestCase):
         )
         self.assertEqual(ctx.tick, 50)
         self.assertEqual(ctx.mission_status, "completed")
+
+
+class TestPowerManagementContext(unittest.TestCase):
+    """T017: Station prompt and context power management tests."""
+
+    def test_system_prompt_contains_power_management(self):
+        from app.station import SYSTEM_PROMPT
+
+        self.assertIn("POWER MANAGEMENT", SYSTEM_PROMPT)
+
+    def test_system_prompt_contains_allocate_power_guidance(self):
+        from app.station import SYSTEM_PROMPT
+
+        self.assertIn("allocate_power", SYSTEM_PROMPT)
+
+    def test_system_prompt_contains_emergency_mode_guidance(self):
+        from app.station import SYSTEM_PROMPT
+
+        self.assertIn("EmergencyModeActivated", SYSTEM_PROMPT)
+
+    def test_station_context_includes_power_budgets(self):
+        from app.world import observe_station, WORLD
+
+        WORLD["power_budgets"]["rover-mistral"] = 0.3
+        ctx = observe_station()
+        self.assertEqual(ctx.power_budgets, {"rover-mistral": 0.3})
+
+    def test_station_context_includes_empty_power_budgets(self):
+        from app.world import observe_station, WORLD
+
+        WORLD["power_budgets"].clear()
+        ctx = observe_station()
+        self.assertEqual(ctx.power_budgets, {})
+
+    def test_station_context_includes_emergency_mode_true(self):
+        from app.world import observe_station, WORLD
+
+        WORLD["emergency_mode"] = True
+        ctx = observe_station()
+        self.assertTrue(ctx.emergency_mode)
+
+    def test_station_context_includes_emergency_mode_false(self):
+        from app.world import observe_station, WORLD
+
+        WORLD["emergency_mode"] = False
+        ctx = observe_station()
+        self.assertFalse(ctx.emergency_mode)
+
+    def test_world_summary_shows_power_budgets(self):
+        ctx = _make_station_context(power_budgets={"rover-mistral": 0.3})
+        summary = _build_world_summary(ctx)
+        self.assertIn("Power budgets", summary)
+        self.assertIn("rover-mistral", summary)
+
+    def test_world_summary_shows_emergency_mode(self):
+        ctx = _make_station_context(emergency_mode=True)
+        summary = _build_world_summary(ctx)
+        self.assertIn("EMERGENCY MODE ACTIVE", summary)
+
+    def test_allocate_power_tool_in_station_tools(self):
+        from app.station import STATION_TOOLS
+
+        tool_names = [t["function"]["name"] for t in STATION_TOOLS]
+        self.assertIn("allocate_power", tool_names)
+
+    def test_allocate_power_tool_parsed(self):
+        tool_calls = [
+            _mock_tool_call("allocate_power", {"agent_id": "rover-mistral", "amount": 0.3}),
+        ]
+        actions = _parse_tool_calls(tool_calls)
+        self.assertEqual(len(actions), 1)
+        self.assertEqual(actions[0]["name"], "allocate_power")
+        self.assertEqual(actions[0]["params"]["agent_id"], "rover-mistral")
+        self.assertEqual(actions[0]["params"]["amount"], 0.3)
+
+    def test_execute_allocate_power_action(self):
+        result = execute_action(
+            {
+                "name": "allocate_power",
+                "params": {"agent_id": "rover-mistral", "amount": 0.3},
+            }
+        )
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["agent_id"], "rover-mistral")
+        self.assertEqual(result["amount"], 0.3)
