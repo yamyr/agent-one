@@ -67,6 +67,12 @@ function missionObjective(id) {
   return a.mission ? a.mission.objective : ''
 }
 
+function goalConfidence(id) {
+  if (!props.worldState) return 0
+  const a = props.worldState.agents[id]
+  return a ? (a.goal_confidence ?? 0) : 0
+}
+
 </script>
 
 <template>
@@ -98,6 +104,7 @@ function missionObjective(id) {
         :events="agentEvents[id]"
         :color="agentColor(id)"
         :message-count="messageCount(id)"
+        :goal-confidence="goalConfidence(id)"
         @select-agent="emit('select-agent', $event)"
       />
     </template>

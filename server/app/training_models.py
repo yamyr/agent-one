@@ -64,6 +64,7 @@ class TurnWorldSnapshot(BaseModel):
     collected_quantity: int = 0
     target_quantity: int = 300
     distance_to_station: int = 0
+    goal_confidence: float = 0.5
 
 
 class TrainingTurn(BaseModel):
@@ -94,6 +95,8 @@ class TrainingTurn(BaseModel):
     battery_after: float = 1.0
     position_before: list[int] = [0, 0]
     position_after: list[int] = [0, 0]
+    goal_confidence_before: float = 0.5
+    goal_confidence_after: float = 0.5
 
     # META
     model: str = ""

@@ -4,11 +4,17 @@
 
 ### Features
 
+* **goal-confidence:** add `goal_confidence` (float 0.0-1.0) to all agent states — initialized at 0.5 on mission assignment, updated deterministically after each action (+0.05 success, -0.05 failure, -0.08 fallback/hazard, +0.10 delivery), clamped to [0.0, 1.0], resets on mission reassignment
+* **goal-confidence:** expose `goal_confidence` in observation contexts (`observe_rover`, `observe_hauler`, `observe_station`) so LLM agents can introspect on their own confidence
+* **goal-confidence:** add `goal_confidence` to `RoverSummary` so station agent sees confidence of all field agents
+* **goal-confidence:** add color-coded animated `ConfidenceBar.vue` component (green >=70%, amber >=40%, red <40%) displayed alongside battery bar in `AgentPane`
+* **goal-confidence:** include `goal_confidence` in `TurnWorldSnapshot` and `goal_confidence_before`/`goal_confidence_after` in `TrainingTurn` for training data analysis
 * **agents-api:** add Mistral Agents API as switchable backend (`AGENT_BACKEND=agents_api`) with parallel rover, drone, and station reasoners in new `agents_api.py` module
 * **config:** add `agent_backend` config toggle (`chat_completions` default, `agents_api` option) and tighten `mistralai` SDK constraint to `>=1.12.0,<2.0.0`
 
 ### Tests
 
+* **goal-confidence:** add 21 unit tests covering init, update logic, clamping, mission reset, observation contexts, and training data models
 * **agents-api:** add 15 unit tests for Agents API reasoners, config, and AGENT_MAP registration
 
 ### CI/CD

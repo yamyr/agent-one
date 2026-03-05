@@ -650,6 +650,7 @@ def _make_drone(start_x, start_y):
         "tasks": [],
         "type": "drone",
         "tools": None,  # populated lazily via _ensure_agent_tools()
+        "goal_confidence": 0.5,
     }
 
 
@@ -667,6 +668,7 @@ def _make_rover(start_x, start_y):
         "type": "rover",
         "tools": None,  # populated lazily via _ensure_agent_tools()
         "solar_panels_remaining": MAX_SOLAR_PANELS,
+        "goal_confidence": 0.5,
     }
 
 
@@ -685,6 +687,7 @@ def _make_hauler(start_x, start_y):
         "tools": None,
         "solar_panels_remaining": 0,
         "cargo_capacity": 6,
+        "goal_confidence": 0.5,
     }
 
 
@@ -701,6 +704,7 @@ def _build_initial_world():
                 "mission": {"objective": "Coordinate Mars mission", "plan": []},
                 "visited": [[0, 0]],
                 "memory": [],
+                "goal_confidence": 0.5,
             },
             "rover-mistral": _make_rover(0, 0),
             "rover-2": _make_rover(0, 0),
@@ -2981,8 +2985,20 @@ def assign_mission(agent_id, objective):
     if agent is None:
         return {"ok": False, "error": f"Unknown agent: {agent_id}"}
     agent["mission"]["objective"] = objective
+    agent["goal_confidence"] = 0.5
     logger.info("Mission assigned to %s: %s", agent_id, objective)
     return {"ok": True, "agent_id": agent_id, "objective": objective}
+
+
+def update_goal_confidence(agent_id: str, delta: float) -> float:
+    """Update an agent's goal_confidence by delta, clamped to [0.0, 1.0]. Returns new value."""
+    agent = WORLD["agents"].get(agent_id)
+    if agent is None:
+        return 0.5
+    gc = agent.get("goal_confidence", 0.5) + delta
+    gc = max(0.0, min(1.0, gc))
+    agent["goal_confidence"] = gc
+    return gc
 
 
 def observe_rover(agent_id):
@@ -3115,6 +3131,7 @@ def observe_rover(agent_id):
             tasks=list(agent.get("tasks", [])),
             visited=list(agent.get("visited", [])),
             visited_count=len(agent.get("visited", [])),
+            goal_confidence=agent.get("goal_confidence", 0.5),
         ),
         world=RoverWorldView(
             grid_w=GRID_W,
@@ -3177,6 +3194,7 @@ def observe_hauler(agent_id):
             tasks=list(agent.get("tasks", [])),
             visited=list(agent.get("visited", [])),
             visited_count=len(agent.get("visited", [])),
+            goal_confidence=agent.get("goal_confidence", 0.5),
         ),
         world=HaulerWorldView(
             grid_w=GRID_W,
@@ -3208,6 +3226,7 @@ def observe_station():
                 battery=agent["battery"],
                 mission=AgentMission(**agent["mission"]),
                 visited_count=len(agent.get("visited", [])),
+                goal_confidence=agent.get("goal_confidence", 0.5),
             )
         )
 
