@@ -4,6 +4,14 @@
 
 ### Features
 
+* **presets:** add multi-scenario simulation presets — 5 built-in presets (`default`, `storm_survival`, `resource_race`, `exploration`, `cooperative`) with world and agent overrides
+* **presets:** add `GET /api/presets` and `POST /api/presets/{name}/apply` REST endpoints — list available presets and apply them with full world reset
+* **presets:** add `preset` config field to Settings — supports `PRESET=storm_survival` env var for startup scenario selection
+
+### Tests
+
+* **presets:** add 36 tests in `test_presets.py` (6 preset definitions, 4 default preset, 5 storm survival, 2 unknown preset, 3 resource race, 3 exploration, 2 cooperative, 5 pattern matching, 3 list_presets, 3 config field)
+
 * **peer-messaging:** add `notify_peer(target_id, message)` rover tool — enables direct rover-to-rover messaging via existing `send_agent_message()` infrastructure with battery cost validation
 * **peer-messaging:** add PEER COMMUNICATION section to rover system prompt — lists active peer rover IDs and guides LLM on coordination scenarios (share discoveries, warn about hazards, coordinate exploration)
 * **peer-messaging:** add magenta (#cc44cc) communication lines on WorldMap for `peer_message` events — leverages existing `addCommLine()` animation system
