@@ -610,17 +610,21 @@ class TestStormBatteryEffects(_WorldSaveRestore):
         """Moving during a storm costs more battery than in clear weather."""
         rover = WORLD["agents"]["rover-mistral"]
 
-        # Clear weather move
+        # Use origin area (guaranteed obstacle-free)
+        rover["position"] = [0, 0]
         rover["battery"] = 1.0
-        execute_action("rover-mistral", "move", {"direction": "east"})
+        WORLD["storm"] = storm_mod.make_storm_state()  # clear weather
+        result_clear = execute_action("rover-mistral", "move", {"direction": "east"})
         clear_cost = 1.0 - rover["battery"]
+        self.assertTrue(result_clear.get("ok", False), f"Clear move failed: {result_clear}")
 
         # Reset position for storm move
-        rover["position"] = [5, 5]
+        rover["position"] = [0, 0]
         rover["battery"] = 1.0
         self._activate_storm(intensity=0.6)
-        execute_action("rover-mistral", "move", {"direction": "east"})
+        result_storm = execute_action("rover-mistral", "move", {"direction": "east"})
         storm_cost = 1.0 - rover["battery"]
+        self.assertTrue(result_storm.get("ok", False), f"Storm move failed: {result_storm}")
 
         self.assertGreater(storm_cost, clear_cost)
 
