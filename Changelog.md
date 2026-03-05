@@ -4,6 +4,14 @@
 
 ### Features
 
+* **agents-api-threads:** add persistent conversation threads — store `_conversation_id` per reasoner, use `conversations.append()` on subsequent turns instead of `conversations.start()` for cross-turn memory continuity
+* **agents-api-threads:** add `agents_api_persist_threads` config toggle (default `True`) — when False, every turn starts a fresh conversation for debugging/cost control
+* **agents-api-threads:** verify and confirm training logger integration via Loop class inheritance — remove misleading `# TODO` comment
+
+### Tests
+
+* **agents-api-threads:** add 14 tests for thread persistence (7 conversation thread, 3 config toggle, 4 training logger inheritance)
+
 * **human-in-the-loop:** add `request_confirm` rover tool — pauses agent loop and emits `confirm_request` WebSocket event for human approval of high-risk actions
 * **human-in-the-loop:** add `POST /api/confirm` endpoint — accepts `{request_id, confirmed}` from UI, unblocks rover via `asyncio.Event`, broadcasts `confirm_response` event
 * **human-in-the-loop:** add `ConfirmModal.vue` component — fixed overlay with agent context, countdown timer, Confirm/Deny buttons, auto-dismiss on timeout

@@ -27,6 +27,8 @@ class Settings(BaseSettings):
     mistral_api_key: str = ""
     # Agent backend: "chat_completions" (default) or "agents_api"
     agent_backend: str = "chat_completions"
+    # When True, Agents API reasoners reuse conversation threads across turns
+    agents_api_persist_threads: bool = True
 
     # HuggingFace
     hugging_face_read: str = ""

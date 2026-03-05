@@ -89,6 +89,7 @@ class AgentsApiRoverReasoner:
         self._client = None
         self._mistral_agent_id = None
         self._world = world or default_world
+        self._conversation_id = None
 
     def _get_client(self):
         if self._client is None:
@@ -109,8 +110,6 @@ class AgentsApiRoverReasoner:
         )
         self._mistral_agent_id = agent.id
         return self._mistral_agent_id
-
-    # TODO: integrate training logger
 
     def _build_context(self):
         """Assemble LLM context: identity, state, environment, memory."""
@@ -480,16 +479,26 @@ class AgentsApiRoverReasoner:
             context = self._build_context()
             self._world.set_agent_last_context(self.agent_id, context)
 
-            response = client.beta.conversations.start(
-                agent_id=agent_id,
-                inputs=[
-                    {
-                        "role": "user",
-                        "content": "Observe your surroundings and decide your next move.",
-                    }
-                ],
-                handoff_execution="client",
-            )
+            inputs = [
+                {
+                    "role": "user",
+                    "content": "Observe your surroundings and decide your next move.",
+                }
+            ]
+
+            if self._conversation_id is not None and settings.agents_api_persist_threads:
+                response = client.beta.conversations.append(
+                    conversation_id=self._conversation_id,
+                    inputs=inputs,
+                )
+            else:
+                response = client.beta.conversations.start(
+                    agent_id=agent_id,
+                    inputs=inputs,
+                    handoff_execution="client",
+                )
+                if settings.agents_api_persist_threads:
+                    self._conversation_id = response.conversation_id
 
             # Parse response using shared helper
             thinking, actions = _parse_conversation_response(response, self.agent_id)
@@ -555,6 +564,7 @@ class AgentsApiDroneReasoner:
         self._client = None
         self._mistral_agent_id = None
         self._world = world or default_world
+        self._conversation_id = None
 
     def _get_client(self):
         if self._client is None:
@@ -757,16 +767,26 @@ class AgentsApiDroneReasoner:
             context = self._build_context()
             self._world.set_agent_last_context(self.agent_id, context)
 
-            response = client.beta.conversations.start(
-                agent_id=agent_id,
-                inputs=[
-                    {
-                        "role": "user",
-                        "content": "Observe your surroundings and decide your next action.",
-                    }
-                ],
-                handoff_execution="client",
-            )
+            inputs = [
+                {
+                    "role": "user",
+                    "content": "Observe your surroundings and decide your next action.",
+                }
+            ]
+
+            if self._conversation_id is not None and settings.agents_api_persist_threads:
+                response = client.beta.conversations.append(
+                    conversation_id=self._conversation_id,
+                    inputs=inputs,
+                )
+            else:
+                response = client.beta.conversations.start(
+                    agent_id=agent_id,
+                    inputs=inputs,
+                    handoff_execution="client",
+                )
+                if settings.agents_api_persist_threads:
+                    self._conversation_id = response.conversation_id
 
             # Parse response using shared helper
             thinking, actions = _parse_conversation_response(response, self.agent_id)
@@ -815,6 +835,7 @@ class AgentsApiStationReasoner:
         self.model = model
         self._client = None
         self._mistral_agent_id = None
+        self._conversation_id = None
 
     def _get_client(self):
         if self._client is None:
@@ -871,11 +892,21 @@ class AgentsApiStationReasoner:
             client = self._get_client()
             ctx_text = self._build_context(station_ctx)
 
-            response = client.beta.conversations.start(
-                agent_id=agent_id,
-                inputs=[{"role": "user", "content": ctx_text + "\n\n" + user_message}],
-                handoff_execution="client",
-            )
+            inputs = [{"role": "user", "content": ctx_text + "\n\n" + user_message}]
+
+            if self._conversation_id is not None and settings.agents_api_persist_threads:
+                response = client.beta.conversations.append(
+                    conversation_id=self._conversation_id,
+                    inputs=inputs,
+                )
+            else:
+                response = client.beta.conversations.start(
+                    agent_id=agent_id,
+                    inputs=inputs,
+                    handoff_execution="client",
+                )
+                if settings.agents_api_persist_threads:
+                    self._conversation_id = response.conversation_id
 
             # Parse response — station can return MULTIPLE actions
             thinking, actions = _parse_conversation_response(response, self.agent_id)

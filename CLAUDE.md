@@ -187,6 +187,8 @@ Every PR description **must** follow the template in `.github/PULL_REQUEST_TEMPL
 - Python 3.14+ (server), JavaScript/Vue 3 (UI) + FastAPI, Pydantic v2, mistralai SDK, Vue 3, Vite (182-pydantic-refactor)
 - In-memory WORLD dict (simulation state), SurrealDB on port 4002 (unchanged) (182-pydantic-refactor)
 - Python 3.14+ (server), JavaScript/Vue 3 (UI) + FastAPI, Pydantic v2, Mistral AI SDK (server); Vue 3, Vite (UI) (183-human-in-the-loop)
+- Python 3.14+ + FastAPI, mistralai 1.12.4 (SDK), pydantic-settings (184-agents-api-threads)
+- In-memory (conversation_id on reasoner instance, cleared on simulation reset) (184-agents-api-threads)
 
 ## Recent Changes
 - 181-goal-confidence-tracking: Added Python 3.14+ (server), JavaScript/Vue 3 (UI) + FastAPI, Pydantic, Mistral AI SDK (server); Vue 3, Vite (UI)
