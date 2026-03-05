@@ -2,7 +2,7 @@ import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI, UploadFile
+from fastapi import FastAPI, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
@@ -29,7 +29,8 @@ from .host import Host
 from .narrator import Narrator
 from .views import router as views_router
 from .voice import VoiceCommandProcessor, SUPPORTED_AUDIO_TYPES
-from .world import reset_world, set_agent_model
+from .presets import apply_preset, list_presets, PRESETS
+from .world import reset_world, WORLD, set_agent_model
 from .training import collector as training_collector
 
 logging.basicConfig(
@@ -109,11 +110,34 @@ def _register_agents():
             logging.getLogger(__name__).warning("Unknown agent in ACTIVE_AGENTS: %s", name)
 
 
+def _register_agents_with_preset(preset_name: str | None = None):
+    """Apply preset overrides to active_agents before registering.
+
+    If the preset specifies an active_agents list, temporarily override
+    settings.active_agents for agent registration.
+    """
+    original_agents = settings.active_agents
+    if preset_name and preset_name in PRESETS:
+        preset = PRESETS[preset_name]
+        if preset.get("active_agents"):
+            settings.active_agents = preset["active_agents"]
+    try:
+        _register_agents()
+    finally:
+        settings.active_agents = original_agents
+
+
 @asynccontextmanager
 async def lifespan(app):
     init_db()
     training_collector._ensure_dir()
-    _register_agents()
+    # Apply startup preset if configured
+    if settings.preset != "default":
+        apply_preset(settings.preset, WORLD)
+        logger.info("Applying startup preset: %s", settings.preset)
+        _register_agents_with_preset(settings.preset)
+    else:
+        _register_agents()
     await host.start()
     yield
     host.stop()
@@ -167,6 +191,29 @@ async def reset_simulation():
     _register_agents()
     await host.start()
     return {"reset": True}
+
+
+# ── Preset endpoints ────────────────────────────────────────────────────────
+
+
+@app.get("/api/presets")
+def get_presets():
+    """List all available simulation presets."""
+    return list_presets()
+
+
+@app.post("/api/presets/{name}/apply")
+async def apply_preset_endpoint(name: str):
+    """Apply a simulation preset: reset world, apply overrides, restart agents."""
+    if name not in PRESETS:
+        raise HTTPException(status_code=404, detail=f"Unknown preset: {name!r}")
+    host.stop()
+    reset_world()
+    apply_preset(name, WORLD)
+    narrator.reset()
+    _register_agents_with_preset(name)
+    await host.start()
+    return {"ok": True, "preset": name}
 
 
 @app.post("/narration/toggle")

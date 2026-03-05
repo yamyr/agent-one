@@ -49,6 +49,9 @@ class Settings(BaseSettings):
     # Active agents (comma-separated)
     active_agents: str = "rover-mistral,rover-2,drone-mistral,station-loop,hauler-mistral,rover-large,rover-medium,rover-codestral,rover-ministral,rover-magistral"
 
+    # Simulation preset (applied on startup after world init)
+    preset: str = "default"
+
     # ElevenLabs narration
     elevenlabs_api_key: str = ""
     narration_enabled: bool = True
