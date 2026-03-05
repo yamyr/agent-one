@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+### Documentation
+
+* **docs:** refresh SPEC.md for v0.8.0 — comprehensive documentation of all features added since initial release: Agents API backend, goal confidence tracking, human-in-the-loop, peer messaging, hauler agent, narrator system, training data pipeline, storm system, resource economy, base upgrades, voice commands, and full API endpoint reference
+* **docs:** refresh README.md for v0.8.0 — updated architecture diagram, agent descriptions with all tools, complete environment variable table, API endpoint reference, and project structure reflecting current codebase
+
 ### Tests
 
 * **coverage-expansion:** add 34 tests in `test_coverage_expansion.py` covering previously untested code paths:
