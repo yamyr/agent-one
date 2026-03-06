@@ -67,6 +67,9 @@ class Settings(BaseSettings):
     voice_transcription_model: str = "voxtral-mini-latest"
     voice_command_model: str = "mistral-small-latest"
 
+    # Auto-confirm: automatically request confirmation before hazardous moves
+    auto_confirm_enabled: bool = True
+
     # Fine-tuning
     training_data_enabled: bool = False
     training_data_dir: str = "./training_data"

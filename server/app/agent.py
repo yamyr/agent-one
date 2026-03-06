@@ -53,6 +53,7 @@ from .world import (
 from .world import check_storm_tick, get_storm_info, update_goal_confidence
 from .world import record_memory
 from .world import is_obstacle_at
+from .world import detect_move_hazards
 from .station import StationAgent
 from .training_logger import training_logger
 from .training_models import TrainingTurn, TurnWorldSnapshot
@@ -60,6 +61,128 @@ from .training_models import TrainingTurn, TurnWorldSnapshot
 logger = logging.getLogger(__name__)
 
 STRUCTURED_REASONING_PROMPT = "\n\nBefore acting, output: SITUATION: <state> | OPTIONS: <a, b> | DECISION: <choice + why> | RISK: low/medium/high"
+
+
+async def _auto_confirm_gate(host, agent_id: str, action_name: str, params: dict) -> dict | None:
+    """Check for hazardous conditions before a move and request confirmation if needed.
+
+    Returns None if the action should proceed (no hazards, confirmed, or feature disabled).
+    Returns a result dict ``{"ok": False, "error": ...}`` if the move was denied or timed out.
+    """
+    from .host import CONFIRM_DEFAULT_TIMEOUT
+
+    # Only gate move actions
+    if action_name != "move":
+        return None
+
+    # Check config toggle
+    if not settings.auto_confirm_enabled:
+        return None
+
+    # Compute destination and cost (mirrors execute_action logic)
+    direction = params.get("direction")
+    delta = DIRECTIONS.get(direction)
+    if delta is None:
+        return None  # Let execute_action handle the invalid direction error
+
+    world_state = default_world.state
+    agent = world_state["agents"].get(agent_id)
+    if agent is None:
+        return None
+
+    is_drone = agent.get("type") == "drone"
+    is_hauler = agent.get("type") == "hauler"
+
+    if is_drone:
+        max_dist = MAX_MOVE_DISTANCE_DRONE
+        move_cost_per_tile = BATTERY_COST_MOVE_DRONE
+    elif is_hauler:
+        max_dist = MAX_MOVE_DISTANCE_HAULER
+        move_cost_per_tile = BATTERY_COST_MOVE_HAULER
+    else:
+        from .world import _effective_fuel_capacity
+
+        max_dist = MAX_MOVE_DISTANCE
+        move_cost_per_tile = 1 / _effective_fuel_capacity(agent)
+
+    distance = max(1, min(max_dist, int(params.get("distance", 1))))
+
+    from . import storm as storm_mod
+
+    storm_mult = storm_mod.get_battery_multiplier(world_state)
+    cost = move_cost_per_tile * distance * storm_mult
+
+    ox, oy = agent["position"]
+    dest_x = ox + delta[0] * distance
+    dest_y = oy + delta[1] * distance
+
+    hazards = detect_move_hazards(agent_id, dest_x, dest_y, cost)
+    if not hazards:
+        return None
+
+    # Build combined hazard message
+    agent_type = agent.get("type", "rover")
+    question = (
+        f"{agent_type.capitalize()} {agent_id} is about to move to ({dest_x},{dest_y}). "
+        + " ".join(hazards)
+        + " Allow this move?"
+    )
+
+    request_id = host.create_confirm(agent_id, question, CONFIRM_DEFAULT_TIMEOUT)
+
+    # Build context for UI
+    storm_info_ctx = get_storm_info()
+    confirm_ctx = {
+        "position": list(agent["position"]),
+        "battery": agent["battery"],
+        "destination": [dest_x, dest_y],
+        "hazards": hazards,
+        "storm_phase": storm_info_ctx.get("phase"),
+        "storm_intensity": storm_info_ctx.get("intensity"),
+    }
+    confirm_msg = make_message(
+        source=agent_id,
+        type="event",
+        name="confirm_request",
+        payload={
+            "request_id": request_id,
+            "agent_id": agent_id,
+            "question": question,
+            "timeout": CONFIRM_DEFAULT_TIMEOUT,
+            "context": confirm_ctx,
+            "auto": True,
+        },
+    )
+    await host.broadcast(confirm_msg.to_dict())
+
+    # Wait for operator response
+    confirmed = False
+    try:
+        entry = host.get_pending_confirm(request_id)
+        await asyncio.wait_for(entry["event"].wait(), timeout=CONFIRM_DEFAULT_TIMEOUT)
+        confirmed = entry["response"] is True
+    except asyncio.TimeoutError:
+        timeout_msg = make_message(
+            source="world",
+            type="event",
+            name="confirm_timeout",
+            payload={"request_id": request_id, "agent_id": agent_id},
+        )
+        await host.broadcast(timeout_msg.to_dict())
+    finally:
+        host.cleanup_confirm(request_id)
+
+    status = "approved" if confirmed else "denied"
+    record_memory(agent_id, f"Auto-confirm {status}: {question}")
+
+    if confirmed:
+        return None  # Proceed with the move
+
+    return {
+        "ok": False,
+        "error": f"Move denied by operator (auto-confirm {status}): {'; '.join(hazards)}",
+        "auto_confirm_denied": True,
+    }
 
 
 def _build_turn_snapshot(agent_state: dict, world) -> TurnWorldSnapshot:
@@ -2116,11 +2239,18 @@ class RoverLoop(BaseAgent):
             _confirm_result = {"ok": True, "confirmed": confirmed, "question": q}
 
         if turn["action"] and turn["action"]["name"] != "request_confirm":
-            result = execute_action(
-                self.agent_id,
-                turn["action"]["name"],
-                turn["action"]["params"],
+            # Auto-confirm gate: check for hazardous move conditions
+            _gate_result = await _auto_confirm_gate(
+                host, self.agent_id, turn["action"]["name"], turn["action"]["params"]
             )
+            if _gate_result is not None:
+                result = _gate_result
+            else:
+                result = execute_action(
+                    self.agent_id,
+                    turn["action"]["name"],
+                    turn["action"]["params"],
+                )
             if result["ok"]:
                 action_msg = make_message(
                     source=self.agent_id,
@@ -2471,11 +2601,18 @@ class DroneLoop(BaseAgent):
             messages.append(msg)
 
         if turn["action"]:
-            result = execute_action(
-                self.agent_id,
-                turn["action"]["name"],
-                turn["action"]["params"],
+            # Auto-confirm gate: check for hazardous move conditions
+            _gate_result = await _auto_confirm_gate(
+                host, self.agent_id, turn["action"]["name"], turn["action"]["params"]
             )
+            if _gate_result is not None:
+                result = _gate_result
+            else:
+                result = execute_action(
+                    self.agent_id,
+                    turn["action"]["name"],
+                    turn["action"]["params"],
+                )
             _action_result = result
             _action_ok = result.get("ok", False)
             if result["ok"]:
@@ -2658,11 +2795,18 @@ class HaulerLoop(BaseAgent):
             )
 
         if turn["action"]:
-            result = execute_action(
-                self.agent_id,
-                turn["action"]["name"],
-                turn["action"]["params"],
+            # Auto-confirm gate: check for hazardous move conditions
+            _gate_result = await _auto_confirm_gate(
+                host, self.agent_id, turn["action"]["name"], turn["action"]["params"]
             )
+            if _gate_result is not None:
+                result = _gate_result
+            else:
+                result = execute_action(
+                    self.agent_id,
+                    turn["action"]["name"],
+                    turn["action"]["params"],
+                )
             if result["ok"]:
                 messages.append(
                     make_message(
