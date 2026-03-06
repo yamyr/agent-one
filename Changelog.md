@@ -2,16 +2,19 @@
 
 ## [Unreleased]
 
+### Refactor
+
+* **pydantic-discriminated-unions:** convert protocol `Message` dataclass to Pydantic v2 `BaseModel` with discriminated unions — five typed subclasses (`ActionMessage`, `EventMessage`, `CommandMessage`, `ToolMessage`, `StreamMessage`) replace the untyped `Message` class
+* **pydantic-discriminated-unions:** add `MessageType` `StrEnum` with five values: `action`, `event`, `command`, `tool`, `stream`
+* **pydantic-discriminated-unions:** add `AnyMessage` discriminated union type using `Annotated[Union[...], Field(discriminator="type")]` for type-safe deserialization
+* **pydantic-discriminated-unions:** add `parse_message(data: dict)` factory function for deserializing raw dictionaries into correctly-typed message models
+* **pydantic-discriminated-unions:** update `make_message()` factory to return typed subclasses while preserving the existing function signature
+* **pydantic-discriminated-unions:** preserve backward-compatible `to_dict()` serialization using `model_dump()` — WebSocket message format unchanged
+
 ### Tests
 
-* **upgrade-system-tests:** add 38 comprehensive tests in `test_upgrade_contract.py` closing the validation gap on base and building upgrade systems:
-  - 6 base upgrade success path tests (all 4 types succeed, exact resource deduction, return value structure)
-  - 5 base upgrade effect verification tests (charge_mk2 doubles charge rate, extended_fuel +100 capacity, enhanced_scanner +1 radius, repair_bay auto-repair at station, repair_bay inactive no-op)
-  - 11 base upgrade failure tests (wrong position, insufficient water/gas independently, unknown name, max level per type for all 4 upgrades, drone/hauler blocked, missing param)
-  - 8 building upgrade bonus tests (refinery/solar_panel/accumulator at levels 2 and 3, accumulator interval clamp at 1, upgrade isolation between structures)
-  - 3 building upgrade failure tests (drone/hauler blocked, return value structure)
-  - 3 multi-level progression tests (extended_fuel level 2 = +200, enhanced_scanner level 2 = +2 radius, building re-upgrade preserves base_contents)
-  - 2 integration tests (full upgrade flow via execute_action, upgrade during active storm)
+* **upgrade-system-tests:** add 38 comprehensive tests in `test_upgrade_contract.py` closing the validation gap on base and building upgrade systems
+* **pydantic-discriminated-unions:** add 47 tests in `test_protocol.py` — typed constructors (12), serialization backward compatibility (7), make_message factory (7), parse_message deserialization (11), round-trip validation (2), Message alias compatibility (2), plus 6 updated original tests
 
 ### Documentation
 
