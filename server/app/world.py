@@ -862,6 +862,58 @@ def is_obstacle_at(x: int, y: int) -> dict | None:
     return _obstacle_index.get((x, y))
 
 
+# ── Auto-confirm hazard detection ──
+
+BATTERY_THRESHOLD_AUTO_CONFIRM = 0.15
+
+
+def detect_move_hazards(agent_id: str, dest_x: int, dest_y: int, move_cost: float) -> list[str]:
+    """Detect hazardous conditions at a move destination.
+
+    Returns a list of human-readable hazard descriptions.
+    Empty list means the move is safe (no auto-confirm needed).
+
+    Checks:
+      1. Geyser at destination in "erupting" or "warning" state
+      2. Post-move battery would drop below BATTERY_THRESHOLD_AUTO_CONFIRM (15%)
+      3. Dust storm active with intensity > 0.5
+    """
+    hazards: list[str] = []
+
+    # 1. Geyser check at destination tile
+    _ensure_obstacle_index()
+    obs = _obstacle_index.get((dest_x, dest_y))
+    if obs and obs.get("kind") == "geyser":
+        state = obs.get("state", "idle")
+        if state == "erupting":
+            hazards.append(
+                f"Erupting geyser at destination ({dest_x},{dest_y}). "
+                "Moving here will cause battery damage."
+            )
+        elif state == "warning":
+            hazards.append(f"Geyser at ({dest_x},{dest_y}) is in warning phase and may erupt soon.")
+
+    # 2. Low battery check
+    agent = WORLD["agents"].get(agent_id)
+    if agent is not None:
+        post_move_battery = agent["battery"] - move_cost
+        if post_move_battery < BATTERY_THRESHOLD_AUTO_CONFIRM:
+            hazards.append(
+                f"Battery will drop to {post_move_battery:.0%} after this move "
+                f"(current: {agent['battery']:.0%}). Below {BATTERY_THRESHOLD_AUTO_CONFIRM:.0%} safety threshold."
+            )
+
+    # 3. Storm intensity check
+    storm_info = storm_mod.get_storm_info(WORLD)
+    if storm_info.get("phase") == "active" and storm_info.get("intensity", 0) > 0.5:
+        hazards.append(
+            f"Dust storm active with intensity {storm_info['intensity']:.0%}. "
+            "Increased battery drain and risk of move failure."
+        )
+
+    return hazards
+
+
 WORLD = _build_initial_world()
 _init_world_chunks()
 storm_mod.schedule_next_storm(WORLD)

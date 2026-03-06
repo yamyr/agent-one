@@ -2,19 +2,23 @@
 
 ## [Unreleased]
 
+### Features
+
+* **auto-confirm:** add automatic hazard-detection confirmation gate for move actions — system automatically requests operator confirmation before executing moves into erupting/warning geysers, during high-intensity storms (>0.5), or when battery would drop below 15%
+* **auto-confirm:** add `detect_move_hazards()` function in `world.py` — synchronous hazard detection for geyser state, battery threshold, and storm intensity checks
+* **auto-confirm:** add `_auto_confirm_gate()` async helper in `agent.py` — integrates with existing `host.create_confirm()` flow for all agent types (rover, drone, hauler)
+* **auto-confirm:** add `auto_confirm_enabled` config toggle (default True) in Settings — allows disabling auto-confirm via `AUTO_CONFIRM_ENABLED=false` env var
+
 ### Refactor
 
 * **pydantic-discriminated-unions:** convert protocol `Message` dataclass to Pydantic v2 `BaseModel` with discriminated unions — five typed subclasses (`ActionMessage`, `EventMessage`, `CommandMessage`, `ToolMessage`, `StreamMessage`) replace the untyped `Message` class
-* **pydantic-discriminated-unions:** add `MessageType` `StrEnum` with five values: `action`, `event`, `command`, `tool`, `stream`
-* **pydantic-discriminated-unions:** add `AnyMessage` discriminated union type using `Annotated[Union[...], Field(discriminator="type")]` for type-safe deserialization
-* **pydantic-discriminated-unions:** add `parse_message(data: dict)` factory function for deserializing raw dictionaries into correctly-typed message models
-* **pydantic-discriminated-unions:** update `make_message()` factory to return typed subclasses while preserving the existing function signature
-* **pydantic-discriminated-unions:** preserve backward-compatible `to_dict()` serialization using `model_dump()` — WebSocket message format unchanged
+* **pydantic-discriminated-unions:** add `MessageType` StrEnum, `AnyMessage` discriminated union, `parse_message()` factory, backward-compatible `to_dict()` serialization
 
 ### Tests
 
+* **auto-confirm:** add 16 tests in `test_auto_confirm.py` — geyser erupting/warning/idle detection, low battery threshold, storm intensity thresholds, combined hazards, config toggle, non-move action bypass, destination-only geyser check
 * **upgrade-system-tests:** add 38 comprehensive tests in `test_upgrade_contract.py` closing the validation gap on base and building upgrade systems
-* **pydantic-discriminated-unions:** add 47 tests in `test_protocol.py` — typed constructors (12), serialization backward compatibility (7), make_message factory (7), parse_message deserialization (11), round-trip validation (2), Message alias compatibility (2), plus 6 updated original tests
+* **pydantic-discriminated-unions:** add 47 tests in `test_protocol.py` — typed constructors, serialization, deserialization, round-trip, backward compatibility
 
 ### Documentation
 
