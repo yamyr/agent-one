@@ -2,6 +2,17 @@
 
 ## [Unreleased]
 
+### Tests
+
+* **upgrade-system-tests:** add 38 comprehensive tests in `test_upgrade_contract.py` closing the validation gap on base and building upgrade systems:
+  - 6 base upgrade success path tests (all 4 types succeed, exact resource deduction, return value structure)
+  - 5 base upgrade effect verification tests (charge_mk2 doubles charge rate, extended_fuel +100 capacity, enhanced_scanner +1 radius, repair_bay auto-repair at station, repair_bay inactive no-op)
+  - 11 base upgrade failure tests (wrong position, insufficient water/gas independently, unknown name, max level per type for all 4 upgrades, drone/hauler blocked, missing param)
+  - 8 building upgrade bonus tests (refinery/solar_panel/accumulator at levels 2 and 3, accumulator interval clamp at 1, upgrade isolation between structures)
+  - 3 building upgrade failure tests (drone/hauler blocked, return value structure)
+  - 3 multi-level progression tests (extended_fuel level 2 = +200, enhanced_scanner level 2 = +2 radius, building re-upgrade preserves base_contents)
+  - 2 integration tests (full upgrade flow via execute_action, upgrade during active storm)
+
 ### Documentation
 
 * **docs:** refresh SPEC.md for v0.8.0 — comprehensive documentation of all features added since initial release: Agents API backend, goal confidence tracking, human-in-the-loop, peer messaging, hauler agent, narrator system, training data pipeline, storm system, resource economy, base upgrades, voice commands, and full API endpoint reference

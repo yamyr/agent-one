@@ -191,6 +191,8 @@ Every PR description **must** follow the template in `.github/PULL_REQUEST_TEMPL
 - In-memory (conversation_id on reasoner instance, cleared on simulation reset) (184-agents-api-threads)
 - Python 3.14+ (server), JavaScript/Vue 3 (UI) + FastAPI, mistralai SDK, Vue 3, Vite (185-rover-peer-messaging)
 - In-memory (AGENT_MESSAGES global list in world.py) (185-rover-peer-messaging)
+- Python 3.14+ + FastAPI (app), unittest (tests), app.world module (190-upgrade-system-tests)
+- In-memory WORLD dict (no database needed for these tests) (190-upgrade-system-tests)
 
 ## Recent Changes
 - 181-goal-confidence-tracking: Added Python 3.14+ (server), JavaScript/Vue 3 (UI) + FastAPI, Pydantic, Mistral AI SDK (server); Vue 3, Vite (UI)
