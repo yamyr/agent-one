@@ -25,14 +25,17 @@ class FineTuningManager:
 
     def upload_training_data(self, file_path: str) -> str:
         """Upload a JSONL file for fine-tuning. Returns the file_id."""
-        resolved = Path(file_path).resolve()
         training_dir = settings.training_data_dir
         if isinstance(training_dir, str):
             allowed_root = Path(training_dir).resolve()
+            resolved = Path(file_path).resolve()
             if not resolved.is_relative_to(allowed_root):
                 raise ValueError(f"Path traversal denied: {file_path!r} is outside {allowed_root}")
+            safe_path = str(resolved)
+        else:
+            safe_path = file_path
         client = self._get_client()
-        with open(file_path, "rb") as f:
+        with open(safe_path, "rb") as f:
             content = f.read()
         file_name = file_path.rsplit("/", 1)[-1] if "/" in file_path else file_path
         try:
