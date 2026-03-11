@@ -1,64 +1,14 @@
 # Changelog
 
-## [0.9.0](https://github.com/yamyr/agent-one/compare/v0.8.0...v0.9.0) (2026-03-12)
-
-
-### Features
-
-* add automatic request_confirm for hazardous moves ([261c58d](https://github.com/yamyr/agent-one/commit/261c58df60de5be7a574dcc15511040cc7a5a89b))
-* add automatic request_confirm for hazardous moves ([e68c111](https://github.com/yamyr/agent-one/commit/e68c11113feb525f31797b4b4ca2fe62a2a2b4de))
-* add Mistral Agents API as switchable backend ([523b4ba](https://github.com/yamyr/agent-one/commit/523b4bab60c69a45f63558bf25077e11d486852b))
-* **agents-api-threads:** add persistent conversation threads with config toggle ([e23ff80](https://github.com/yamyr/agent-one/commit/e23ff802ca9a7813abbd5379fb14f8332e20ca32))
-* **agents-api-threads:** persistent conversation threads + training logger ([af348e7](https://github.com/yamyr/agent-one/commit/af348e712bbe7e077dd0197086a86aac97d8fd41))
-* **agents-api:** add Agents API reasoners for rover, drone, station ([cee065c](https://github.com/yamyr/agent-one/commit/cee065c4d634032790f7d6037f93740549e54e7c))
-* **agents-api:** add loop variants and AGENT_MAP registration ([506324b](https://github.com/yamyr/agent-one/commit/506324b4ac84f045120767ef539c832dac8d1b05))
-* **config:** add agent_backend toggle and tighten SDK constraint ([500dc60](https://github.com/yamyr/agent-one/commit/500dc60a290fc5f65a929305b7b000191db38dbc))
-* **goal-confidence:** add goal confidence tracking + UI bars ([9973dc4](https://github.com/yamyr/agent-one/commit/9973dc417f13df25ad250f0cd010027ba91d6c2a))
-* **goal-confidence:** add goal confidence tracking with UI bars ([a34a57d](https://github.com/yamyr/agent-one/commit/a34a57d630b371d800252c39c4e2a32c4bc4538b))
-* **human-in-the-loop:** add request_confirm rover tool with UI confirmation modal ([3edc833](https://github.com/yamyr/agent-one/commit/3edc8335efd3b929c91f24dd11a8a52077f17567))
-* **human-in-the-loop:** add request_confirm rover tool with UI modal and confirmation flow ([465136e](https://github.com/yamyr/agent-one/commit/465136e3609919f02b03f9edb551b0391d55302e))
-* **peer-messaging:** add rover-to-rover direct messaging with notify_peer tool ([52e430b](https://github.com/yamyr/agent-one/commit/52e430b85ecc7b221e2094ee2fd29e21770e17c4))
-* **peer-messaging:** rover-to-rover direct messaging with notify_peer tool ([34d01a7](https://github.com/yamyr/agent-one/commit/34d01a761c3f083d6aad48113031cec0eb0a24bd))
-* **power-allocation:** add allocate_power station tool with budget events and UI ([583ca29](https://github.com/yamyr/agent-one/commit/583ca29a02684ba07b95a95f34d5b27ddde5216c))
-* **power-allocation:** add allocate_power station tool with budget events and UI ([6ccb6f5](https://github.com/yamyr/agent-one/commit/6ccb6f5a536db1dc1ee363076b4b6d683f15b15c))
-* **presets:** add multi-scenario simulation presets ([3f3853e](https://github.com/yamyr/agent-one/commit/3f3853eaa8b700208b9a2a339720f46485295903))
-* **presets:** add multi-scenario simulation presets ([df4eca9](https://github.com/yamyr/agent-one/commit/df4eca96ea5e5c3f3beb751f7084285c7d0679a6))
-* **replay:** add simulation replay UI with training session playback ([71bda7a](https://github.com/yamyr/agent-one/commit/71bda7a15ea46bb765454792336fb76e8fd8bf24))
-* **replay:** add simulation replay UI with training session playback ([2f78b49](https://github.com/yamyr/agent-one/commit/2f78b49431f301d099fd7c233d95fec781f35b3f))
-
-
-### Bug Fixes
-
-* **ci:** resolve eslint errors and flaky storm test ([b827ea9](https://github.com/yamyr/agent-one/commit/b827ea926210da2f5ca65c77e4e76038d03db235))
-* **ci:** resolve eslint errors and flaky storm test ([890f656](https://github.com/yamyr/agent-one/commit/890f656a96834481b6d2a9a8282bf34a17066b83))
-* resolve 8 simulation engine bugs ([947f9a2](https://github.com/yamyr/agent-one/commit/947f9a24da9d5f36ce9676edc673bee216e5bb40))
-* resolve 8 simulation engine bugs (tick inflation, tool whitelist, path checking, ice ratio, drone relay, station memory, geyser damage, storm multiplier) ([8988d60](https://github.com/yamyr/agent-one/commit/8988d605ef4bad3f2399bf5d0612c935c8bdced2))
-* **ui:** remove unused requestId param in handleConfirmTimeout ([9f06c63](https://github.com/yamyr/agent-one/commit/9f06c6353cd013020c5a9ead6fc7061f0141d05d))
-
 ## [Unreleased]
 
-### Performance
-
-* **world: stone proximity O(S) scan (#270):** replace O(S) linear scan in `_stone_proximity_concentration()` with spatial index lookup via `_ensure_stone_index()` and early `_MAX_EFFECTIVE_RADIUS` skip — eliminates per-cell full-stones-list iteration during drone scans
-
-### Security
-
-* **spa-fallback: path traversal (#282):** replace runtime path-resolution guard with startup-indexed allowlist — `_ui_dir` contents are enumerated once at import time and the handler performs a pure dict lookup, eliminating all user-controlled filesystem paths from `FileResponse` calls and resolving 4 CodeQL `py/path-injection` HIGH alerts
-
 ### Bug Fixes
 
-* **engine: tick inflation (CRITICAL):** add time-guard (`_TICK_MIN_INTERVAL = 1.0s`) to `next_tick()` preventing N× tick acceleration when multiple agents call tick concurrently — idempotent within 1s window, reset on `reset_world()`
-* **engine: tool whitelist (CRITICAL):** add `drop_item` and `request_confirm` to `HuggingFaceRoverReasoner` tool whitelist — previously only present in `MistralRoverReasoner`, causing HuggingFace agents to silently ignore these tool calls
-* **engine: mountain path checking (HIGH):** move mountain obstacle check inside the path-walking loop in `move_agent()` so intermediate tiles are validated, not just the destination — previously agents could teleport through mountains
-* **engine: ice conversion ratio (HIGH):** fix `delivered_ice // ICE_TO_WATER_RATIO` → `delivered_ice * ICE_TO_WATER_RATIO` in `check_mission_status()` — ratio was inverted, producing half the expected water from ice
-* **engine: drone scan auto-relay (HIGH):** fix drone scan relay to use `result.get("concentration", result.get("peak", 0))` and broadcast to all rovers via `self._world.get_agents()` instead of hardcoded `"rover-mistral"` target — previously only notified one rover and missed concentration data
-* **engine: station memory cap (MEDIUM):** replace 3 direct `mem.append()` calls in RoverLoop, DroneLoop, and HaulerLoop with `record_memory("station", ...)` which enforces `MEMORY_MAX` — previously station memory grew unbounded
-* **engine: geyser per-tick damage (MEDIUM):** move agent damage check outside the eruption state-transition guard so damage fires every tick during eruption, not just the first tick — previously agents took damage only once when geyser entered erupting state
-* **engine: storm multiplier on missing actions (MEDIUM):** apply `storm_mod.get_battery_multiplier(WORLD)` to `investigate_structure`, `use_refinery`, and `upgrade_building` actions — previously these actions ignored storm battery drain
-
-### Tests
-
-* **engine-bugfixes:** add 17 regression tests in `test_engine_bugfixes.py` covering all 8 simulation engine bug fixes — tick inflation guard, tool whitelist completeness, mountain path blocking, ice conversion ratio, drone scan relay, station memory cap, geyser per-tick damage, storm multiplier on missing actions
+* **agent-loop:** add `drop_item` and `request_confirm` to rover tool whitelists — LLM calling these tools no longer crashes the agent
+* **agent-loop:** catch `RuntimeError` and `json.JSONDecodeError` in all `run_turn()` except clauses — malformed LLM responses now trigger graceful fallback instead of crashing agent loops
+* **agent-loop:** relay drone high-concentration scan results to all active rovers instead of only `rover-mistral`
+* **agent-loop:** fix `HaulerMistralLoop` default `agent_id` from `"hauler-1"` to `"hauler-mistral"` to match world model
+* **agent-loop:** remove 161-line dead `HaulerReasoner` class and `MistralHaulerReasoner` alias — superseded by `HaulerAgent`
 
 ### Features
 
@@ -80,7 +30,6 @@
 
 ### Documentation
 
-* **security:** replace GitHub template SECURITY.md with project-specific security policy (#276)
 * **docs:** refresh SPEC.md for v0.8.0 — comprehensive documentation of all features added since initial release: Agents API backend, goal confidence tracking, human-in-the-loop, peer messaging, hauler agent, narrator system, training data pipeline, storm system, resource economy, base upgrades, voice commands, and full API endpoint reference
 * **docs:** refresh README.md for v0.8.0 — updated architecture diagram, agent descriptions with all tools, complete environment variable table, API endpoint reference, and project structure reflecting current codebase
 
