@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import copy
 import asyncio
 import hashlib
@@ -1014,6 +1015,7 @@ world_lock = asyncio.Lock()
 
 # Module-level singleton wrapping the global WORLD dict
 world = World(WORLD)
+world_lock = asyncio.Lock()
 
 
 # -- Inter-agent message relay --
