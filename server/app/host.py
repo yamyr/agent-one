@@ -229,7 +229,10 @@ class Host:
         """Run station mission definition in background."""
         try:
             station_ctx = observe_station()
-            result = await asyncio.to_thread(self._station.define_mission, station_ctx)
+            result = await asyncio.wait_for(
+                asyncio.to_thread(self._station.define_mission, station_ctx),
+                timeout=settings.llm_call_timeout,
+            )
 
             if result["thinking"]:
                 msg = make_message(

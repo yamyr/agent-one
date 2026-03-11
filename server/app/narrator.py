@@ -18,6 +18,7 @@ from huggingface_hub import InferenceClient
 from mistralai import Mistral
 
 from .config import settings
+from .llm_utils import safe_get_choice
 
 logger = logging.getLogger(__name__)
 
@@ -582,11 +583,12 @@ class Narrator:
                 {"role": "system", "content": NARRATOR_SYSTEM_PROMPT},
                 {"role": "user", "content": prompt},
             ]
+            _narr_choice = safe_get_choice(response, "narrator")
             collector.record_narration_interaction(
                 messages=messages,
-                response_text=response.choices[0].message.content or "",
+                response_text=_narr_choice.message.content or "",
             )
-            text = response.choices[0].message.content
+            text = _narr_choice.message.content
             return text.strip() if text else None
         except Exception:
             logger.exception("Narrator LLM call failed")
