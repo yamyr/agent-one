@@ -39,7 +39,7 @@ from .world import BATTERY_COST_ANALYZE, BATTERY_COST_SCAN, BATTERY_COST_NOTIFY
 from .world import BATTERY_COST_GATHER_ICE
 from .world import MAX_INVENTORY_ROVER, MAX_INVENTORY_HAULER
 from .world import BATTERY_COST_INVESTIGATE, BATTERY_COST_USE_REFINERY
-from .world import check_ground, direction_hint, best_drone_hotspot, observe_rover, observe_hauler
+from .world import check_ground, direction_hint, best_drone_hotspot, observe_rover
 from .world import get_drone_intel_for_rover, get_unread_messages, send_agent_message
 from .world import set_agent_model
 from .world import (
@@ -1041,6 +1041,8 @@ class MistralRoverReasoner:
                     "upgrade_base",
                     "collect_gas",
                     "upgrade_building",
+                    "drop_item",
+                    "request_confirm",
                 ):
                     action = {"name": name, "params": args}
                 else:
@@ -1055,7 +1057,7 @@ class MistralRoverReasoner:
                 logger.info("Rover thinking: %s", thinking)
 
             return {"thinking": thinking, "action": action}
-        except (SDKError, ConnectionError, TimeoutError) as exc:
+        except (SDKError, ConnectionError, TimeoutError, RuntimeError, json.JSONDecodeError) as exc:
             logger.exception("Rover LLM turn failed for %s, using fallback", self.agent_id)
             return self._fallback_turn(f"LLM unavailable ({type(exc).__name__})")
 
@@ -1277,7 +1279,7 @@ class HaulerAgent:
                 logger.info("Hauler thinking: %s", thinking)
 
             return {"thinking": thinking, "action": action}
-        except (SDKError, ConnectionError, TimeoutError) as exc:
+        except (SDKError, ConnectionError, TimeoutError, RuntimeError, json.JSONDecodeError) as exc:
             logger.exception("Hauler LLM turn failed for %s, using fallback", self.agent_id)
             return self._fallback_turn(f"LLM unavailable ({type(exc).__name__})")
 
@@ -1315,166 +1317,6 @@ class HaulerAgent:
             "action": {"name": "load_cargo", "params": {}},
         }
 
-
-class HaulerReasoner:
-    def __init__(
-        self,
-        agent_id: str = "hauler-1",
-        model: str = "mistral-small-latest",
-        world: World | None = None,
-    ):
-        self.agent_id = agent_id
-        self.model = model
-        self._client = None
-        self._world = world or default_world
-
-    def _get_client(self):
-        if self._client is None:
-            if not settings.mistral_api_key:
-                raise RuntimeError("MISTRAL_API_KEY not set")
-            self._client = Mistral(api_key=settings.mistral_api_key)
-        return self._client
-
-    def _build_context(self):
-        ctx = observe_hauler(self.agent_id)
-        x, y = ctx.agent.position
-        station_x, station_y = ctx.world.station_position
-        parts = [
-            (
-                f"You are {self.agent_id}, an autonomous Mars hauler. "
-                "Your job is to collect cargo dropped by rovers and deliver it to the station."
-            ),
-            (
-                "Rules: Pick up cargo, deliver to station. You CANNOT dig or analyze veins. "
-                "Prioritize picking up items closest to you. When inventory is full, return to station."
-            ),
-            (
-                "\n== State ==\n"
-                f"Position: ({x}, {y})\n"
-                f"Battery: {ctx.agent.battery:.0%}\n"
-                f"Inventory: {len(ctx.agent.inventory)}/{MAX_INVENTORY_HAULER} slots"
-                + (
-                    " ("
-                    + ", ".join(f"{item.type} qty={item.quantity}" for item in ctx.agent.inventory)
-                    + ")"
-                    if ctx.agent.inventory
-                    else ""
-                )
-            ),
-            (
-                "\n== Station ==\n"
-                f"Position: ({station_x}, {station_y})\n"
-                f"Distance: {ctx.computed.distance_to_station} tiles ({ctx.computed.station_direction})"
-            ),
-            "\n== Ground Items ==",
-        ]
-
-        if ctx.computed.visible_ground_items:
-            for item in ctx.computed.visible_ground_items:
-                gx, gy = item.position
-                dist = abs(gx - x) + abs(gy - y)
-                hint = direction_hint(gx - x, gy - y)
-                parts.append(
-                    f"- {item.type} qty={item.quantity} at ({gx},{gy}) — {hint}, {dist} tiles"
-                )
-        else:
-            parts.append("- none visible")
-
-        if ctx.agent.tasks:
-            parts.append("\n== Current Task ==")
-            parts.append(ctx.agent.tasks[0])
-
-        parts.append(STRUCTURED_REASONING_PROMPT)
-        return "\n".join(parts)
-
-    def run_turn(self):
-        try:
-            client = self._get_client()
-            context = self._build_context()
-            self._world.set_agent_last_context(self.agent_id, context)
-
-            response = client.chat.complete(
-                model=settings.fine_tuned_agent_model or self.model,
-                messages=[
-                    {"role": "system", "content": context},
-                    {"role": "user", "content": "Choose your next action."},
-                ],
-                tools=HAULER_TOOLS,
-            )
-            choice = response.choices[0]
-            thinking = choice.message.content or None
-            action = None
-            if choice.message.tool_calls:
-                tc = choice.message.tool_calls[0]
-                name = tc.function.name
-                args = (
-                    json.loads(tc.function.arguments)
-                    if isinstance(tc.function.arguments, str)
-                    else tc.function.arguments
-                )
-                if name in ("move", "pickup_cargo", "notify"):
-                    action = {"name": name, "params": args}
-
-            if action is None:
-                raise RuntimeError(
-                    f"{self.agent_id} returned no valid tool action (thinking={thinking!r})"
-                )
-            return {"thinking": thinking, "action": action}
-        except (SDKError, ConnectionError, TimeoutError) as exc:
-            logger.exception("Hauler LLM turn failed for %s, using fallback", self.agent_id)
-            return self._fallback_turn(f"LLM unavailable ({type(exc).__name__})")
-
-    def _fallback_turn(self, reason):
-        ctx = observe_hauler(self.agent_id)
-        x, y = ctx.agent.position
-        station_x, station_y = ctx.world.station_position
-
-        if ctx.agent.inventory and [x, y] != [station_x, station_y]:
-            dx, dy = station_x - x, station_y - y
-            if abs(dx) >= abs(dy):
-                direction = "east" if dx > 0 else "west"
-                distance = max(1, min(abs(dx), MAX_MOVE_DISTANCE_HAULER))
-            else:
-                direction = "north" if dy > 0 else "south"
-                distance = max(1, min(abs(dy), MAX_MOVE_DISTANCE_HAULER))
-            return {
-                "thinking": f"LLM fallback: {reason}. Returning to station with cargo.",
-                "action": {
-                    "name": "move",
-                    "params": {"direction": direction, "distance": distance},
-                },
-            }
-
-        if ctx.computed.visible_ground_items:
-            item = ctx.computed.visible_ground_items[0]
-            gx, gy = item.position
-            if [gx, gy] == [x, y]:
-                return {
-                    "thinking": f"LLM fallback: {reason}. Picking up ground cargo now.",
-                    "action": {"name": "pickup_cargo", "params": {}},
-                }
-            dx, dy = gx - x, gy - y
-            if abs(dx) >= abs(dy):
-                direction = "east" if dx > 0 else "west"
-                distance = max(1, min(abs(dx), MAX_MOVE_DISTANCE_HAULER))
-            else:
-                direction = "north" if dy > 0 else "south"
-                distance = max(1, min(abs(dy), MAX_MOVE_DISTANCE_HAULER))
-            return {
-                "thinking": f"LLM fallback: {reason}. Moving toward nearest visible cargo.",
-                "action": {
-                    "name": "move",
-                    "params": {"direction": direction, "distance": distance},
-                },
-            }
-
-        return {
-            "thinking": f"LLM fallback: {reason}. No visible cargo; reporting idle status.",
-            "action": {"name": "notify", "params": {"message": "No visible cargo; patrolling."}},
-        }
-
-
-MistralHaulerReasoner = HaulerReasoner
 
 
 # Backward-compat aliases
@@ -1546,6 +1388,8 @@ class HuggingFaceRoverReasoner(MistralRoverReasoner):
                     "investigate_structure",
                     "use_refinery",
                     "upgrade_building",
+                    "drop_item",
+                    "request_confirm",
                 ):
                     action = {"name": name, "params": args}
                 else:
@@ -1560,7 +1404,7 @@ class HuggingFaceRoverReasoner(MistralRoverReasoner):
                 logger.info("Rover thinking: %s", thinking)
 
             return {"thinking": thinking, "action": action}
-        except (HfHubHTTPError, InferenceTimeoutError, ConnectionError, TimeoutError) as exc:
+        except (HfHubHTTPError, InferenceTimeoutError, ConnectionError, TimeoutError, RuntimeError, json.JSONDecodeError) as exc:
             logger.exception("Rover LLM turn failed for %s, using fallback", self.agent_id)
             return self._fallback_turn(f"LLM unavailable ({type(exc).__name__})")
 
@@ -1861,7 +1705,7 @@ class DroneAgent:
                 logger.info("Drone thinking: %s", thinking)
 
             return {"thinking": thinking, "action": action}
-        except (SDKError, ConnectionError, TimeoutError) as exc:
+        except (SDKError, ConnectionError, TimeoutError, RuntimeError, json.JSONDecodeError) as exc:
             logger.exception("Drone LLM turn failed for %s, using fallback", self.agent_id)
             return self._fallback_turn(f"LLM unavailable ({type(exc).__name__})")
 
@@ -1947,7 +1791,7 @@ class HuggingFaceDroneAgent(DroneAgent):
                 logger.info("Drone thinking: %s", thinking)
 
             return {"thinking": thinking, "action": action}
-        except (HfHubHTTPError, InferenceTimeoutError, ConnectionError, TimeoutError) as exc:
+        except (HfHubHTTPError, InferenceTimeoutError, ConnectionError, TimeoutError, RuntimeError, json.JSONDecodeError) as exc:
             logger.exception("Drone LLM turn failed for %s, using fallback", self.agent_id)
             return self._fallback_turn(f"LLM unavailable ({type(exc).__name__})")
 
@@ -2643,24 +2487,27 @@ class DroneLoop(BaseAgent):
                     )
                     messages.append(station_log)
 
-                # Auto-relay high-concentration scan results to rover
+                # Auto-relay high-concentration scan results to all active rovers
                 if turn["action"]["name"] == "scan" and result.get("concentration", 0) > 0.5:
-                    relay_msg = send_agent_message(
-                        self.agent_id,
-                        "rover-mistral",
-                        f"High concentration {result['concentration']:.2f} at {result.get('position', '?')}",
-                    )
-                    relay_event = make_message(
-                        source=self.agent_id,
-                        type="event",
-                        name="intel_relay",
-                        payload={
-                            "from": self.agent_id,
-                            "to": "rover-mistral",
-                            "message": relay_msg["message"],
-                        },
-                    )
-                    messages.append(relay_event)
+                    for rid, rdata in self._world.get_agents().items():
+                        if rdata.get("type") != "rover":
+                            continue
+                        relay_msg = send_agent_message(
+                            self.agent_id,
+                            rid,
+                            f"High concentration {result['concentration']:.2f} at {result.get('position', '?')}",
+                        )
+                        relay_event = make_message(
+                            source=self.agent_id,
+                            type="event",
+                            name="intel_relay",
+                            payload={
+                                "from": self.agent_id,
+                                "to": rid,
+                                "message": relay_msg["message"],
+                            },
+                        )
+                        messages.append(relay_event)
 
         # LLM-owned task: update agent tasks from LLM output
         llm_task = turn.get("task")
@@ -3021,7 +2868,7 @@ class HaulerMistralLoop(HaulerLoop):
 
     def __init__(
         self,
-        agent_id: str = "hauler-1",
+        agent_id: str = "hauler-mistral",
         interval: float = settings.hauler_turn_interval_seconds,
         world: World | None = None,
     ):

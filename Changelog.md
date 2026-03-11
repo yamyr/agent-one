@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+### Bug Fixes
+
+* **agent-loop:** add `drop_item` and `request_confirm` to rover tool whitelists — LLM calling these tools no longer crashes the agent
+* **agent-loop:** catch `RuntimeError` and `json.JSONDecodeError` in all `run_turn()` except clauses — malformed LLM responses now trigger graceful fallback instead of crashing agent loops
+* **agent-loop:** relay drone high-concentration scan results to all active rovers instead of only `rover-mistral`
+* **agent-loop:** fix `HaulerMistralLoop` default `agent_id` from `"hauler-1"` to `"hauler-mistral"` to match world model
+* **agent-loop:** remove 161-line dead `HaulerReasoner` class and `MistralHaulerReasoner` alias — superseded by `HaulerAgent`
+
 ### Features
 
 * **auto-confirm:** add automatic hazard-detection confirmation gate for move actions — system automatically requests operator confirmation before executing moves into erupting/warning geysers, during high-intensity storms (>0.5), or when battery would drop below 15%
