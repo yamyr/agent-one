@@ -2,6 +2,21 @@
 
 ## [Unreleased]
 
+### Bug Fixes
+
+* **engine: tick inflation (CRITICAL):** add time-guard (`_TICK_MIN_INTERVAL = 1.0s`) to `next_tick()` preventing N× tick acceleration when multiple agents call tick concurrently — idempotent within 1s window, reset on `reset_world()`
+* **engine: tool whitelist (CRITICAL):** add `drop_item` and `request_confirm` to `HuggingFaceRoverReasoner` tool whitelist — previously only present in `MistralRoverReasoner`, causing HuggingFace agents to silently ignore these tool calls
+* **engine: mountain path checking (HIGH):** move mountain obstacle check inside the path-walking loop in `move_agent()` so intermediate tiles are validated, not just the destination — previously agents could teleport through mountains
+* **engine: ice conversion ratio (HIGH):** fix `delivered_ice // ICE_TO_WATER_RATIO` → `delivered_ice * ICE_TO_WATER_RATIO` in `check_mission_status()` — ratio was inverted, producing half the expected water from ice
+* **engine: drone scan auto-relay (HIGH):** fix drone scan relay to use `result.get("concentration", result.get("peak", 0))` and broadcast to all rovers via `self._world.get_agents()` instead of hardcoded `"rover-mistral"` target — previously only notified one rover and missed concentration data
+* **engine: station memory cap (MEDIUM):** replace 3 direct `mem.append()` calls in RoverLoop, DroneLoop, and HaulerLoop with `record_memory("station", ...)` which enforces `MEMORY_MAX` — previously station memory grew unbounded
+* **engine: geyser per-tick damage (MEDIUM):** move agent damage check outside the eruption state-transition guard so damage fires every tick during eruption, not just the first tick — previously agents took damage only once when geyser entered erupting state
+* **engine: storm multiplier on missing actions (MEDIUM):** apply `storm_mod.get_battery_multiplier(WORLD)` to `investigate_structure`, `use_refinery`, and `upgrade_building` actions — previously these actions ignored storm battery drain
+
+### Tests
+
+* **engine-bugfixes:** add 17 regression tests in `test_engine_bugfixes.py` covering all 8 simulation engine bug fixes — tick inflation guard, tool whitelist completeness, mountain path blocking, ice conversion ratio, drone scan relay, station memory cap, geyser per-tick damage, storm multiplier on missing actions
+
 ### Features
 
 * **auto-confirm:** add automatic hazard-detection confirmation gate for move actions — system automatically requests operator confirmation before executing moves into erupting/warning geysers, during high-intensity storms (>0.5), or when battery would drop below 15%

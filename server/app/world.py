@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import copy
+import asyncio
 import hashlib
 import logging
 import random
@@ -102,6 +103,10 @@ ROVER_REVEAL_RADIUS = 3
 DRONE_REVEAL_RADIUS = 6
 REVEAL_RADIUS = ROVER_REVEAL_RADIUS  # legacy alias
 MEMORY_MAX = 8
+
+MAX_AGENT_MESSAGES = 500
+MAX_DELIVERED_ITEMS = 200
+MAX_DRONE_SCANS = 100
 
 # --- Inventory ---
 MAX_INVENTORY_ROVER = 3  # rover can carry at most 3 veins
@@ -751,6 +756,8 @@ def _build_initial_world():
             "gas_collected": 0,
         },
         "storm": storm_mod.make_storm_state(),
+        "timeline": [],
+        "recent_events": [],
         "power_budgets": {},
         "emergency_mode": False,
         "_power_warn_ticks": {},
@@ -962,6 +969,24 @@ class World:
     def get_tick(self) -> int:
         return self._state["tick"]
 
+    def get_recent_events(self, window: int | None = None) -> list[dict]:
+        events = self._state.get("recent_events", [])
+        if window is None:
+            return list(events)
+        current_tick = int(self._state.get("tick", 0))
+        return [
+            event
+            for event in events
+            if int(event.get("tick", -10_000)) > (current_tick - int(window))
+        ]
+
+    def record_timeline_event(self, event: dict) -> None:
+        recent = self._state.setdefault("recent_events", [])
+        recent.append(event)
+        max_recent = max(20, int(settings.event_window_ticks) * 4)
+        if len(recent) > max_recent:
+            del recent[: len(recent) - max_recent]
+
     # --- Setters ---
     def set_agent_model(self, agent_id: str, model: str):
         self._state["agents"][agent_id]["model"] = model
@@ -983,6 +1008,9 @@ class World:
 
     def record_strategic_insight(self, agent_id: str, insight: str, tick: int):
         record_strategic_insight(agent_id, insight, tick)
+
+
+world_lock = asyncio.Lock()
 
 
 # Module-level singleton wrapping the global WORLD dict
@@ -1061,18 +1089,64 @@ def reset_world():
     global _ice_index_source
     _ice_index_source = None
     AGENT_MESSAGES.clear()
+    global _last_tick_time
+    _last_tick_time = 0.0
     _init_world_chunks()
     storm_mod.schedule_next_storm(WORLD)
     logger.info("World reset (generation %d)", gen)
 
 
+_last_tick_time: float = 0.0
+_TICK_MIN_INTERVAL: float = 1.0  # seconds — suppress duplicate tick advances within this window
+
+
 def next_tick():
-    """Increment and return the current tick number and any power budget events."""
+    """Increment and return the current tick number and any power budget events.
+
+    Multiple agent loops call this independently.  A monotonic-time guard
+    ensures the tick only advances once per ``_TICK_MIN_INTERVAL`` seconds,
+    preventing the world clock from running N× too fast when N agents are
+    active.
+    """
+    global _last_tick_time
+    import time as _time
+
+    now = _time.monotonic()
+    if now - _last_tick_time < _TICK_MIN_INTERVAL:
+        # Already advanced this cycle — return current tick, no side effects
+        return WORLD["tick"], []
+
+    _last_tick_time = now
     WORLD["tick"] += 1
     apply_structure_passive_effects()
+    _prune_world_lists()
     tick = WORLD["tick"]
     power_events = check_power_budgets(tick)
     return tick, power_events
+
+
+def _prune_world_lists():
+    """Enforce memory bounds on unbounded world lists.
+
+    Called once per tick to prevent unbounded growth during long simulations.
+    """
+    messages = AGENT_MESSAGES
+    if len(messages) > MAX_AGENT_MESSAGES:
+        read_msgs = [i for i, m in enumerate(messages) if m.get("read")]
+        excess = len(messages) - MAX_AGENT_MESSAGES
+        to_remove = read_msgs[:excess]
+        for idx in reversed(to_remove):
+            del messages[idx]
+        if len(messages) > MAX_AGENT_MESSAGES:
+            del messages[: len(messages) - MAX_AGENT_MESSAGES]
+
+    delivered = WORLD.get("delivered_items")
+    if delivered is not None and len(delivered) > MAX_DELIVERED_ITEMS:
+        del delivered[: len(delivered) - MAX_DELIVERED_ITEMS]
+
+    scans = WORLD.get("drone_scans")
+    if scans is not None and len(scans) > MAX_DRONE_SCANS:
+        del scans[: len(scans) - MAX_DRONE_SCANS]
 
 
 def update_geysers():
@@ -1094,7 +1168,6 @@ def update_geysers():
             obs["state"] = "warning"
         else:
             if obs["state"] != "erupting":
-                # Transition to erupting
                 gx, gy = obs["position"]
                 plant = _find_gas_plant_at(gx, gy)
                 if plant is not None:
@@ -1120,32 +1193,33 @@ def update_geysers():
                             "gas_stored": new_gas,
                         }
                     )
-                else:
-                    for aid, agent in WORLD["agents"].items():
-                        if agent.get("type") == "station":
-                            continue
-                        ax, ay = agent["position"]
-                        if ax == gx and ay == gy:
-                            old_bat = agent["battery"]
-                            agent["battery"] = max(0.0, old_bat - BATTERY_COST_GEYSER)
-                            events.append(
-                                {
-                                    "type": "geyser_eruption",
-                                    "position": [gx, gy],
-                                    "agent_id": aid,
-                                    "battery_before": old_bat,
-                                    "battery_after": agent["battery"],
-                                }
-                            )
-                            logger.info(
-                                "Geyser eruption at (%d,%d) hit %s: %.0f%% -> %.0f%%",
-                                gx,
-                                gy,
-                                aid,
-                                old_bat * 100,
-                                agent["battery"] * 100,
-                            )
             obs["state"] = "erupting"
+            gx, gy = obs["position"]
+            if _find_gas_plant_at(gx, gy) is None:
+                for aid, agent in WORLD["agents"].items():
+                    if agent.get("type") == "station":
+                        continue
+                    ax, ay = agent["position"]
+                    if ax == gx and ay == gy:
+                        old_bat = agent["battery"]
+                        agent["battery"] = max(0.0, old_bat - BATTERY_COST_GEYSER)
+                        events.append(
+                            {
+                                "type": "geyser_eruption",
+                                "position": [gx, gy],
+                                "agent_id": aid,
+                                "battery_before": old_bat,
+                                "battery_after": agent["battery"],
+                            }
+                        )
+                        logger.info(
+                            "Geyser eruption at (%d,%d) hit %s: %.0f%% -> %.0f%%",
+                            gx,
+                            gy,
+                            aid,
+                            old_bat * 100,
+                            agent["battery"] * 100,
+                        )
         obs["_cycle_tick"] = ct
     return events
 
@@ -1205,15 +1279,13 @@ def move_agent(agent_id, x, y):
             struct = _find_structure_at(check_x, check_y)
             label = struct["type"].replace("_", " ") if struct else "structure"
             return {"ok": False, "error": f"Path blocked by {label} at ({check_x}, {check_y})"}
+        obs = is_obstacle_at(check_x, check_y)
+        if obs and obs["kind"] == "mountain":
+            return {"ok": False, "error": f"Mountain blocks path at ({check_x}, {check_y})"}
 
     # Ensure chunk exists at destination
     _ensure_chunk(*_chunk_key(x, y))
     _update_bounds(x, y)
-
-    # Block movement onto mountains
-    obs = is_obstacle_at(x, y)
-    if obs and obs["kind"] == "mountain":
-        return {"ok": False, "error": f"Mountain blocks path at ({x}, {y})"}
 
     agent["position"] = [x, y]
     logger.info("Agent %s moved (%d,%d) -> (%d,%d)", agent_id, ox, oy, x, y)
@@ -2188,7 +2260,7 @@ def check_mission_status():
                 elif stone.get("type") == "ice":
                     delivered_ice += int(stone.get("quantity", 0))
 
-            water_gained = delivered_ice // ICE_TO_WATER_RATIO
+            water_gained = delivered_ice * ICE_TO_WATER_RATIO
             if water_gained > 0 or gas_gained > 0:
                 station_resources = WORLD.setdefault(
                     "station_resources", {"water": 0, "gas": 0, "parts": []}
@@ -2423,7 +2495,9 @@ def _nearest_solar_panel(x, y):
 
 def _execute_investigate_structure(agent_id, agent, params):
     """Investigate an adjacent structure to reveal its details."""
-    if agent["battery"] < BATTERY_COST_INVESTIGATE:
+    storm_mult = storm_mod.get_battery_multiplier(WORLD)
+    cost = BATTERY_COST_INVESTIGATE * storm_mult
+    if agent["battery"] < cost:
         return {"ok": False, "error": "Not enough battery to investigate"}
 
     x, y = agent["position"]
@@ -2517,7 +2591,9 @@ def _execute_investigate_structure(agent_id, agent, params):
 
 def _execute_use_refinery(agent_id, agent):
     """Use the refinery to process basalt from rover inventory into refined materials."""
-    if agent["battery"] < BATTERY_COST_USE_REFINERY:
+    storm_mult = storm_mod.get_battery_multiplier(WORLD)
+    cost = BATTERY_COST_USE_REFINERY * storm_mult
+    if agent["battery"] < cost:
         return {"ok": False, "error": "Not enough battery to use refinery"}
 
     x, y = agent["position"]
@@ -2549,7 +2625,7 @@ def _execute_use_refinery(agent_id, agent):
     item["quantity"] = original_qty + bonus
     item["refined"] = True
 
-    agent["battery"] = max(0.0, agent["battery"] - BATTERY_COST_USE_REFINERY)
+    agent["battery"] = max(0.0, agent["battery"] - cost)
     logger.info(
         "Agent %s refined basalt at refinery: %d -> %d (bonus +%d)",
         agent_id,
@@ -2597,7 +2673,9 @@ def _apply_upgrade_bonuses(structure):
 
 
 def _execute_upgrade_building(agent_id, agent, params):
-    if agent["battery"] < BATTERY_COST_UPGRADE:
+    storm_mult = storm_mod.get_battery_multiplier(WORLD)
+    cost = BATTERY_COST_UPGRADE * storm_mult
+    if agent["battery"] < cost:
         return {"ok": False, "error": "Not enough battery to upgrade"}
 
     x, y = agent["position"]
@@ -2629,7 +2707,7 @@ def _execute_upgrade_building(agent_id, agent, params):
                 inventory.pop(i)
                 break
 
-    agent["battery"] = max(0.0, agent["battery"] - BATTERY_COST_UPGRADE)
+    agent["battery"] = max(0.0, agent["battery"] - cost)
     target["upgrade_level"] = current_level + 1
     _apply_upgrade_bonuses(target)
 
@@ -3541,9 +3619,28 @@ def get_snapshot():
         snap["bounds"] = {"min_x": 0, "max_x": 0, "min_y": 0, "max_y": 0}
     # Add storm info for UI
     snap["storm"] = storm_mod.get_storm_info(WORLD)
+    snap["recent_events"] = copy.deepcopy(WORLD.get("recent_events", []))
     # Add elapsed time from host (if available)
     snap["elapsed_seconds"] = _elapsed_provider() if _elapsed_provider else 0.0
     return snap
+
+
+def record_timeline_event(event: dict):
+    world.record_timeline_event(event)
+
+
+def get_recent_events(window: int | None = None) -> list[dict]:
+    return world.get_recent_events(window)
+
+
+def add_scripted_stone(stone: dict):
+    WORLD.setdefault("stones", []).append(stone)
+    _index_stones([stone])
+
+
+def add_scripted_obstacle(obstacle: dict):
+    WORLD.setdefault("obstacles", []).append(obstacle)
+    _index_obstacles([obstacle])
 
 
 def check_storm_tick():
