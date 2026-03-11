@@ -346,9 +346,13 @@ if _ui_dir.is_dir():
     @app.get("/{path:path}")
     async def spa_fallback(path: str):
         """Serve index.html for any path not matching API/WS routes (SPA fallback)."""
-        # Serve actual static files (JS, CSS, images) directly
-        candidate = _ui_dir / path
-        if not candidate.resolve().is_relative_to(_ui_dir.resolve()):
+        from pathlib import PurePosixPath
+
+        safe = PurePosixPath(path)
+        if ".." in safe.parts:
+            return FileResponse(_index_html)
+        candidate = (_ui_dir / safe).resolve()
+        if not candidate.is_relative_to(_ui_dir.resolve()):
             return FileResponse(_index_html)
         if candidate.is_file():
             return FileResponse(candidate)

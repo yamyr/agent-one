@@ -186,7 +186,7 @@ class TestSPAFallbackPathTraversal(unittest.TestCase):
 
         source = inspect.getsource(main_module)
         self.assertIn("is_relative_to", source)
-        self.assertIn("candidate.resolve()", source)
+        self.assertIn(".resolve()", source)
 
 
 # ── 6. Reset concurrency lock ──
