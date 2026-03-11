@@ -1,3 +1,4 @@
+import asyncio
 import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -45,6 +46,7 @@ logger = logging.getLogger(__name__)
 narrator = Narrator(broadcast_fn=broadcaster.send)
 host = Host(narrator=narrator)
 voice_processor = VoiceCommandProcessor()
+_reset_lock = asyncio.Lock()
 
 AGENT_MAP = {
     "rover-mistral": lambda: RoverMistralLoop(
@@ -185,12 +187,13 @@ def simulation_status():
 
 @app.post("/simulation/reset")
 async def reset_simulation():
-    host.stop()
-    reset_world()
-    narrator.reset()
-    _register_agents()
-    await host.start()
-    return {"reset": True}
+    async with _reset_lock:
+        host.stop()
+        reset_world()
+        narrator.reset()
+        _register_agents()
+        await host.start()
+        return {"reset": True}
 
 
 # ── Preset endpoints ────────────────────────────────────────────────────────
@@ -207,13 +210,14 @@ async def apply_preset_endpoint(name: str):
     """Apply a simulation preset: reset world, apply overrides, restart agents."""
     if name not in PRESETS:
         raise HTTPException(status_code=404, detail=f"Unknown preset: {name!r}")
-    host.stop()
-    reset_world()
-    apply_preset(name, WORLD)
-    narrator.reset()
-    _register_agents_with_preset(name)
-    await host.start()
-    return {"ok": True, "preset": name}
+    async with _reset_lock:
+        host.stop()
+        reset_world()
+        apply_preset(name, WORLD)
+        narrator.reset()
+        _register_agents_with_preset(name)
+        await host.start()
+        return {"ok": True, "preset": name}
 
 
 @app.post("/narration/toggle")
@@ -344,6 +348,8 @@ if _ui_dir.is_dir():
         """Serve index.html for any path not matching API/WS routes (SPA fallback)."""
         # Serve actual static files (JS, CSS, images) directly
         candidate = _ui_dir / path
+        if not candidate.resolve().is_relative_to(_ui_dir.resolve()):
+            return FileResponse(_index_html)
         if candidate.is_file():
             return FileResponse(candidate)
         return FileResponse(_index_html)

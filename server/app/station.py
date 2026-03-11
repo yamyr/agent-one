@@ -7,6 +7,7 @@ from huggingface_hub import InferenceClient
 from mistralai import Mistral
 
 from .config import settings
+from .llm_utils import safe_get_choice
 from .models import StationContext
 from .world import allocate_power, assign_mission, charge_agent
 
@@ -327,7 +328,7 @@ class StationAgent:
             tools=STATION_TOOLS,
             response=response,
         )
-        choice = response.choices[0]
+        choice = safe_get_choice(response, "station")
         thinking = choice.message.content or None
         actions = []
 

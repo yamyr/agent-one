@@ -18,6 +18,7 @@ from mistralai import Mistral, SDKError
 from .base_agent import BaseAgent
 from .broadcast import broadcaster
 from .config import settings
+from .llm_utils import safe_get_choice
 from .protocol import make_message
 from .world import World, world as default_world
 from .world import DIRECTIONS, MAX_MOVE_DISTANCE, MAX_MOVE_DISTANCE_DRONE, MAX_MOVE_DISTANCE_HAULER
@@ -1012,7 +1013,7 @@ class MistralRoverReasoner:
                 tools=ROVER_TOOLS,
                 response=response,
             )
-            choice = response.choices[0]
+            choice = safe_get_choice(response, "rover")
             thinking = choice.message.content or None
             action = None
 
@@ -1057,7 +1058,14 @@ class MistralRoverReasoner:
                 logger.info("Rover thinking: %s", thinking)
 
             return {"thinking": thinking, "action": action}
-        except (SDKError, ConnectionError, TimeoutError, RuntimeError, json.JSONDecodeError) as exc:
+        except (
+            SDKError,
+            ConnectionError,
+            TimeoutError,
+            RuntimeError,
+            json.JSONDecodeError,
+            asyncio.TimeoutError,
+        ) as exc:
             logger.exception("Rover LLM turn failed for %s, using fallback", self.agent_id)
             return self._fallback_turn(f"LLM unavailable ({type(exc).__name__})")
 
@@ -1253,7 +1261,7 @@ class HaulerAgent:
                 tools=HAULER_TOOLS,
             )
 
-            choice = response.choices[0]
+            choice = safe_get_choice(response, "hauler")
             thinking = choice.message.content or None
             action = None
 
@@ -1279,7 +1287,14 @@ class HaulerAgent:
                 logger.info("Hauler thinking: %s", thinking)
 
             return {"thinking": thinking, "action": action}
-        except (SDKError, ConnectionError, TimeoutError, RuntimeError, json.JSONDecodeError) as exc:
+        except (
+            SDKError,
+            ConnectionError,
+            TimeoutError,
+            RuntimeError,
+            json.JSONDecodeError,
+            asyncio.TimeoutError,
+        ) as exc:
             logger.exception("Hauler LLM turn failed for %s, using fallback", self.agent_id)
             return self._fallback_turn(f"LLM unavailable ({type(exc).__name__})")
 
@@ -1316,7 +1331,6 @@ class HaulerAgent:
             "thinking": f"LLM fallback: {reason}. Attempting cargo pickup at current position.",
             "action": {"name": "load_cargo", "params": {}},
         }
-
 
 
 # Backward-compat aliases
@@ -1359,7 +1373,7 @@ class HuggingFaceRoverReasoner(MistralRoverReasoner):
                 tools=ROVER_TOOLS,
                 tool_choice="auto",
             )
-            choice = response.choices[0]
+            choice = safe_get_choice(response, "hf-rover")
             thinking = choice.message.content or None
             action = None
 
@@ -1404,7 +1418,15 @@ class HuggingFaceRoverReasoner(MistralRoverReasoner):
                 logger.info("Rover thinking: %s", thinking)
 
             return {"thinking": thinking, "action": action}
-        except (HfHubHTTPError, InferenceTimeoutError, ConnectionError, TimeoutError, RuntimeError, json.JSONDecodeError) as exc:
+        except (
+            HfHubHTTPError,
+            InferenceTimeoutError,
+            ConnectionError,
+            TimeoutError,
+            RuntimeError,
+            json.JSONDecodeError,
+            asyncio.TimeoutError,
+        ) as exc:
             logger.exception("Rover LLM turn failed for %s, using fallback", self.agent_id)
             return self._fallback_turn(f"LLM unavailable ({type(exc).__name__})")
 
@@ -1670,7 +1692,7 @@ class DroneAgent:
                 tools=DRONE_TOOLS,
                 response=response,
             )
-            choice = response.choices[0]
+            choice = safe_get_choice(response, "drone")
             thinking = choice.message.content or None
             action = None
 
@@ -1705,7 +1727,14 @@ class DroneAgent:
                 logger.info("Drone thinking: %s", thinking)
 
             return {"thinking": thinking, "action": action}
-        except (SDKError, ConnectionError, TimeoutError, RuntimeError, json.JSONDecodeError) as exc:
+        except (
+            SDKError,
+            ConnectionError,
+            TimeoutError,
+            RuntimeError,
+            json.JSONDecodeError,
+            asyncio.TimeoutError,
+        ) as exc:
             logger.exception("Drone LLM turn failed for %s, using fallback", self.agent_id)
             return self._fallback_turn(f"LLM unavailable ({type(exc).__name__})")
 
@@ -1756,7 +1785,7 @@ class HuggingFaceDroneAgent(DroneAgent):
                 tools=DRONE_TOOLS,
                 tool_choice="auto",
             )
-            choice = response.choices[0]
+            choice = safe_get_choice(response, "drone")
             thinking = choice.message.content or None
             action = None
 
@@ -1791,7 +1820,15 @@ class HuggingFaceDroneAgent(DroneAgent):
                 logger.info("Drone thinking: %s", thinking)
 
             return {"thinking": thinking, "action": action}
-        except (HfHubHTTPError, InferenceTimeoutError, ConnectionError, TimeoutError, RuntimeError, json.JSONDecodeError) as exc:
+        except (
+            HfHubHTTPError,
+            InferenceTimeoutError,
+            ConnectionError,
+            TimeoutError,
+            RuntimeError,
+            json.JSONDecodeError,
+            asyncio.TimeoutError,
+        ) as exc:
             logger.exception("Drone LLM turn failed for %s, using fallback", self.agent_id)
             return self._fallback_turn(f"LLM unavailable ({type(exc).__name__})")
 
@@ -2283,7 +2320,8 @@ class RoverLoop(BaseAgent):
                         messages=[{"role": "user", "content": prompt}],
                         max_tokens=150,
                     )
-                    insight_text = resp.choices[0].message.content.strip()
+                    insight_choice = safe_get_choice(resp, "strategic insight")
+                    insight_text = (insight_choice.message.content or "").strip()
                     record_strategic_insight(self.agent_id, insight_text, current_tick)
                     await broadcaster.send(
                         {

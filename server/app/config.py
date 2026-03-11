@@ -70,6 +70,9 @@ class Settings(BaseSettings):
     # Auto-confirm: automatically request confirmation before hazardous moves
     auto_confirm_enabled: bool = True
 
+    # LLM call timeout (seconds)
+    llm_call_timeout: float = Field(default=45.0, gt=0)
+
     # Fine-tuning
     training_data_enabled: bool = False
     training_data_dir: str = "./training_data"

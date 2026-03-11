@@ -2,6 +2,30 @@
 
 ## [Unreleased]
 
+### Security
+
+* **path-traversal:** add path traversal guard in `finetuning.py` `upload_training_data()` — rejects file paths outside configured `training_data_dir` using `Path.is_relative_to()`
+* **path-traversal:** add SPA fallback path traversal guard in `main.py` — prevents serving files outside the UI static directory
+
+### Bug Fixes
+
+* **llm-safety:** add `safe_get_choice()` helper in new `llm_utils.py` — validates `response.choices` is non-empty before access, raises `RuntimeError` with context label on empty responses
+* **llm-safety:** replace all raw `response.choices[0]` access with `safe_get_choice()` in `agent.py` (6 call sites), `narrator.py`, `station.py`, `voice.py`
+* **agent-loop:** broaden except clauses in all 5 `run_turn()` methods to catch `asyncio.TimeoutError` — prevents unhandled timeout crashes during LLM calls
+* **broadcast:** add `MAX_WS_CONNECTIONS = 50` limit — rejects new WebSocket connections with code 1013 when limit reached
+* **broadcast:** add `logger.warning` on dead WebSocket connection removal during `send()`
+* **concurrency:** add `_reset_lock` (asyncio.Lock) guarding `reset_simulation()` and `apply_preset_endpoint()` — prevents race conditions from concurrent reset requests
+* **concurrency:** add `world_lock` (asyncio.Lock) in `world.py` for world state access coordination
+* **timeout:** wrap `station_startup()` LLM call in `asyncio.wait_for()` with configurable `llm_call_timeout` setting (default 45s)
+
+### Features
+
+* **config:** add `llm_call_timeout: float` setting (default 45.0s, must be >0) for controlling LLM call timeouts
+
+### Tests
+
+* **robustness:** add 64 tests in `test_robustness.py` covering safe_get_choice, broadcaster limits, config timeout, path traversal guards, concurrency locks, timeout wrapping, safe_get_choice adoption, and broadened except clauses
+
 ### Bug Fixes
 
 * **agent-loop:** add `drop_item` and `request_confirm` to rover tool whitelists — LLM calling these tools no longer crashes the agent

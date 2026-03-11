@@ -9,6 +9,8 @@ from fastapi import WebSocket
 
 logger = logging.getLogger(__name__)
 
+MAX_WS_CONNECTIONS = 50
+
 
 class Broadcaster:
     """Manages WebSocket connections and broadcasts events to all clients."""
@@ -17,6 +19,10 @@ class Broadcaster:
         self._connections: list[WebSocket] = []
 
     async def connect(self, ws: WebSocket):
+        if len(self._connections) >= MAX_WS_CONNECTIONS:
+            await ws.close(code=1013, reason="Too many connections")
+            logger.warning("Rejected WebSocket: connection limit (%d) reached", MAX_WS_CONNECTIONS)
+            return
         await ws.accept()
         self._connections.append(ws)
         logger.info("Client connected (%d total)", len(self._connections))
@@ -35,6 +41,7 @@ class Broadcaster:
                 await ws.send_text(data)
             except Exception:
                 dead.append(ws)
+                logger.warning("Removing dead WebSocket connection")
         for ws in dead:
             if ws in self._connections:
                 self._connections.remove(ws)
