@@ -349,11 +349,8 @@ if _ui_dir.is_dir():
         import os.path
 
         root = str(_ui_dir.resolve())
-        # Normalize the joined path to collapse any ".." segments before checking
         candidate = os.path.normpath(os.path.join(root, path))
-        if not candidate.startswith(root + os.sep) and candidate != root:
-            return FileResponse(_index_html)
-        if os.path.isfile(candidate):
+        if candidate.startswith(root + os.sep) and os.path.isfile(candidate):
             return FileResponse(candidate)
         return FileResponse(_index_html)
 
