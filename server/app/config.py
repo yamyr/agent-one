@@ -70,6 +70,9 @@ class Settings(BaseSettings):
     # Auto-confirm: automatically request confirmation before hazardous moves
     auto_confirm_enabled: bool = True
 
+    # Scripted event timeline: path to JSON file with pre-defined events
+    event_script: str = ""
+
     # Fine-tuning
     training_data_enabled: bool = False
     training_data_dir: str = "./training_data"
