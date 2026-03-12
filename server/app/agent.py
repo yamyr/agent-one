@@ -2151,14 +2151,13 @@ class RoverLoop(BaseAgent):
                     )
                     messages.append(check_msg)
 
-                # Save notify to station memory and emit station thinking log
                 if turn["action"]["name"] == "notify" and result.get("message"):
                     pos = result["position"]
                     station_state = self._world.get_agents().get("station")
                     if station_state:
-                        mem = station_state.setdefault("memory", [])
-                        mem.append(
-                            f"Radio from {self.agent_id} at ({pos[0]},{pos[1]}): {result['message']}"
+                        record_memory(
+                            "station",
+                            f"Radio from {self.agent_id} at ({pos[0]},{pos[1]}): {result['message']}",
                         )
                     station_log = make_message(
                         source="station",
@@ -2506,14 +2505,13 @@ class DroneLoop(BaseAgent):
                 )
                 messages.append(action_msg)
 
-                # Save notify to station memory and emit station thinking log
                 if turn["action"]["name"] == "notify" and result.get("message"):
                     pos = result["position"]
                     station_state = self._world.get_agents().get("station")
                     if station_state:
-                        mem = station_state.setdefault("memory", [])
-                        mem.append(
-                            f"Radio from {self.agent_id} at ({pos[0]},{pos[1]}): {result['message']}"
+                        record_memory(
+                            "station",
+                            f"Radio from {self.agent_id} at ({pos[0]},{pos[1]}): {result['message']}",
                         )
                     station_log = make_message(
                         source="station",
@@ -2525,15 +2523,15 @@ class DroneLoop(BaseAgent):
                     )
                     messages.append(station_log)
 
-                # Auto-relay high-concentration scan results to all active rovers
-                if turn["action"]["name"] == "scan" and result.get("concentration", 0) > 0.5:
-                    for rid, rdata in self._world.get_agents().items():
-                        if rdata.get("type") != "rover":
-                            continue
+                concentration = result.get("concentration", result.get("peak", 0))
+                if turn["action"]["name"] == "scan" and concentration > 0.5:
+                    all_agents = self._world.get_agents()
+                    rover_ids = [aid for aid, a in all_agents.items() if a.get("type") == "rover"]
+                    for _agent_id in rover_ids:
                         relay_msg = send_agent_message(
                             self.agent_id,
-                            rid,
-                            f"High concentration {result['concentration']:.2f} at {result.get('position', '?')}",
+                            _agent_id,
+                            f"High concentration {concentration:.2f} at {result.get('position', '?')}",
                         )
                         relay_event = make_message(
                             source=self.agent_id,
@@ -2541,7 +2539,7 @@ class DroneLoop(BaseAgent):
                             name="intel_relay",
                             payload={
                                 "from": self.agent_id,
-                                "to": rid,
+                                "to": _agent_id,
                                 "message": relay_msg["message"],
                             },
                         )
@@ -2706,9 +2704,9 @@ class HaulerLoop(BaseAgent):
                     pos = result["position"]
                     station_state = self._world.get_agents().get("station")
                     if station_state:
-                        mem = station_state.setdefault("memory", [])
-                        mem.append(
-                            f"Radio from {self.agent_id} at ({pos[0]},{pos[1]}): {result['message']}"
+                        record_memory(
+                            "station",
+                            f"Radio from {self.agent_id} at ({pos[0]},{pos[1]}): {result['message']}",
                         )
 
         # ── Goal confidence update (hauler) ──
