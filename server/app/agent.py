@@ -1041,6 +1041,8 @@ class MistralRoverReasoner:
                     "upgrade_base",
                     "collect_gas",
                     "upgrade_building",
+                    "drop_item",
+                    "request_confirm",
                 ):
                     action = {"name": name, "params": args}
                 else:
@@ -1546,6 +1548,8 @@ class HuggingFaceRoverReasoner(MistralRoverReasoner):
                     "investigate_structure",
                     "use_refinery",
                     "upgrade_building",
+                    "drop_item",
+                    "request_confirm",
                 ):
                     action = {"name": name, "params": args}
                 else:
@@ -2280,14 +2284,13 @@ class RoverLoop(BaseAgent):
                     )
                     messages.append(check_msg)
 
-                # Save notify to station memory and emit station thinking log
                 if turn["action"]["name"] == "notify" and result.get("message"):
                     pos = result["position"]
                     station_state = self._world.get_agents().get("station")
                     if station_state:
-                        mem = station_state.setdefault("memory", [])
-                        mem.append(
-                            f"Radio from {self.agent_id} at ({pos[0]},{pos[1]}): {result['message']}"
+                        record_memory(
+                            "station",
+                            f"Radio from {self.agent_id} at ({pos[0]},{pos[1]}): {result['message']}",
                         )
                     station_log = make_message(
                         source="station",
@@ -2641,14 +2644,13 @@ class DroneLoop(BaseAgent):
                 )
                 messages.append(action_msg)
 
-                # Save notify to station memory and emit station thinking log
                 if turn["action"]["name"] == "notify" and result.get("message"):
                     pos = result["position"]
                     station_state = self._world.get_agents().get("station")
                     if station_state:
-                        mem = station_state.setdefault("memory", [])
-                        mem.append(
-                            f"Radio from {self.agent_id} at ({pos[0]},{pos[1]}): {result['message']}"
+                        record_memory(
+                            "station",
+                            f"Radio from {self.agent_id} at ({pos[0]},{pos[1]}): {result['message']}",
                         )
                     station_log = make_message(
                         source="station",
@@ -2660,24 +2662,27 @@ class DroneLoop(BaseAgent):
                     )
                     messages.append(station_log)
 
-                # Auto-relay high-concentration scan results to rover
-                if turn["action"]["name"] == "scan" and result.get("concentration", 0) > 0.5:
-                    relay_msg = send_agent_message(
-                        self.agent_id,
-                        "rover-mistral",
-                        f"High concentration {result['concentration']:.2f} at {result.get('position', '?')}",
-                    )
-                    relay_event = make_message(
-                        source=self.agent_id,
-                        type="event",
-                        name="intel_relay",
-                        payload={
-                            "from": self.agent_id,
-                            "to": "rover-mistral",
-                            "message": relay_msg["message"],
-                        },
-                    )
-                    messages.append(relay_event)
+                concentration = result.get("concentration", result.get("peak", 0))
+                if turn["action"]["name"] == "scan" and concentration > 0.5:
+                    all_agents = self._world.get_agents()
+                    rover_ids = [aid for aid, a in all_agents.items() if a.get("type") == "rover"]
+                    for _agent_id in rover_ids:
+                        relay_msg = send_agent_message(
+                            self.agent_id,
+                            _agent_id,
+                            f"High concentration {concentration:.2f} at {result.get('position', '?')}",
+                        )
+                        relay_event = make_message(
+                            source=self.agent_id,
+                            type="event",
+                            name="intel_relay",
+                            payload={
+                                "from": self.agent_id,
+                                "to": _agent_id,
+                                "message": relay_msg["message"],
+                            },
+                        )
+                        messages.append(relay_event)
 
         # LLM-owned task: update agent tasks from LLM output
         llm_task = turn.get("task")
@@ -2844,9 +2849,9 @@ class HaulerLoop(BaseAgent):
                     pos = result["position"]
                     station_state = self._world.get_agents().get("station")
                     if station_state:
-                        mem = station_state.setdefault("memory", [])
-                        mem.append(
-                            f"Radio from {self.agent_id} at ({pos[0]},{pos[1]}): {result['message']}"
+                        record_memory(
+                            "station",
+                            f"Radio from {self.agent_id} at ({pos[0]},{pos[1]}): {result['message']}",
                         )
 
         # ── Goal confidence update (hauler) ──
