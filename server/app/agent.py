@@ -2132,7 +2132,7 @@ class RoverLoop(BaseAgent):
         t0 = time.monotonic()
         turn = await asyncio.to_thread(self._reasoner.run_turn)
         llm_ms = int((time.monotonic() - t0) * 1000)
-        _tick, _power_events = next_tick()
+        _tick, _power_events, _timeline_events = next_tick()
 
         # Advance storm lifecycle and broadcast any storm events
         storm_events = check_storm_tick()
@@ -2144,6 +2144,16 @@ class RoverLoop(BaseAgent):
                 payload=sevt["payload"],
             )
             await host.broadcast(storm_msg.to_dict())
+
+        # Broadcast scripted timeline events
+        for tevt in _timeline_events:
+            tmsg = make_message(
+                source="world",
+                type="event",
+                name=tevt["name"],
+                payload=tevt["payload"],
+            )
+            await host.broadcast(tmsg.to_dict())
 
         # Broadcast power budget events (warnings + emergency mode transitions)
         for pevt in _power_events:
@@ -2588,8 +2598,15 @@ class DroneLoop(BaseAgent):
         _llm_ms = int((time.monotonic() - _t0) * 1000)
         _action_result = {}
         _action_ok = False
-        _tick, _power_events = next_tick()
+        _tick, _power_events, _timeline_events = next_tick()
         messages = []
+
+        for tevt in _timeline_events:
+            messages.append(
+                make_message(
+                    source="world", type="event", name=tevt["name"], payload=tevt["payload"]
+                )
+            )
 
         if turn["thinking"]:
             msg = make_message(
@@ -2783,9 +2800,15 @@ class HaulerLoop(BaseAgent):
             return
 
         turn = await asyncio.to_thread(self._reasoner.run_turn)
-        _tick, _power_events = next_tick()
+        _tick, _power_events, _timeline_events = next_tick()
 
         messages = []
+        for tevt in _timeline_events:
+            messages.append(
+                make_message(
+                    source="world", type="event", name=tevt["name"], payload=tevt["payload"]
+                )
+            )
         if turn["thinking"]:
             messages.append(
                 make_message(

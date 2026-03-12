@@ -97,6 +97,25 @@ PRESETS: dict[str, dict] = {
             "rover-mistral,rover-2,rover-large,drone-mistral,station-loop,hauler-mistral"
         ),
     },
+    "demo_timeline": {
+        "name": "demo_timeline",
+        "description": (
+            "Scripted demo scenario with pre-defined events at specific ticks. "
+            "Storms, resource spawns, and battery drains occur on a fixed schedule "
+            "for deterministic demos and walkthroughs."
+        ),
+        "world_overrides": {
+            "mission": {
+                "target_quantity": 200,
+            },
+        },
+        "agent_overrides": {
+            "*rover*": {"battery": 1.0},
+            "*hauler*": {"battery": 1.0},
+            "*drone*": {"battery": 1.0},
+        },
+        "active_agents": "rover-mistral,drone-mistral,station-loop,hauler-mistral",
+    },
 }
 
 

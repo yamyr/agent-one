@@ -54,6 +54,18 @@
 
 ### Features
 
+* **scripted-event-timeline:** add `ScriptedTimeline` engine in `app/events.py` — fires pre-defined world events (storms, resource spawns, battery changes, messages, obstacles, mission updates) at specific simulation ticks for deterministic demo scenarios and repeatable integration testing
+* **scripted-event-timeline:** add 9 event types (`storm_start`, `storm_end`, `resource_spawn`, `battery_drain`, `battery_set`, `agent_message`, `broadcast`, `spawn_obstacle`, `mission_update`) with Pydantic-validated `ScriptedEvent` model and executor dispatch table
+* **scripted-event-timeline:** add `DEMO_TIMELINE` — curated 12-event demo script showcasing storm cycle, resource spawns, battery management, and mission updates
+* **scripted-event-timeline:** add `demo_timeline` preset in `presets.py` — activates all agents with balanced battery levels and auto-loads the demo timeline
+* **scripted-event-timeline:** add 5 REST API endpoints (`GET /api/timeline`, `POST /api/timeline/load`, `POST /api/timeline/load-demo`, `POST /api/timeline/clear`, `POST /api/timeline/reset`) for runtime timeline management
+* **scripted-event-timeline:** add `event_script` config setting — supports loading custom event scripts from JSON files at startup via `EVENT_SCRIPT=/path/to/events.json`
+* **scripted-event-timeline:** integrate timeline into simulation loop — `next_tick()` returns 3-tuple `(tick, power_events, timeline_events)`, all agent loops broadcast fired events
+
+### Tests
+
+* **scripted-event-timeline:** add 53 tests in `test_events.py` — model validation (6), timeline load/clear/reset (6), check_tick behavior (6), all 9 executor types (13), file loading (4), get_status (2), demo timeline validation (3), executor registry (2), world integration (2), preset/config integration (4), description tagging (1)
+
 * **auto-confirm:** add automatic hazard-detection confirmation gate for move actions — system automatically requests operator confirmation before executing moves into erupting/warning geysers, during high-intensity storms (>0.5), or when battery would drop below 15%
 * **auto-confirm:** add `detect_move_hazards()` function in `world.py` — synchronous hazard detection for geyser state, battery threshold, and storm intensity checks
 * **auto-confirm:** add `_auto_confirm_gate()` async helper in `agent.py` — integrates with existing `host.create_confirm()` flow for all agent types (rover, drone, hauler)

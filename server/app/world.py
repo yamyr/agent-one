@@ -11,6 +11,7 @@ from collections.abc import Callable
 
 from .config import settings
 from . import storm as storm_mod
+from .events import timeline as _event_timeline
 from .models import (
     RoverAgentState,
     RoverWorldView,
@@ -1093,6 +1094,7 @@ def reset_world():
     _last_tick_time = 0.0
     _init_world_chunks()
     storm_mod.schedule_next_storm(WORLD)
+    _event_timeline.reset()
     logger.info("World reset (generation %d)", gen)
 
 
@@ -1101,7 +1103,7 @@ _TICK_MIN_INTERVAL: float = 1.0  # seconds — suppress duplicate tick advances 
 
 
 def next_tick():
-    """Increment and return the current tick number and any power budget events.
+    """Increment and return the current tick number, power events, and timeline events.
 
     Multiple agent loops call this independently.  A monotonic-time guard
     ensures the tick only advances once per ``_TICK_MIN_INTERVAL`` seconds,
@@ -1114,7 +1116,7 @@ def next_tick():
     now = _time.monotonic()
     if now - _last_tick_time < _TICK_MIN_INTERVAL:
         # Already advanced this cycle — return current tick, no side effects
-        return WORLD["tick"], []
+        return WORLD["tick"], [], []
 
     _last_tick_time = now
     WORLD["tick"] += 1
@@ -1122,7 +1124,8 @@ def next_tick():
     _prune_world_lists()
     tick = WORLD["tick"]
     power_events = check_power_budgets(tick)
-    return tick, power_events
+    timeline_events = _event_timeline.check_tick(tick, WORLD)
+    return tick, power_events, timeline_events
 
 
 def _prune_world_lists():
