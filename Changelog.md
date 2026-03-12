@@ -1,5 +1,40 @@
 # Changelog
 
+## [0.9.0](https://github.com/yamyr/agent-one/compare/v0.8.0...v0.9.0) (2026-03-12)
+
+
+### Features
+
+* add automatic request_confirm for hazardous moves ([261c58d](https://github.com/yamyr/agent-one/commit/261c58df60de5be7a574dcc15511040cc7a5a89b))
+* add automatic request_confirm for hazardous moves ([e68c111](https://github.com/yamyr/agent-one/commit/e68c11113feb525f31797b4b4ca2fe62a2a2b4de))
+* add Mistral Agents API as switchable backend ([523b4ba](https://github.com/yamyr/agent-one/commit/523b4bab60c69a45f63558bf25077e11d486852b))
+* **agents-api-threads:** add persistent conversation threads with config toggle ([e23ff80](https://github.com/yamyr/agent-one/commit/e23ff802ca9a7813abbd5379fb14f8332e20ca32))
+* **agents-api-threads:** persistent conversation threads + training logger ([af348e7](https://github.com/yamyr/agent-one/commit/af348e712bbe7e077dd0197086a86aac97d8fd41))
+* **agents-api:** add Agents API reasoners for rover, drone, station ([cee065c](https://github.com/yamyr/agent-one/commit/cee065c4d634032790f7d6037f93740549e54e7c))
+* **agents-api:** add loop variants and AGENT_MAP registration ([506324b](https://github.com/yamyr/agent-one/commit/506324b4ac84f045120767ef539c832dac8d1b05))
+* **config:** add agent_backend toggle and tighten SDK constraint ([500dc60](https://github.com/yamyr/agent-one/commit/500dc60a290fc5f65a929305b7b000191db38dbc))
+* **goal-confidence:** add goal confidence tracking + UI bars ([9973dc4](https://github.com/yamyr/agent-one/commit/9973dc417f13df25ad250f0cd010027ba91d6c2a))
+* **goal-confidence:** add goal confidence tracking with UI bars ([a34a57d](https://github.com/yamyr/agent-one/commit/a34a57d630b371d800252c39c4e2a32c4bc4538b))
+* **human-in-the-loop:** add request_confirm rover tool with UI confirmation modal ([3edc833](https://github.com/yamyr/agent-one/commit/3edc8335efd3b929c91f24dd11a8a52077f17567))
+* **human-in-the-loop:** add request_confirm rover tool with UI modal and confirmation flow ([465136e](https://github.com/yamyr/agent-one/commit/465136e3609919f02b03f9edb551b0391d55302e))
+* **peer-messaging:** add rover-to-rover direct messaging with notify_peer tool ([52e430b](https://github.com/yamyr/agent-one/commit/52e430b85ecc7b221e2094ee2fd29e21770e17c4))
+* **peer-messaging:** rover-to-rover direct messaging with notify_peer tool ([34d01a7](https://github.com/yamyr/agent-one/commit/34d01a761c3f083d6aad48113031cec0eb0a24bd))
+* **power-allocation:** add allocate_power station tool with budget events and UI ([583ca29](https://github.com/yamyr/agent-one/commit/583ca29a02684ba07b95a95f34d5b27ddde5216c))
+* **power-allocation:** add allocate_power station tool with budget events and UI ([6ccb6f5](https://github.com/yamyr/agent-one/commit/6ccb6f5a536db1dc1ee363076b4b6d683f15b15c))
+* **presets:** add multi-scenario simulation presets ([3f3853e](https://github.com/yamyr/agent-one/commit/3f3853eaa8b700208b9a2a339720f46485295903))
+* **presets:** add multi-scenario simulation presets ([df4eca9](https://github.com/yamyr/agent-one/commit/df4eca96ea5e5c3f3beb751f7084285c7d0679a6))
+* **replay:** add simulation replay UI with training session playback ([71bda7a](https://github.com/yamyr/agent-one/commit/71bda7a15ea46bb765454792336fb76e8fd8bf24))
+* **replay:** add simulation replay UI with training session playback ([2f78b49](https://github.com/yamyr/agent-one/commit/2f78b49431f301d099fd7c233d95fec781f35b3f))
+
+
+### Bug Fixes
+
+* **ci:** resolve eslint errors and flaky storm test ([b827ea9](https://github.com/yamyr/agent-one/commit/b827ea926210da2f5ca65c77e4e76038d03db235))
+* **ci:** resolve eslint errors and flaky storm test ([890f656](https://github.com/yamyr/agent-one/commit/890f656a96834481b6d2a9a8282bf34a17066b83))
+* resolve 8 simulation engine bugs ([947f9a2](https://github.com/yamyr/agent-one/commit/947f9a24da9d5f36ce9676edc673bee216e5bb40))
+* resolve 8 simulation engine bugs (tick inflation, tool whitelist, path checking, ice ratio, drone relay, station memory, geyser damage, storm multiplier) ([8988d60](https://github.com/yamyr/agent-one/commit/8988d605ef4bad3f2399bf5d0612c935c8bdced2))
+* **ui:** remove unused requestId param in handleConfirmTimeout ([9f06c63](https://github.com/yamyr/agent-one/commit/9f06c6353cd013020c5a9ead6fc7061f0141d05d))
+
 ## [Unreleased]
 
 ### Bug Fixes
