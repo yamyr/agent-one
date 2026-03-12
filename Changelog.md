@@ -4,8 +4,8 @@
 
 ### Security
 
-* **path-traversal:** add path traversal guard in `finetuning.py` `upload_training_data()` — rejects file paths outside configured `training_data_dir` using `Path.is_relative_to()`
-* **path-traversal:** add SPA fallback path traversal guard in `main.py` — prevents serving files outside the UI static directory
+* **path-traversal:** harden path traversal guard in `finetuning.py` `upload_training_data()` — use `os.path.realpath()` + `startswith()` pattern (CodeQL-recognized) to reject file paths outside configured `training_data_dir`; always validate, removing the unguarded fallback branch
+* **path-traversal:** harden SPA fallback path traversal guard in `main.py` — switch from `PurePosixPath` + `Path.is_relative_to()` to `os.path.normpath()` + `startswith()` pattern recognized by CodeQL as safe (resolves CodeQL `py/path-injection` alerts #16, #17, #18)
 
 ### Bug Fixes
 

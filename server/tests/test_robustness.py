@@ -169,12 +169,12 @@ class TestFinetuningPathTraversal(unittest.TestCase):
             mgr.upload_training_data("../../../etc/shadow")
         self.assertIn("Path traversal denied", str(ctx.exception))
 
-    def test_path_validation_uses_pathlib(self):
+    def test_path_validation_uses_normpath(self):
         from app.finetuning import FineTuningManager
 
         source = inspect.getsource(FineTuningManager.upload_training_data)
-        self.assertIn("is_relative_to", source)
-        self.assertIn("resolve", source)
+        self.assertIn("realpath", source)
+        self.assertIn("startswith", source)
 
 
 # ── 5. SPA fallback path traversal ──
@@ -185,8 +185,8 @@ class TestSPAFallbackPathTraversal(unittest.TestCase):
         from app import main as main_module
 
         source = inspect.getsource(main_module)
-        self.assertIn("is_relative_to", source)
-        self.assertIn(".resolve()", source)
+        self.assertIn("normpath", source)
+        self.assertIn("startswith", source)
 
 
 # ── 6. Reset concurrency lock ──
