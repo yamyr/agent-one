@@ -32,6 +32,7 @@ from .voice import VoiceCommandProcessor, SUPPORTED_AUDIO_TYPES
 from .presets import apply_preset, list_presets, PRESETS
 from .world import reset_world, WORLD, set_agent_model
 from .training import collector as training_collector
+from .events import timeline as event_timeline, DEMO_TIMELINE
 
 logging.basicConfig(
     level=logging.INFO,
@@ -139,6 +140,10 @@ async def lifespan(app):
         _register_agents_with_preset(settings.preset)
     else:
         _register_agents()
+    # Load scripted event timeline from config
+    if settings.event_script:
+        count = event_timeline.load_from_file(settings.event_script)
+        logger.info("Loaded %d scripted events from %s", count, settings.event_script)
     await host.start()
     yield
     host.stop()
@@ -217,6 +222,41 @@ async def apply_preset_endpoint(name: str):
         _register_agents_with_preset(name)
         await host.start()
     return {"ok": True, "preset": name}
+
+
+# ── Timeline endpoints ──────────────────────────────────────────────────────
+
+
+@app.get("/api/timeline")
+def get_timeline():
+    return event_timeline.get_status()
+
+
+@app.post("/api/timeline/load")
+def load_timeline(body: dict):
+    events = body.get("events", [])
+    if not isinstance(events, list):
+        raise HTTPException(status_code=400, detail="'events' must be a list")
+    count = event_timeline.load(events)
+    return {"ok": True, "loaded": count}
+
+
+@app.post("/api/timeline/load-demo")
+def load_demo_timeline():
+    count = event_timeline.load(DEMO_TIMELINE)
+    return {"ok": True, "loaded": count}
+
+
+@app.post("/api/timeline/clear")
+def clear_timeline():
+    event_timeline.clear()
+    return {"ok": True}
+
+
+@app.post("/api/timeline/reset")
+def reset_timeline():
+    event_timeline.reset()
+    return {"ok": True}
 
 
 @app.post("/narration/toggle")

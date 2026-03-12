@@ -73,6 +73,8 @@ class Settings(BaseSettings):
 
     # LLM call timeout (seconds)
     llm_call_timeout: float = Field(default=45.0, gt=0)
+    # Scripted event timeline: path to JSON file with pre-defined events
+    event_script: str = ""
 
     # Fine-tuning
     training_data_enabled: bool = False
