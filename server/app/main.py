@@ -346,15 +346,14 @@ if _ui_dir.is_dir():
     @app.get("/{path:path}")
     async def spa_fallback(path: str):
         """Serve index.html for any path not matching API/WS routes (SPA fallback)."""
-        from pathlib import PurePosixPath
+        import os.path
 
-        safe = PurePosixPath(path)
-        if ".." in safe.parts:
+        root = str(_ui_dir.resolve())
+        # Normalize the joined path to collapse any ".." segments before checking
+        candidate = os.path.normpath(os.path.join(root, path))
+        if not candidate.startswith(root + os.sep) and candidate != root:
             return FileResponse(_index_html)
-        candidate = (_ui_dir / safe).resolve()
-        if not candidate.is_relative_to(_ui_dir.resolve()):
-            return FileResponse(_index_html)
-        if candidate.is_file():
+        if os.path.isfile(candidate):
             return FileResponse(candidate)
         return FileResponse(_index_html)
 
