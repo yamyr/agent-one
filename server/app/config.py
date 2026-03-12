@@ -42,6 +42,7 @@ class Settings(BaseSettings):
     llm_turn_interval_seconds: float = Field(default=4.0, gt=0)
     drone_turn_interval_seconds: float = Field(default=3.5, gt=0)
     hauler_turn_interval_seconds: float = Field(default=5.0, gt=0)
+    event_window_ticks: int = Field(default=50, gt=0)
 
     # World generation seed (empty = random)
     world_seed: str = ""
