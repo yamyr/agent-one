@@ -37,6 +37,10 @@
 
 ## [Unreleased]
 
+### Performance
+
+* **world: stone proximity O(S) scan (#270):** replace O(S) linear scan in `_stone_proximity_concentration()` with spatial index lookup via `_ensure_stone_index()` and early `_MAX_EFFECTIVE_RADIUS` skip — eliminates per-cell full-stones-list iteration during drone scans
+
 ### Bug Fixes
 
 * **engine: tick inflation (CRITICAL):** add time-guard (`_TICK_MIN_INTERVAL = 1.0s`) to `next_tick()` preventing N× tick acceleration when multiple agents call tick concurrently — idempotent within 1s window, reset on `reset_world()`

@@ -527,21 +527,20 @@ def _ensure_chunk(cx, cy):
     return chunk_data
 
 
-def _stone_proximity_concentration(x, y):
-    """Concentration based on proximity to veins (Manhattan distance).
+_MAX_EFFECTIVE_RADIUS: int = 10 + (len(VEIN_GRADES) - 1) * 2
 
-    Higher-grade veins produce stronger signals, scaling with grade index.
-    """
+
+def _stone_proximity_concentration(x, y):
     max_conc = 0.0
-    for s in WORLD.get("stones", []):
-        sx, sy = s["position"]
+    _ensure_stone_index()
+    for (sx, sy), s in _stone_index.items():
         d = abs(x - sx) + abs(y - sy)
+        if d > _MAX_EFFECTIVE_RADIUS:
+            continue
         if d == 0:
             return 1.0
-        # Scale by grade: higher grade veins have a wider/stronger signal
         grade = s.get("_true_grade", "low")
         grade_idx = VEIN_GRADES.index(grade) if grade in VEIN_GRADES else 0
-        # Effective radius: 10 base + 2 per grade level
         effective_radius = 10.0 + grade_idx * 2.0
         conc = max(0.0, 1.0 - d / effective_radius)
         if conc > max_conc:
