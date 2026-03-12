@@ -97,3 +97,53 @@
 
 ## Review Notes
 - [ ] Document what changed and key edge cases covered
+
+---
+
+# Feature: Scripted Event Timeline (#191)
+
+## Overview
+
+Add a scripted event timeline engine that fires pre-defined world events at specific
+simulation ticks. This enables deterministic demo scenarios, tutorial walkthroughs,
+and repeatable integration testing without relying on random storm/geyser timing.
+
+## Design
+
+### Core concept
+A **ScriptedTimeline** reads an ordered list of `ScriptedEvent` entries, each with:
+- `tick`: simulation tick to fire the event at
+- `type`: event type (storm_start, storm_end, resource_spawn, battery_drain,
+  agent_message, custom_broadcast, etc.)
+- `payload`: dict of event-specific parameters
+
+### Architecture decisions
+- **New module** `server/app/events.py` — self-contained, no modifications to storm.py
+- **Integration point**: Host calls `timeline.check_tick(tick)` each simulation tick
+- **Config**: `event_script` setting in config.py for script file path (JSON)
+- **API**: REST endpoints to load/query/clear the timeline at runtime
+- **Preset integration**: A `demo_timeline` preset loads a curated script
+
+### Event types supported
+1. `storm_start` — force a storm warning at the given tick
+2. `storm_end` — force-clear an active storm
+3. `resource_spawn` — place a vein/ice/gas at a specific position
+4. `battery_drain` — drain a specific agent's battery
+5. `battery_set` — set a specific agent's battery level
+6. `agent_message` — inject a message into an agent's inbox
+7. `broadcast` — emit an arbitrary event to all WebSocket clients
+8. `spawn_obstacle` — place a mountain or geyser at a position
+9. `mission_update` — modify mission target or collected quantity
+
+## Tasks
+
+- [x] Create feature spec & plan
+- [ ] Implement `ScriptedEvent` and `ScriptedTimeline` in `server/app/events.py`
+- [ ] Add `event_script` config setting
+- [ ] Integrate timeline into Host tick loop
+- [ ] Add REST API endpoints (`/api/timeline/*`)
+- [ ] Add `demo_timeline` preset with sample script
+- [ ] Write comprehensive tests (`server/tests/test_events.py`)
+- [ ] Run ruff format/check + full test suite
+- [ ] Update Changelog.md
+- [ ] Commit, push, open PR

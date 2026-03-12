@@ -52,14 +52,14 @@ class TestTickInflationGuard(_WorldSaveRestore):
     def test_first_call_advances_tick(self):
         world_mod._last_tick_time = 0.0
         old_tick = WORLD["tick"]
-        tick, events = next_tick()
+        tick, events, _timeline = next_tick()
         self.assertEqual(tick, old_tick + 1)
 
     def test_rapid_calls_are_idempotent(self):
         world_mod._last_tick_time = 0.0
         old_tick = WORLD["tick"]
-        tick1, _ = next_tick()
-        tick2, _ = next_tick()
+        tick1, _, _t1 = next_tick()
+        tick2, _, _t2 = next_tick()
         self.assertEqual(tick1, old_tick + 1)
         self.assertEqual(tick2, tick1, "Second rapid call should NOT advance tick")
 
@@ -68,7 +68,7 @@ class TestTickInflationGuard(_WorldSaveRestore):
         reset_world()
         self.assertEqual(world_mod._last_tick_time, 0.0)
         old_tick = WORLD["tick"]
-        tick, _ = next_tick()
+        tick, _, _t = next_tick()
         self.assertEqual(tick, old_tick + 1)
 
 

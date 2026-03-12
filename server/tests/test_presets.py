@@ -24,7 +24,14 @@ class TestPresetDefinitions:
     """T001: Verify all presets exist with required fields."""
 
     REQUIRED_KEYS = {"name", "description", "world_overrides", "agent_overrides"}
-    EXPECTED_PRESETS = {"default", "storm_survival", "resource_race", "exploration", "cooperative"}
+    EXPECTED_PRESETS = {
+        "default",
+        "storm_survival",
+        "resource_race",
+        "exploration",
+        "cooperative",
+        "demo_timeline",
+    }
 
     def test_all_expected_presets_exist(self):
         assert set(PRESETS.keys()) == self.EXPECTED_PRESETS
