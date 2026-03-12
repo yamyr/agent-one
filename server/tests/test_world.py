@@ -1695,6 +1695,14 @@ class TestStoneProximityConcentration(unittest.TestCase):
         val = _stone_proximity_concentration(50, 50)
         self.assertEqual(val, 0.0)
 
+    def test_uses_spatial_index_not_stones_list(self):
+        from app.world import _stone_proximity_concentration, _ensure_stone_index
+
+        world.state["stones"] = [_make_vein([5, 5])]
+        _ensure_stone_index()
+        val = _stone_proximity_concentration(5, 5)
+        self.assertEqual(val, 1.0)
+
 
 class TestNotify(unittest.TestCase):
     def setUp(self):
