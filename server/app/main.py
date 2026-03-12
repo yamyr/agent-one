@@ -5,7 +5,6 @@ from pathlib import Path
 from fastapi import FastAPI, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
-from fastapi.staticfiles import StaticFiles
 from rich.logging import RichHandler
 
 from .agent import (
@@ -339,13 +338,13 @@ _ui_dir = Path(__file__).resolve().parent.parent / "ui_dist"
 if _ui_dir.is_dir():
     _index_html = _ui_dir / "index.html"
 
+    _ui_dir_resolved = _ui_dir.resolve()
+
     @app.get("/{path:path}")
     async def spa_fallback(path: str):
-        """Serve index.html for any path not matching API/WS routes (SPA fallback)."""
-        # Serve actual static files (JS, CSS, images) directly
-        candidate = _ui_dir / path
+        candidate = (_ui_dir / path).resolve()
+        if not str(candidate).startswith(str(_ui_dir_resolved)):
+            return FileResponse(_index_html)
         if candidate.is_file():
             return FileResponse(candidate)
         return FileResponse(_index_html)
-
-    app.mount("/", StaticFiles(directory=_ui_dir, html=True), name="ui")

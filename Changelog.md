@@ -37,6 +37,10 @@
 
 ## [Unreleased]
 
+### Security
+
+* **spa-fallback: path traversal (#271):** resolve candidate path and verify it stays within `_ui_dir` before serving — prevents `../../etc/passwd` style attacks; remove unreachable `StaticFiles` mount
+
 ### Bug Fixes
 
 * **engine: tick inflation (CRITICAL):** add time-guard (`_TICK_MIN_INTERVAL = 1.0s`) to `next_tick()` preventing N× tick acceleration when multiple agents call tick concurrently — idempotent within 1s window, reset on `reset_world()`
