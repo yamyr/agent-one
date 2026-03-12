@@ -14,6 +14,7 @@ from mistralai import Mistral
 from mistralai.models import File
 
 from .config import settings
+from .llm_utils import safe_get_choice
 
 logger = logging.getLogger(__name__)
 
@@ -155,7 +156,8 @@ class VoiceCommandProcessor:
 
         import json
 
-        text = response.choices[0].message.content
+        choice = safe_get_choice(response, "voice")
+        text = choice.message.content
         if not text:
             return {
                 "command": "general_message",

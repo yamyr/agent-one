@@ -37,8 +37,21 @@
 
 ## [Unreleased]
 
+### Security
+
+* **path-traversal:** harden path traversal guard in `finetuning.py` `upload_training_data()` — use `os.path.realpath()` + `startswith()` pattern (CodeQL-recognized) to reject file paths outside configured `training_data_dir`; always validate, removing the unguarded fallback branch
+* **path-traversal:** harden SPA fallback path traversal guard in `main.py` — switch from `PurePosixPath` + `Path.is_relative_to()` to `os.path.normpath()` + `startswith()` pattern recognized by CodeQL as safe (resolves CodeQL `py/path-injection` alerts #16, #17, #18)
+
 ### Bug Fixes
 
+* **llm-safety:** add `safe_get_choice()` helper in new `llm_utils.py` — validates `response.choices` is non-empty before access, raises `RuntimeError` with context label on empty responses
+* **llm-safety:** replace all raw `response.choices[0]` access with `safe_get_choice()` in `agent.py` (6 call sites), `narrator.py`, `station.py`, `voice.py`
+* **agent-loop:** broaden except clauses in all 5 `run_turn()` methods to catch `asyncio.TimeoutError` — prevents unhandled timeout crashes during LLM calls
+* **broadcast:** add `MAX_WS_CONNECTIONS = 50` limit — rejects new WebSocket connections with code 1013 when limit reached
+* **broadcast:** add `logger.warning` on dead WebSocket connection removal during `send()`
+* **concurrency:** add `_reset_lock` (asyncio.Lock) guarding `reset_simulation()` and `apply_preset_endpoint()` — prevents race conditions from concurrent reset requests
+* **concurrency:** add `world_lock` (asyncio.Lock) in `world.py` for world state access coordination
+* **timeout:** wrap `station_startup()` LLM call in `asyncio.wait_for()` with configurable `llm_call_timeout` setting (default 45s)
 * **engine: tick inflation (CRITICAL):** add time-guard (`_TICK_MIN_INTERVAL = 1.0s`) to `next_tick()` preventing N× tick acceleration when multiple agents call tick concurrently — idempotent within 1s window, reset on `reset_world()`
 * **engine: tool whitelist (CRITICAL):** add `drop_item` and `request_confirm` to `HuggingFaceRoverReasoner` tool whitelist — previously only present in `MistralRoverReasoner`, causing HuggingFace agents to silently ignore these tool calls
 * **engine: mountain path checking (HIGH):** move mountain obstacle check inside the path-walking loop in `move_agent()` so intermediate tiles are validated, not just the destination — previously agents could teleport through mountains
@@ -48,9 +61,22 @@
 * **engine: geyser per-tick damage (MEDIUM):** move agent damage check outside the eruption state-transition guard so damage fires every tick during eruption, not just the first tick — previously agents took damage only once when geyser entered erupting state
 * **engine: storm multiplier on missing actions (MEDIUM):** apply `storm_mod.get_battery_multiplier(WORLD)` to `investigate_structure`, `use_refinery`, and `upgrade_building` actions — previously these actions ignored storm battery drain
 
+### Features
+
+* **config:** add `llm_call_timeout: float` setting (default 45.0s, must be >0) for controlling LLM call timeouts
+
 ### Tests
 
+* **robustness:** add 64 tests in `test_robustness.py` covering safe_get_choice, broadcaster limits, config timeout, path traversal guards, concurrency locks, timeout wrapping, safe_get_choice adoption, and broadened except clauses
 * **engine-bugfixes:** add 17 regression tests in `test_engine_bugfixes.py` covering all 8 simulation engine bug fixes — tick inflation guard, tool whitelist completeness, mountain path blocking, ice conversion ratio, drone scan relay, station memory cap, geyser per-tick damage, storm multiplier on missing actions
+
+### Bug Fixes
+
+* **agent-loop:** add `drop_item` and `request_confirm` to rover tool whitelists — LLM calling these tools no longer crashes the agent
+* **agent-loop:** catch `RuntimeError` and `json.JSONDecodeError` in all `run_turn()` except clauses — malformed LLM responses now trigger graceful fallback instead of crashing agent loops
+* **agent-loop:** relay drone high-concentration scan results to all active rovers instead of only `rover-mistral`
+* **agent-loop:** fix `HaulerMistralLoop` default `agent_id` from `"hauler-1"` to `"hauler-mistral"` to match world model
+* **agent-loop:** remove 161-line dead `HaulerReasoner` class and `MistralHaulerReasoner` alias — superseded by `HaulerAgent`
 
 ### Features
 

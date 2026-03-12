@@ -210,9 +210,11 @@ class TestHuggingFaceRoverReasoner(unittest.TestCase):
             content="Unknown tool.", tool_calls=tool_calls
         )
 
-        # Should raise RuntimeError because no valid tool action
-        with self.assertRaises(RuntimeError):
-            agent.run_turn()
+        # RuntimeError is now caught and triggers fallback instead of crashing
+        result = agent.run_turn()
+        self.assertIn("thinking", result)
+        self.assertIn("action", result)
+        self.assertIn("LLM fallback", result["thinking"])
 
     def test_inherits_build_context(self):
         """HuggingFaceRoverReasoner should inherit _build_context from MistralRoverReasoner."""

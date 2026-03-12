@@ -1,6 +1,7 @@
 """Fine-tuning manager — wraps Mistral fine-tuning API."""
 
 import logging
+import os.path
 
 from .config import settings
 
@@ -24,8 +25,12 @@ class FineTuningManager:
 
     def upload_training_data(self, file_path: str) -> str:
         """Upload a JSONL file for fine-tuning. Returns the file_id."""
+        allowed_root = os.path.realpath(settings.training_data_dir)
+        safe_path = os.path.realpath(os.path.join(allowed_root, file_path))
+        if not safe_path.startswith(allowed_root + os.sep):
+            raise ValueError(f"Path traversal denied: {file_path!r} is outside {allowed_root}")
         client = self._get_client()
-        with open(file_path, "rb") as f:
+        with open(safe_path, "rb") as f:
             content = f.read()
         file_name = file_path.rsplit("/", 1)[-1] if "/" in file_path else file_path
         try:

@@ -24,6 +24,7 @@ class TestFineTuningManager(unittest.TestCase):
 
     def test_upload_training_data(self):
         tmpdir = tempfile.mkdtemp()
+        self.mock_settings.training_data_dir = tmpdir
         fpath = os.path.join(tmpdir, "test.jsonl")
         with open(fpath, "w") as f:
             f.write(json.dumps({"messages": [{"role": "user", "content": "hi"}]}) + "\n")
@@ -43,6 +44,7 @@ class TestFineTuningManager(unittest.TestCase):
     def test_upload_falls_back_on_type_error(self):
         """Test fallback when SDK doesn't accept purpose parameter."""
         tmpdir = tempfile.mkdtemp()
+        self.mock_settings.training_data_dir = tmpdir
         fpath = os.path.join(tmpdir, "test.jsonl")
         with open(fpath, "w") as f:
             f.write('{"messages": []}\n')

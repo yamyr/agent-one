@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-import copy
 import asyncio
+import copy
 import hashlib
 import logging
 import random
@@ -1015,6 +1015,7 @@ world_lock = asyncio.Lock()
 
 # Module-level singleton wrapping the global WORLD dict
 world = World(WORLD)
+world_lock = asyncio.Lock()
 
 
 # -- Inter-agent message relay --
