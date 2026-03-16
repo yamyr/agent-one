@@ -73,6 +73,8 @@ jobs:
       - name: Send PR notification to Discord
         env:
           WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL_PR || secrets.DISCORD_WEBHOOK_URL }}
+        # Skip silently when no webhook is configured (e.g. Dependabot PRs)
+        if: env.WEBHOOK_URL != ''
         run: |
           for i in 1 2 3; do
             HTTP_CODE=$(curl -sS -o /dev/null -w "%{http_code}" -X POST "$WEBHOOK_URL" \
@@ -128,6 +130,8 @@ jobs:
       - name: Send main push notification to Discord
         env:
           WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL_MAIN || secrets.DISCORD_WEBHOOK_URL }}
+        # Skip silently when no webhook is configured
+        if: env.WEBHOOK_URL != ''
         run: |
           for i in 1 2 3; do
             HTTP_CODE=$(curl -sS -o /dev/null -w "%{http_code}" -X POST "$WEBHOOK_URL" \
