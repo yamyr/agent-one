@@ -41,6 +41,10 @@
 
 * **world: stone proximity O(S) scan (#270):** replace O(S) linear scan in `_stone_proximity_concentration()` with spatial index lookup via `_ensure_stone_index()` and early `_MAX_EFFECTIVE_RADIUS` skip — eliminates per-cell full-stones-list iteration during drone scans
 
+### Security
+
+* **spa-fallback: path traversal (#282):** replace runtime path-resolution guard with startup-indexed allowlist — `_ui_dir` contents are enumerated once at import time and the handler performs a pure dict lookup, eliminating all user-controlled filesystem paths from `FileResponse` calls and resolving 4 CodeQL `py/path-injection` HIGH alerts
+
 ### Bug Fixes
 
 * **engine: tick inflation (CRITICAL):** add time-guard (`_TICK_MIN_INTERVAL = 1.0s`) to `next_tick()` preventing N× tick acceleration when multiple agents call tick concurrently — idempotent within 1s window, reset on `reset_world()`

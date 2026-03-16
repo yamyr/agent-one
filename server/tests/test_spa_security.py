@@ -1,3 +1,9 @@
+"""SPA fallback security tests.
+
+Verifies that the allowlist-based static file serving prevents path-traversal
+attacks while still serving legitimate assets and SPA routes.
+"""
+
 import shutil
 import tempfile
 import unittest
@@ -6,6 +12,31 @@ from pathlib import Path
 from fastapi import FastAPI
 from fastapi.responses import FileResponse
 from fastapi.testclient import TestClient
+
+
+def _build_spa_app(ui_dir: Path) -> FastAPI:
+    """Create a minimal FastAPI app using the same allowlist pattern as prod.
+
+    Static files are indexed at startup; the handler only does a dict lookup,
+    so user input never flows into a filesystem path.
+    """
+    app = FastAPI()
+    index_html = ui_dir / "index.html"
+
+    static_files: dict[str, Path] = {}
+    for child in ui_dir.rglob("*"):
+        if child.is_file() and child.name != "index.html":
+            rel = child.relative_to(ui_dir).as_posix()
+            static_files[rel] = child
+
+    @app.get("/{path:path}")
+    async def spa_fallback(path: str):
+        asset = static_files.get(path)
+        if asset is not None:
+            return FileResponse(asset)
+        return FileResponse(index_html)
+
+    return app
 
 
 class TestSpaPathTraversal(unittest.TestCase):
@@ -20,21 +51,7 @@ class TestSpaPathTraversal(unittest.TestCase):
         secret.write_text("SECRET")
         self._secret = secret
 
-        app = FastAPI()
-        ui_dir = self.ui_dir
-        ui_dir_resolved = ui_dir.resolve()
-        index_html = self.index
-
-        @app.get("/{path:path}")
-        async def spa_fallback(path: str):
-            candidate = (ui_dir / path).resolve()
-            if not str(candidate).startswith(str(ui_dir_resolved)):
-                return FileResponse(index_html)
-            if candidate.is_file():
-                return FileResponse(candidate)
-            return FileResponse(index_html)
-
-        self.client = TestClient(app)
+        self.client = TestClient(_build_spa_app(self.ui_dir))
 
     def tearDown(self):
         shutil.rmtree(self.tmpdir, ignore_errors=True)
