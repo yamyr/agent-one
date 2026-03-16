@@ -1,3 +1,4 @@
+import asyncio
 import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -42,6 +43,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 narrator = Narrator(broadcast_fn=broadcaster.send)
+_reset_lock = asyncio.Lock()
 host = Host(narrator=narrator)
 voice_processor = VoiceCommandProcessor()
 
@@ -184,11 +186,12 @@ def simulation_status():
 
 @app.post("/simulation/reset")
 async def reset_simulation():
-    host.stop()
-    reset_world()
-    narrator.reset()
-    _register_agents()
-    await host.start()
+    async with _reset_lock:
+        host.stop()
+        reset_world()
+        narrator.reset()
+        _register_agents()
+        await host.start()
     return {"reset": True}
 
 
@@ -206,12 +209,13 @@ async def apply_preset_endpoint(name: str):
     """Apply a simulation preset: reset world, apply overrides, restart agents."""
     if name not in PRESETS:
         raise HTTPException(status_code=404, detail=f"Unknown preset: {name!r}")
-    host.stop()
-    reset_world()
-    apply_preset(name, WORLD)
-    narrator.reset()
-    _register_agents_with_preset(name)
-    await host.start()
+    async with _reset_lock:
+        host.stop()
+        reset_world()
+        apply_preset(name, WORLD)
+        narrator.reset()
+        _register_agents_with_preset(name)
+        await host.start()
     return {"ok": True, "preset": name}
 
 
