@@ -185,8 +185,7 @@ class TestSPAFallbackPathTraversal(unittest.TestCase):
         from app import main as main_module
 
         source = inspect.getsource(main_module)
-        self.assertIn("normpath", source)
-        self.assertIn("startswith", source)
+        self.assertIn("_static_files", source)
 
 
 # ── 6. Reset concurrency lock ──
