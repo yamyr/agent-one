@@ -338,13 +338,17 @@ _ui_dir = Path(__file__).resolve().parent.parent / "ui_dist"
 if _ui_dir.is_dir():
     _index_html = _ui_dir / "index.html"
 
-    _ui_dir_resolved = _ui_dir.resolve()
+    # Pre-index every servable file at startup so the request handler
+    # never builds a filesystem path from user input.
+    _static_files: dict[str, Path] = {}
+    for child in _ui_dir.rglob("*"):
+        if child.is_file() and child.name != "index.html":
+            rel = child.relative_to(_ui_dir).as_posix()
+            _static_files[rel] = child
 
     @app.get("/{path:path}")
     async def spa_fallback(path: str):
-        candidate = (_ui_dir / path).resolve()
-        if not str(candidate).startswith(str(_ui_dir_resolved)):
-            return FileResponse(_index_html)
-        if candidate.is_file():
-            return FileResponse(candidate)
+        asset = _static_files.get(path)
+        if asset is not None:
+            return FileResponse(asset)
         return FileResponse(_index_html)
