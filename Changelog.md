@@ -1,5 +1,27 @@
 # Changelog
 
+## [0.10.0](https://github.com/yamyr/agent-one/compare/v0.9.0...v0.10.0) (2026-03-16)
+
+
+### Features
+
+* harden server robustness with safe LLM response handling and security guards ([05d90e2](https://github.com/yamyr/agent-one/commit/05d90e2a9bd63582da9fe57fe65cab7f7ef07eb4))
+
+
+### Bug Fixes
+
+* add missing event_window_ticks to Settings ([#269](https://github.com/yamyr/agent-one/issues/269)) ([7a5a306](https://github.com/yamyr/agent-one/commit/7a5a3064451c688f03941d24023b686517dac96e))
+* address CodeQL path injection warnings in SPA fallback and finetuning ([6b8d6d9](https://github.com/yamyr/agent-one/commit/6b8d6d97b91b974cffbac40950bae4ac7b2f9a49))
+* harden agent loop error handling and tool dispatch ([b887949](https://github.com/yamyr/agent-one/commit/b887949c467a68b8272fe71e5d186a0692d827f8))
+* resolve CodeQL py/path-injection alerts with normpath/realpath+startswith pattern ([b10f047](https://github.com/yamyr/agent-one/commit/b10f0472813d3763497c2f4cbde341d80eabf833))
+* restore _reset_lock and update SPA guard test after rebase ([6ea8bd1](https://github.com/yamyr/agent-one/commit/6ea8bd1a2e0016592670e52002566190ef0453af))
+* restructure path guards so CodeQL recognizes startswith as barrier ([c72b70d](https://github.com/yamyr/agent-one/commit/c72b70df6fec3a6a79050d74732ed48444b24b92))
+
+
+### Performance Improvements
+
+* use spatial index in _stone_proximity_concentration() ([#270](https://github.com/yamyr/agent-one/issues/270)) ([e4cef8b](https://github.com/yamyr/agent-one/commit/e4cef8b365c16a2635aac37d9dd969eb8b09dcd4))
+
 ## [Unreleased]
 
 ### Security
