@@ -16,7 +16,8 @@ class Broadcaster:
     """Manages WebSocket connections and broadcasts events to all clients."""
 
     def __init__(self):
-        self._connections: list[WebSocket] = []
+        # Use a set for O(1) add/remove (avoids O(n) list.remove on disconnect)
+        self._connections: set[WebSocket] = set()
 
     async def connect(self, ws: WebSocket):
         if len(self._connections) >= MAX_WS_CONNECTIONS:
@@ -24,27 +25,24 @@ class Broadcaster:
             logger.warning("Rejected WebSocket: connection limit (%d) reached", MAX_WS_CONNECTIONS)
             return
         await ws.accept()
-        self._connections.append(ws)
+        self._connections.add(ws)
         logger.info("Client connected (%d total)", len(self._connections))
 
     def disconnect(self, ws: WebSocket):
-        if ws in self._connections:
-            self._connections.remove(ws)
+        self._connections.discard(ws)
         logger.info("Client disconnected (%d total)", len(self._connections))
 
     async def send(self, event: dict):
         """Broadcast an event dict to all connected clients."""
         data = json.dumps(event)
-        dead: list[WebSocket] = []
+        dead: set[WebSocket] = set()
         for ws in list(self._connections):
             try:
                 await ws.send_text(data)
             except Exception:
-                dead.append(ws)
+                dead.add(ws)
                 logger.warning("Removing dead WebSocket connection")
-        for ws in dead:
-            if ws in self._connections:
-                self._connections.remove(ws)
+        self._connections -= dead
 
 
 broadcaster = Broadcaster()

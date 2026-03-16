@@ -79,7 +79,7 @@ class TestBroadcasterConnectionLimit(unittest.TestCase):
 
         b = Broadcaster()
         for _ in range(MAX_WS_CONNECTIONS):
-            b._connections.append(MagicMock())
+            b._connections.add(MagicMock())
 
         ws = AsyncMock()
         loop = asyncio.new_event_loop()
@@ -115,7 +115,7 @@ class TestBroadcasterConnectionLimit(unittest.TestCase):
         b = Broadcaster()
         dead_ws = AsyncMock()
         dead_ws.send_text.side_effect = Exception("connection lost")
-        b._connections.append(dead_ws)
+        b._connections.add(dead_ws)
 
         loop = asyncio.new_event_loop()
         try:
