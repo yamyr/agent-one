@@ -13,7 +13,7 @@ class TestBroadcasterDisconnect(unittest.TestCase):
     def test_disconnect_removes_connection(self):
         b = Broadcaster()
         ws = MagicMock()
-        b._connections.append(ws)
+        b._connections.add(ws)
         b.disconnect(ws)
         self.assertNotIn(ws, b._connections)
 
@@ -21,7 +21,7 @@ class TestBroadcasterDisconnect(unittest.TestCase):
         """Double-disconnect must not raise ValueError."""
         b = Broadcaster()
         ws = MagicMock()
-        b._connections.append(ws)
+        b._connections.add(ws)
         b.disconnect(ws)
         b.disconnect(ws)  # should not raise
         self.assertEqual(len(b._connections), 0)
@@ -40,7 +40,7 @@ class TestBroadcasterSend(unittest.TestCase):
         b = Broadcaster()
         ws1 = AsyncMock()
         ws2 = AsyncMock()
-        b._connections = [ws1, ws2]
+        b._connections = {ws1, ws2}
         asyncio.run(b.send({"type": "test"}))
         ws1.send_text.assert_called_once()
         ws2.send_text.assert_called_once()
@@ -50,7 +50,7 @@ class TestBroadcasterSend(unittest.TestCase):
         healthy = AsyncMock()
         dead = AsyncMock()
         dead.send_text.side_effect = ConnectionError("gone")
-        b._connections = [healthy, dead]
+        b._connections = {healthy, dead}
         asyncio.run(b.send({"type": "test"}))
         self.assertIn(healthy, b._connections)
         self.assertNotIn(dead, b._connections)
@@ -61,7 +61,7 @@ class TestBroadcasterSend(unittest.TestCase):
         ws1 = AsyncMock()
         ws2 = AsyncMock()
         ws2.send_text.side_effect = RuntimeError("drop")
-        b._connections = [ws1, ws2]
+        b._connections = {ws1, ws2}
         # Should not raise ConcurrentModificationError
         asyncio.run(b.send({"type": "test"}))
         self.assertEqual(len(b._connections), 1)

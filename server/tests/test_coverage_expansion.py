@@ -618,11 +618,13 @@ class TestStormBatteryEffects(_WorldSaveRestore):
         clear_cost = 1.0 - rover["battery"]
         self.assertTrue(result_clear.get("ok", False), f"Clear move failed: {result_clear}")
 
-        # Reset position for storm move
+        # Reset position for storm move — patch random to prevent probabilistic
+        # storm move-failure (should_move_fail uses random.random()).
         rover["position"] = [0, 0]
         rover["battery"] = 1.0
         self._activate_storm(intensity=0.6)
-        result_storm = execute_action("rover-mistral", "move", {"direction": "east"})
+        with patch("app.storm.random.random", return_value=0.99):
+            result_storm = execute_action("rover-mistral", "move", {"direction": "east"})
         storm_cost = 1.0 - rover["battery"]
         self.assertTrue(result_storm.get("ok", False), f"Storm move failed: {result_storm}")
 
