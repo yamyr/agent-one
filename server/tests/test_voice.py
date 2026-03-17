@@ -52,7 +52,7 @@ class TestVoiceCommandProcessorInit(unittest.TestCase):
         processor = VoiceCommandProcessor()
         self.assertIsNone(processor._client)
 
-    @patch("app.voice.settings")
+    @patch("app.llm.settings")
     def test_get_client_raises_without_api_key(self, mock_settings):
         mock_settings.mistral_api_key = ""
         processor = VoiceCommandProcessor()
@@ -60,33 +60,28 @@ class TestVoiceCommandProcessorInit(unittest.TestCase):
             processor._get_client()
         self.assertIn("MISTRAL_API_KEY", str(ctx.exception))
 
-    @patch("app.voice.settings")
-    @patch("app.voice.Mistral")
-    def test_get_client_creates_client(self, mock_mistral_cls, mock_settings):
-        mock_settings.mistral_api_key = "test-key"
+    @patch("app.voice.get_mistral_client")
+    def test_get_client_creates_client(self, mock_get_mistral_client):
         processor = VoiceCommandProcessor()
         client = processor._get_client()
-        mock_mistral_cls.assert_called_once_with(api_key="test-key")
-        self.assertEqual(client, mock_mistral_cls.return_value)
+        mock_get_mistral_client.assert_called_once_with()
+        self.assertEqual(client, mock_get_mistral_client.return_value)
 
-    @patch("app.voice.settings")
-    @patch("app.voice.Mistral")
-    def test_get_client_caches(self, mock_mistral_cls, mock_settings):
-        mock_settings.mistral_api_key = "test-key"
+    @patch("app.voice.get_mistral_client")
+    def test_get_client_caches(self, mock_get_mistral_client):
         processor = VoiceCommandProcessor()
         client1 = processor._get_client()
         client2 = processor._get_client()
         self.assertIs(client1, client2)
-        mock_mistral_cls.assert_called_once()
+        mock_get_mistral_client.assert_called_once()
 
 
 class TestTranscribe(unittest.IsolatedAsyncioTestCase):
     """Test audio transcription via Voxtral."""
 
     @patch("app.voice.settings")
-    @patch("app.voice.Mistral")
-    async def test_transcribe_success(self, mock_mistral_cls, mock_settings):
-        mock_settings.mistral_api_key = "test-key"
+    @patch("app.voice.get_mistral_client")
+    async def test_transcribe_success(self, mock_get_mistral_client, mock_settings):
         mock_settings.voice_transcription_model = "voxtral-mini-latest"
 
         # Mock transcription response
@@ -97,7 +92,7 @@ class TestTranscribe(unittest.IsolatedAsyncioTestCase):
 
         mock_client = MagicMock()
         mock_client.audio.transcriptions.complete_async = AsyncMock(return_value=mock_response)
-        mock_mistral_cls.return_value = mock_client
+        mock_get_mistral_client.return_value = mock_client
 
         processor = VoiceCommandProcessor()
         result = await processor.transcribe(b"fake-audio-data", "test.wav")
@@ -114,9 +109,8 @@ class TestTranscribe(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(call_kwargs["context_bias"], CONTEXT_BIAS_TERMS)
 
     @patch("app.voice.settings")
-    @patch("app.voice.Mistral")
-    async def test_transcribe_custom_language(self, mock_mistral_cls, mock_settings):
-        mock_settings.mistral_api_key = "test-key"
+    @patch("app.voice.get_mistral_client")
+    async def test_transcribe_custom_language(self, mock_get_mistral_client, mock_settings):
         mock_settings.voice_transcription_model = "voxtral-mini-latest"
 
         mock_response = MagicMock()
@@ -126,7 +120,7 @@ class TestTranscribe(unittest.IsolatedAsyncioTestCase):
 
         mock_client = MagicMock()
         mock_client.audio.transcriptions.complete_async = AsyncMock(return_value=mock_response)
-        mock_mistral_cls.return_value = mock_client
+        mock_get_mistral_client.return_value = mock_client
 
         processor = VoiceCommandProcessor()
         result = await processor.transcribe(b"fake-audio", "test.wav", language="fr")

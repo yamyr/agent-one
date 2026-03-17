@@ -10,10 +10,10 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from mistralai import Mistral
 from mistralai.models import File
 
 from .config import settings
+from .llm import get_mistral_client
 from .llm_utils import safe_get_choice
 
 logger = logging.getLogger(__name__)
@@ -101,14 +101,12 @@ class VoiceCommandProcessor:
     """Transcribes audio and parses voice commands for the Mars mission."""
 
     def __init__(self):
-        self._client: Mistral | None = None
+        self._client = None
 
-    def _get_client(self) -> Mistral:
+    def _get_client(self):
         """Lazy-init Mistral client."""
         if self._client is None:
-            if not settings.mistral_api_key:
-                raise RuntimeError("MISTRAL_API_KEY not set — cannot process voice commands")
-            self._client = Mistral(api_key=settings.mistral_api_key)
+            self._client = get_mistral_client()
         return self._client
 
     async def transcribe(

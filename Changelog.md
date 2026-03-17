@@ -24,6 +24,16 @@
 
 ## [Unreleased]
 
+### Refactoring
+
+* **llm-factory:** centralize Mistral client creation in new `app/llm.py` module with `get_mistral_client()` factory — replaces 9 duplicate `Mistral(api_key=settings.mistral_api_key)` instantiations across `agent.py`, `agents_api.py`, `finetuning.py`, `narrator.py`, `station.py`, `voice.py`
+* **llm-factory:** single-point API key validation with clear `RuntimeError` when `MISTRAL_API_KEY` is missing
+
+### Tests
+
+* **llm:** add `test_llm.py` covering `get_mistral_client()` happy path and missing-key error
+* **voice:** update `test_voice.py` to mock `get_mistral_client` instead of `Mistral` constructor
+
 ### Security
 
 * **path-traversal:** harden path traversal guard in `finetuning.py` `upload_training_data()` — use `os.path.realpath()` + `startswith()` pattern (CodeQL-recognized) to reject file paths outside configured `training_data_dir`; always validate, removing the unguarded fallback branch

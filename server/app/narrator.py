@@ -15,9 +15,9 @@ import time
 
 from elevenlabs import DialogueInput, ElevenLabs
 from huggingface_hub import InferenceClient
-from mistralai import Mistral
 
 from .config import settings
+from .llm import get_mistral_client
 from .llm_utils import safe_get_choice
 
 logger = logging.getLogger(__name__)
@@ -324,7 +324,7 @@ class Narrator:
         self._lock = asyncio.Lock()
         self._task: asyncio.Task | None = None
         self._enabled = settings.narration_enabled
-        self._mistral: Mistral | None = None
+        self._mistral = None
         self._elevenlabs: ElevenLabs | None = None
         self._running = False
         self._huggingface: InferenceClient | None = None
@@ -338,11 +338,9 @@ class Narrator:
         self._enabled = value
         logger.info("Narration %s", "enabled" if value else "disabled")
 
-    def _get_mistral(self) -> Mistral:
+    def _get_mistral(self):
         if self._mistral is None:
-            if not settings.mistral_api_key:
-                raise RuntimeError("MISTRAL_API_KEY not set")
-            self._mistral = Mistral(api_key=settings.mistral_api_key)
+            self._mistral = get_mistral_client()
         return self._mistral
 
     def _get_elevenlabs(self) -> ElevenLabs | None:

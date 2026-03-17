@@ -8,8 +8,6 @@ import json
 import logging
 import random
 
-from mistralai import Mistral
-
 from .agent import (
     ROVER_TOOLS,
     DRONE_TOOLS,
@@ -19,6 +17,7 @@ from .agent import (
     StationLoop,
 )
 from .config import settings
+from .llm import get_mistral_client
 from .world import World, world as default_world, set_agent_model
 from .world import (
     BATTERY_COST_MOVE_DRONE,
@@ -44,11 +43,9 @@ from .world import get_drone_intel_for_rover, get_unread_messages, is_obstacle_a
 logger = logging.getLogger(__name__)
 
 
-def _create_mistral_client() -> Mistral:
+def _create_mistral_client():
     """Create a Mistral client using the configured API key."""
-    if not settings.mistral_api_key:
-        raise RuntimeError("MISTRAL_API_KEY not set")
-    return Mistral(api_key=settings.mistral_api_key)
+    return get_mistral_client()
 
 
 def _parse_conversation_response(response, agent_id: str) -> tuple:
