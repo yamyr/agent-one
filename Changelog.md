@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.10.1](https://github.com/yamyr/agent-one/compare/v0.10.0...v0.10.1) (2026-03-17)
+
+
+### Bug Fixes
+
+* update tests for set-based Broadcaster connections and deterministic storm test ([a6cf2ab](https://github.com/yamyr/agent-one/commit/a6cf2ab2cb6cfae431e6e6d8318d477a723d4583))
+
+
+### Performance Improvements
+
+* use set for Broadcaster connections — O(1) disconnect ([#277](https://github.com/yamyr/agent-one/issues/277)) ([499351e](https://github.com/yamyr/agent-one/commit/499351eac8a05c6cce941c447ded2cfe1176b2ce))
+* use set for Broadcaster connections — O(1) disconnect ([#277](https://github.com/yamyr/agent-one/issues/277)) ([b1df69b](https://github.com/yamyr/agent-one/commit/b1df69b11bab831ffa88a7fe0d2300e32c84ae05))
+
 ## [0.10.0](https://github.com/yamyr/agent-one/compare/v0.9.0...v0.10.0) (2026-03-16)
 
 
