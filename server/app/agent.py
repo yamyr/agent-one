@@ -13,11 +13,12 @@ import time
 
 from huggingface_hub import InferenceClient
 from huggingface_hub.errors import HfHubHTTPError, InferenceTimeoutError
-from mistralai import Mistral, SDKError
+from mistralai import SDKError
 
 from .base_agent import BaseAgent
 from .broadcast import broadcaster
 from .config import settings
+from .llm import get_mistral_client
 from .llm_utils import safe_get_choice
 from .protocol import make_message
 from .world import World, world as default_world
@@ -588,9 +589,7 @@ class MistralRoverReasoner:
 
     def _get_client(self):
         if self._client is None:
-            if not settings.mistral_api_key:
-                raise RuntimeError("MISTRAL_API_KEY not set")
-            self._client = Mistral(api_key=settings.mistral_api_key)
+            self._client = get_mistral_client()
         return self._client
 
     def _build_context(self):
@@ -1115,9 +1114,7 @@ class HaulerAgent:
 
     def _get_client(self):
         if self._client is None:
-            if not settings.mistral_api_key:
-                raise RuntimeError("MISTRAL_API_KEY not set")
-            self._client = Mistral(api_key=settings.mistral_api_key)
+            self._client = get_mistral_client()
         return self._client
 
     def _build_context(self):
@@ -1487,9 +1484,7 @@ class DroneAgent:
 
     def _get_client(self):
         if self._client is None:
-            if not settings.mistral_api_key:
-                raise RuntimeError("MISTRAL_API_KEY not set")
-            self._client = Mistral(api_key=settings.mistral_api_key)
+            self._client = get_mistral_client()
         return self._client
 
     def _build_context(self):
@@ -2323,7 +2318,7 @@ class RoverLoop(BaseAgent):
             prompt = summarize_memories(self.agent_id)
             if prompt:
                 try:
-                    client = Mistral(api_key=settings.mistral_api_key)
+                    client = get_mistral_client()
                     resp = await asyncio.to_thread(
                         client.chat.complete,
                         model="mistral-small-latest",

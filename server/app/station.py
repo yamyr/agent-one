@@ -4,9 +4,9 @@ import json
 import logging
 
 from huggingface_hub import InferenceClient
-from mistralai import Mistral
 
 from .config import settings
+from .llm import get_mistral_client
 from .llm_utils import safe_get_choice
 from .models import StationContext
 from .world import allocate_power, assign_mission, charge_agent
@@ -265,9 +265,7 @@ class StationAgent:
 
     def _get_client(self):
         if self._client is None:
-            if not settings.mistral_api_key:
-                raise RuntimeError("MISTRAL_API_KEY not set")
-            self._client = Mistral(api_key=settings.mistral_api_key)
+            self._client = get_mistral_client()
         return self._client
 
     def _get_hf_client(self):

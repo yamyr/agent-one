@@ -4,6 +4,7 @@ import logging
 import os.path
 
 from .config import settings
+from .llm import get_mistral_client
 
 logger = logging.getLogger(__name__)
 
@@ -16,11 +17,7 @@ class FineTuningManager:
 
     def _get_client(self):
         if self._client is None:
-            if not settings.mistral_api_key:
-                raise RuntimeError("MISTRAL_API_KEY not set — cannot manage fine-tuning jobs")
-            from mistralai import Mistral
-
-            self._client = Mistral(api_key=settings.mistral_api_key)
+            self._client = get_mistral_client()
         return self._client
 
     def upload_training_data(self, file_path: str) -> str:
